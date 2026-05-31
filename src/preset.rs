@@ -202,7 +202,7 @@ pub fn builtin() -> Vec<Preset> {
             &["briefing", "아침브리핑"],
             "사용자를 위한 오늘의 아침 브리핑을 한국어로 친근하게 만들어줘. 다음을 포함해:\
              \n1) 오늘 날짜와 요일('date'로 확인)\
-             \n2) 오늘 서울 날씨(weather_now 도구 또는 'wonjang 날씨'로 정확하게)\
+             \n2) 오늘 서울 날씨(weather_now 도구 또는 'wonjang 날씨')와 미세먼지(air_quality)\
              \n3) 예정된 약속·알림('wonjang remind' 또는 list_reminders로 확인해 가까운 순서로)\
              \n4) 오늘의 할 일('wonjang todo' 또는 list_todos로 확인)\
              \n5) 다가오는 디데이('wonjang dday' 또는 list_ddays로 확인, 가까운 것 위주)\

@@ -4,6 +4,7 @@
 //! 재구성한다: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
 
 mod agent;
+mod airquality;
 mod bookmarks;
 mod briefing;
 mod cli_backend;
@@ -151,6 +152,13 @@ enum Commands {
     /// 실시간 날씨. 예: wonjang 날씨 (생략 시 서울) / wonjang 날씨 부산
     #[command(alias = "날씨")]
     Weather {
+        /// 지역 이름(선택)
+        #[arg(trailing_var_arg = true)]
+        location: Vec<String>,
+    },
+    /// 미세먼지(대기질). 예: wonjang 미세먼지 (생략 시 서울)
+    #[command(alias = "미세먼지")]
+    Air {
         /// 지역 이름(선택)
         #[arg(trailing_var_arg = true)]
         location: Vec<String>,
@@ -381,6 +389,7 @@ async fn run() -> Result<()> {
         Some(Commands::Open { target }) => return cmd_open(target),
         Some(Commands::Subway { station }) => return cmd_subway(&cfg, station),
         Some(Commands::Weather { location }) => return cmd_weather(location),
+        Some(Commands::Air { location }) => return cmd_air(location),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1068,6 +1077,19 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_air(location: &[String]) -> Result<()> {
+    let loc = location.join(" ");
+    let a = util::run_async(async move { airquality::air_quality(&loc).await })?;
+    let (g25, e25) = airquality::grade_pm25(a.pm25);
+    let (g10, e10) = airquality::grade_pm10(a.pm10);
+    println!();
+    println!("  🌫 {} 미세먼지", a.place);
+    println!("     미세먼지(PM10)    {:.0}  {} {}", a.pm10, g10, e10);
+    println!("     초미세먼지(PM2.5) {:.0}  {} {}", a.pm25, g25, e25);
+    println!();
     Ok(())
 }
 

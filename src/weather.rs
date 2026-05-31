@@ -91,7 +91,8 @@ fn client() -> Result<reqwest::Client> {
 }
 
 /// 지역 이름 → (위도, 경도, 표시이름). 주요 도시는 내장, 그 외는 지오코딩.
-async fn resolve(loc: &str) -> Result<(f64, f64, String)> {
+/// (대기질 등 다른 위치 기반 기능에서도 재사용한다.)
+pub async fn resolve(loc: &str) -> Result<(f64, f64, String)> {
     if loc.is_empty() {
         return Ok((37.5665, 126.9780, "서울".to_string()));
     }

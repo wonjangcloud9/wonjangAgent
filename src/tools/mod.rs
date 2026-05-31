@@ -3,6 +3,7 @@
 //! 에이전트가 로컬 환경을 다루기 위한 도구들을 정의한다. 각 도구는 LLM에
 //! 전달할 JSON 스키마(`spec`)와 실제 실행 로직(`execute`)을 제공한다.
 
+pub mod airquality;
 pub mod clipboard;
 pub mod dday;
 pub mod expense;
@@ -84,6 +85,7 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(habit::ListHabitsTool),
         Box::new(subway::SubwayTool),
         Box::new(weather::WeatherTool),
+        Box::new(airquality::AirQualityTool),
     ]
 }
 
