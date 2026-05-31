@@ -98,6 +98,9 @@ enum Commands {
         #[command(subcommand)]
         action: Option<DdayAction>,
     },
+    /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
+    #[command(alias = "현황")]
+    Status,
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
@@ -235,6 +238,7 @@ async fn run() -> Result<()> {
         Some(Commands::Todo { action }) => return cmd_todo(action),
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Dday { action }) => return cmd_dday(action),
+        Some(Commands::Status) => return cmd_status(),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
@@ -702,6 +706,82 @@ fn cmd_notify(cfg: &Config, message: &[String]) -> Result<()> {
         "{sent}개 채널로 푸시했습니다 ({})",
         channels.join(", ")
     ));
+    Ok(())
+}
+
+/// 시간대별 인사(아침/낮/저녁/밤).
+fn greeting() -> &'static str {
+    use chrono::Timelike;
+    match chrono::Local::now().hour() {
+        5..=10 => "좋은 아침이에요 ☀️",
+        11..=16 => "좋은 오후예요 🌤️",
+        17..=20 => "좋은 저녁이에요 🌆",
+        _ => "편안한 밤 되세요 🌙",
+    }
+}
+
+/// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
+fn cmd_status() -> Result<()> {
+    use owo_colors::OwoColorize;
+    let now_unix = reminders::now_unix();
+    let today = ddays::today();
+
+    println!();
+    println!(
+        "  {}  {}",
+        "원장 현황".bright_cyan().bold(),
+        greeting().dimmed()
+    );
+    println!();
+
+    // 다가오는 약속(최대 3).
+    let rem = reminders::ReminderStore::load()?;
+    let upcoming = rem.upcoming(now_unix);
+    println!("  ⏰ 약속");
+    if upcoming.is_empty() {
+        ui::info("     예정된 약속이 없어요.");
+    } else {
+        for r in upcoming.iter().take(3) {
+            println!(
+                "     · {} ({}{})",
+                r.title,
+                reminders::relative(r.at_unix, now_unix),
+                reminders::repeat_label(r.repeat_secs)
+            );
+        }
+    }
+
+    // 할 일(최대 5).
+    let todo = todos::TodoStore::load()?;
+    let pending = todo.pending();
+    println!("  ✅ 할 일 ({}개)", pending.len());
+    for t in pending.iter().take(5) {
+        println!("     ☐ {}", t.text);
+    }
+    if pending.len() > 5 {
+        ui::info(&format!("     … 외 {}개", pending.len() - 5));
+    }
+
+    // 디데이(가까운 3).
+    let dd = ddays::DdayStore::load()?;
+    if !dd.all().is_empty() {
+        println!("  📅 디데이");
+        for d in dd.all().iter().take(3) {
+            let label = ddays::parse_date(&d.date)
+                .map(|dt| ddays::dday_label(ddays::days_until(dt, today)))
+                .unwrap_or_else(|_| "?".to_string());
+            println!("     {} {}", label.bright_yellow(), d.label);
+        }
+    }
+
+    // 예약 작업.
+    let cron = cron::CronStore::load()?;
+    let enabled = cron.tasks.iter().filter(|t| t.enabled).count();
+    if enabled > 0 {
+        println!("  🔁 예약 작업 {enabled}개 등록됨");
+    }
+
+    println!();
     Ok(())
 }
 
