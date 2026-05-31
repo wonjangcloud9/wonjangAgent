@@ -17,6 +17,8 @@
 
 - 🦀 **단일 러스트 바이너리** — 의존 런타임 없이 빠르게 시작.
 - 🇰🇷 **한국어 우선** — 모든 메시지·프롬프트·도움말이 한국어.
+- 🔑 **API 키 없이도 OK** — 이미 로그인된 **Claude Code**나 **Codex**를 시작 시
+  자동으로 엔진으로 연결합니다(별도 키 불필요). 물론 API 키도 그대로 지원.
 - 🔌 **제공자 무관** — OpenAI 호환 엔드포인트면 무엇이든(OpenRouter, OpenAI,
   DeepSeek, 로컬 vLLM 등). 모델은 설정 한 줄로 교체.
 - 🛠 **로컬 도구** — 셸 실행, 파일 읽기/쓰기, 디렉터리 목록.
@@ -63,7 +65,29 @@ git clone https://github.com/wonjangcloud9/wonjangAgent.git
 cd wonjangAgent && cargo build --release   # 결과물: ./target/release/wonjang
 ```
 
-## 설정
+## 엔진(백엔드) 선택
+
+원장은 시작할 때 사용할 **엔진**을 자동으로 정합니다(`backend = "auto"`):
+
+1. **API 키가 있으면** → OpenAI 호환 API로 자체 도구 루프 실행
+2. **없으면** → 이미 로그인된 **Claude Code**(`claude`) 또는 **Codex**(`codex`)에
+   연결해 그걸 엔진으로 사용 — **별도 API 키가 필요 없습니다.**
+
+즉, Claude Code나 Codex를 이미 쓰고 있다면 아무 키 설정 없이 바로:
+
+```bash
+wonjang "이 폴더 정리해줘"     # → Claude Code/Codex가 실제 작업 수행, 원장이 한국어로 진행
+```
+
+CLI 백엔드에서는 사용자의 Claude Code/Codex가 자신의 도구·권한으로 작업합니다.
+원장이 `-y`(자동 승인)이면 쓰기 도구(Bash/Edit 등)까지 허용하고, 아니면 읽기 전용으로
+제한합니다. 백엔드를 직접 고르려면:
+
+```bash
+export WONJANG_BACKEND=claude   # auto | api | claude | codex
+```
+
+### API 백엔드 설정
 
 API 키는 보안을 위해 **환경 변수**로만 받습니다(설정 파일에 저장하지 않음).
 
@@ -80,11 +104,12 @@ export WONJANG_MODEL=gpt-4o
 
 | 환경 변수 | 설명 | 기본값 |
 | --- | --- | --- |
+| `WONJANG_BACKEND` | 엔진 선택(auto/api/claude/codex) | `auto` |
 | `WONJANG_BASE_URL` | OpenAI 호환 베이스 URL | `https://openrouter.ai/api/v1` |
 | `WONJANG_MODEL` | 모델 이름 | `anthropic/claude-3.5-sonnet` |
 | `WONJANG_API_KEY` | API 키(없으면 `OPENROUTER_API_KEY` → `OPENAI_API_KEY` 폴백) | — |
 
-현재 설정 확인 / 기본 설정 파일 생성:
+현재 설정/백엔드 확인:
 
 ```bash
 wonjang config
@@ -250,7 +275,9 @@ wonjang skills     # 익힌 스킬 목록
 ```
 src/
 ├── main.rs       # CLI 진입점 + 대화형 REPL
-├── agent.rs      # 에이전트 루프(LLM ↔ 도구 왕복)
+├── engine.rs     # 백엔드 추상화(API / Claude Code / Codex)
+├── cli_backend.rs # Claude Code·Codex CLI 위임
+├── agent.rs      # 에이전트 루프(LLM ↔ 도구 왕복, API 백엔드)
 ├── llm.rs        # OpenAI 호환 LLM 클라이언트
 ├── config.rs     # 설정 로딩(환경 변수 > 파일 > 기본값)
 ├── memory.rs     # 영속 메모리(세션 간 사실 유지)
@@ -293,6 +320,7 @@ src/
 - [x] v0.10 — 작업 프리셋(`wonjang preset`, 한국어 빌트인 + 사용자 정의)
 - [x] v0.11 — 위험 명령 안전장치(무인 모드 기본 차단) + 프리셋 13종으로 확장
 - [x] v0.12 — CI(fmt/clippy/test) + 멀티플랫폼 릴리스 + npm 배포(`npm i -g wonjang-agent`)
+- [x] v0.13 — Claude Code·Codex 백엔드(API 키 없이 시작 시 자동 연결)
 - [ ] 슬랙/카카오 게이트웨이, 음성 입력 등
 
 ## 개발

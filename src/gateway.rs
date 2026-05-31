@@ -9,10 +9,11 @@
 
 use crate::agent;
 use crate::config::Config;
-use crate::llm::{LlmClient, Message};
+use crate::engine::Engine;
+use crate::llm::Message;
 use crate::memory::Memory;
 use crate::skill::SkillStore;
-use crate::tools::{Tool, ToolContext};
+use crate::tools::ToolContext;
 use crate::ui;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -50,7 +51,7 @@ struct TgUser {
 }
 
 /// 텔레그램 게이트웨이 실행(포그라운드 데몬).
-pub async fn run_telegram(client: &LlmClient, cfg: &Config, tools: &[Box<dyn Tool>]) -> Result<()> {
+pub async fn run_telegram(eng: &Engine, cfg: &Config) -> Result<()> {
     let token = cfg.telegram_token.clone();
     if token.is_empty() {
         bail!(
@@ -143,7 +144,7 @@ pub async fn run_telegram(client: &LlmClient, cfg: &Config, tools: &[Box<dyn Too
             });
             history.push(Message::user(text));
 
-            let reply = match agent::run_turn(client, cfg, tools, &ctx, history).await {
+            let reply = match eng.run(cfg, &ctx, history).await {
                 Ok(ans) => ans.unwrap_or_else(|| "(응답을 만들지 못했습니다)".to_string()),
                 Err(e) => format!("작업 중 오류가 발생했습니다: {e}"),
             };

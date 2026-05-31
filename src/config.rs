@@ -42,6 +42,11 @@ pub struct Config {
     #[serde(default = "default_max_steps")]
     pub max_steps: u32,
 
+    /// 엔진 백엔드: "auto"(기본), "api", "claude", "codex".
+    /// auto면 API 키가 있으면 api, 없으면 claude/codex CLI를 자동 연결한다.
+    #[serde(default = "default_backend")]
+    pub backend: String,
+
     /// 연결할 MCP 서버 목록(외부 도구).
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
@@ -67,6 +72,10 @@ fn default_max_steps() -> u32 {
     25
 }
 
+fn default_backend() -> String {
+    "auto".to_string()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -74,6 +83,7 @@ impl Default for Config {
             model: default_model(),
             api_key: String::new(),
             max_steps: default_max_steps(),
+            backend: default_backend(),
             mcp_servers: Vec::new(),
             telegram_token: String::new(),
             telegram_allowed_ids: Vec::new(),
@@ -108,6 +118,11 @@ impl Config {
         if let Ok(v) = std::env::var("WONJANG_MODEL") {
             if !v.is_empty() {
                 cfg.model = v;
+            }
+        }
+        if let Ok(v) = std::env::var("WONJANG_BACKEND") {
+            if !v.is_empty() {
+                cfg.backend = v;
             }
         }
         // API 키: 전용 변수 우선, 없으면 흔한 변수로 폴백.

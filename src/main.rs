@@ -4,8 +4,10 @@
 //! 재구성한다: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
 
 mod agent;
+mod cli_backend;
 mod config;
 mod cron;
+mod engine;
 mod gateway;
 mod llm;
 mod mcp;
@@ -22,6 +24,7 @@ mod web;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::Config;
+use engine::Engine;
 use llm::{LlmClient, Message};
 use std::io::{self, Write};
 use tools::{default_tools, ToolContext};
@@ -162,48 +165,27 @@ async fn run() -> Result<()> {
         None => {}
     }
 
-    // API 키 확인.
-    if cfg.api_key.is_empty() {
-        ui::error("API 키가 없습니다.");
-        ui::info(
-            "환경 변수로 키를 설정해 주세요. 예시:\n  \
-             export OPENROUTER_API_KEY=sk-...\n  \
-             export WONJANG_MODEL=anthropic/claude-3.5-sonnet\n\
-             자세한 설정은 `wonjang config` 를 실행하세요.",
-        );
-        std::process::exit(1);
-    }
+    // 백엔드 결정: API 키가 있으면 api, 없으면 Claude Code/Codex CLI 자동 연결.
+    let backend = engine::resolve(&cfg)?;
+    let eng = build_engine(backend, &cfg);
+    ui::info(&format!("백엔드: {}", eng.label(&cfg)));
 
-    let client = LlmClient::new(cfg.base_url.clone(), cfg.api_key.clone(), cfg.model.clone());
-    let mut tools = default_tools();
-    // 설정된 MCP 서버에 연결해 외부 도구를 등록한다(실패해도 계속 진행).
-    for srv in &cfg.mcp_servers {
-        match mcp::McpClient::connect(&srv.name, &srv.command, &srv.args, &srv.env) {
-            Ok(c) => {
-                let n = c.tools.len();
-                tools.extend(tools::mcp::tools_from_client(std::sync::Arc::new(c)));
-                ui::info(&format!("MCP '{}' 연결됨 — 도구 {n}개", srv.name));
-            }
-            Err(e) => ui::error(&format!("MCP '{}' 연결 실패: {e:#}", srv.name)),
-        }
-    }
-    let tools = tools; // 이후 불변.
     let ctx = ToolContext {
         auto_approve: cli.yes,
         allow_dangerous: cli.allow_dangerous,
     };
 
-    // 크론 데몬(LLM 필요).
+    // 크론 데몬.
     if let Some(Commands::Cron {
         action: CronAction::Run,
     }) = &cli.command
     {
-        return cmd_cron_run(&client, &cfg, &tools).await;
+        return cmd_cron_run(&eng, &cfg).await;
     }
 
-    // 텔레그램 게이트웨이(LLM 필요).
+    // 텔레그램 게이트웨이.
     if let Some(Commands::Telegram) = &cli.command {
-        return gateway::run_telegram(&client, &cfg, &tools).await;
+        return gateway::run_telegram(&eng, &cfg).await;
     }
 
     // 세션: 이어가기(--continue) 또는 새 세션.
@@ -257,26 +239,50 @@ async fn run() -> Result<()> {
     let one_shot = preset_prompt.unwrap_or_else(|| cli.prompt.join(" "));
     if !one_shot.trim().is_empty() {
         messages.push(Message::user(one_shot));
-        let answer = agent::run_turn(&client, &cfg, &tools, &ctx, &mut messages).await?;
+        let answer = eng.run(&cfg, &ctx, &mut messages).await?;
         agent::print_answer(&answer);
         sess.save(&messages).ok();
         return Ok(());
     }
 
     // 대화형 REPL 모드.
-    repl(&client, &cfg, &tools, &ctx, &mut messages, &sess).await
+    repl(&eng, &cfg, &ctx, &mut messages, &sess).await
+}
+
+/// 백엔드에 맞는 엔진을 구성한다.
+fn build_engine(backend: engine::Backend, cfg: &Config) -> Engine {
+    match backend {
+        engine::Backend::Api => {
+            let client =
+                LlmClient::new(cfg.base_url.clone(), cfg.api_key.clone(), cfg.model.clone());
+            let mut tools = default_tools();
+            // 설정된 MCP 서버에 연결해 외부 도구를 등록한다(실패해도 계속 진행).
+            for srv in &cfg.mcp_servers {
+                match mcp::McpClient::connect(&srv.name, &srv.command, &srv.args, &srv.env) {
+                    Ok(c) => {
+                        let n = c.tools.len();
+                        tools.extend(tools::mcp::tools_from_client(std::sync::Arc::new(c)));
+                        ui::info(&format!("MCP '{}' 연결됨 — 도구 {n}개", srv.name));
+                    }
+                    Err(e) => ui::error(&format!("MCP '{}' 연결 실패: {e:#}", srv.name)),
+                }
+            }
+            Engine::Api { client, tools }
+        }
+        engine::Backend::Claude => Engine::Cli(cli_backend::CliKind::Claude),
+        engine::Backend::Codex => Engine::Cli(cli_backend::CliKind::Codex),
+    }
 }
 
 /// 대화형 모드.
 async fn repl(
-    client: &LlmClient,
+    eng: &Engine,
     cfg: &Config,
-    tools: &[Box<dyn tools::Tool>],
     ctx: &ToolContext,
     messages: &mut Vec<Message>,
     sess: &session::Session,
 ) -> Result<()> {
-    ui::banner(&cfg.model);
+    ui::banner(&eng.label(cfg));
 
     loop {
         print!("{}", ui::prompt());
@@ -315,7 +321,7 @@ async fn repl(
         }
 
         messages.push(Message::user(input.to_string()));
-        match agent::run_turn(client, cfg, tools, ctx, messages).await {
+        match eng.run(cfg, ctx, messages).await {
             Ok(answer) => agent::print_answer(&answer),
             Err(e) => ui::error(&format!("{e:#}")),
         }
@@ -348,6 +354,11 @@ fn cmd_config(cfg: &Config) -> Result<()> {
     }
     println!("현재 설정:");
     println!("  설정 파일 : {}", path.display());
+    let resolved = match engine::resolve(cfg) {
+        Ok(b) => format!("{b:?}"),
+        Err(_) => "없음(키도 CLI도 미발견)".to_string(),
+    };
+    println!("  backend   : {} → 사용: {resolved}", cfg.backend);
     println!("  base_url  : {}", cfg.base_url);
     println!("  model     : {}", cfg.model);
     println!(
@@ -480,17 +491,12 @@ fn cmd_cron_remove(id: u64) -> Result<()> {
 }
 
 /// 크론 데몬 — 포그라운드에서 주기적으로 due 작업을 실행한다.
-async fn cmd_cron_run(
-    client: &LlmClient,
-    cfg: &Config,
-    tools: &[Box<dyn tools::Tool>],
-) -> Result<()> {
+async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     let store = cron::CronStore::load()?;
     ui::note(&format!(
         "스케줄러 시작 — 등록된 작업 {}개. 종료는 Ctrl-C.",
         store.tasks.len()
     ));
-    // 무인 실행이므로 도구를 자동 승인한다.
     // 무인 실행이지만 위험 명령은 기본 차단(allow_dangerous=false).
     let ctx = ToolContext {
         auto_approve: true,
@@ -525,7 +531,7 @@ async fn cmd_cron_run(
                 )),
                 Message::user(prompt),
             ];
-            match agent::run_turn(client, cfg, tools, &ctx, &mut messages).await {
+            match eng.run(cfg, &ctx, &mut messages).await {
                 Ok(answer) => agent::print_answer(&answer),
                 Err(e) => ui::error(&format!("작업 #{id} 오류: {e:#}")),
             }
