@@ -10,6 +10,7 @@ mod gateway;
 mod llm;
 mod mcp;
 mod memory;
+mod preset;
 mod session;
 mod skill;
 mod tools;
@@ -66,10 +67,29 @@ enum Commands {
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
     Telegram,
+    /// 자주 쓰는 작업 프리셋을 보거나 실행합니다.
+    Preset {
+        #[command(subcommand)]
+        action: PresetAction,
+    },
     /// 예약 작업(크론)을 관리하고 실행합니다.
     Cron {
         #[command(subcommand)]
         action: CronAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum PresetAction {
+    /// 사용 가능한 프리셋 목록을 보여줍니다.
+    List,
+    /// 프리셋을 실행합니다. 예: wonjang preset run 다운로드정리
+    Run {
+        /// 프리셋 이름 또는 별칭
+        name: String,
+        /// 추가 지시(선택)
+        #[arg(trailing_var_arg = true)]
+        extra: Vec<String>,
     },
 }
 
@@ -116,6 +136,18 @@ async fn run() -> Result<()> {
         Some(Commands::Skills) => return cmd_skills(),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
+        Some(Commands::Preset { action }) => match action {
+            PresetAction::List => return cmd_preset_list(),
+            PresetAction::Run { name, .. } => {
+                // 존재 검증을 API 키 검사보다 먼저(오타 시 명확한 안내).
+                if preset::find(name).is_none() {
+                    ui::error(&format!(
+                        "'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang preset list"
+                    ));
+                    std::process::exit(1);
+                }
+            } // 유효하면 LLM 경로에서 실행.
+        },
         Some(Commands::Cron { action }) => match action {
             CronAction::Add { schedule, prompt } => return cmd_cron_add(schedule, prompt),
             CronAction::List => return cmd_cron_list(),
@@ -189,8 +221,32 @@ async fn run() -> Result<()> {
         )));
     }
 
-    // 단발 실행 모드.
-    let one_shot = cli.prompt.join(" ");
+    // 프리셋 실행(단발 모드로 처리).
+    let preset_prompt = if let Some(Commands::Preset {
+        action: PresetAction::Run { name, extra },
+    }) = &cli.command
+    {
+        match preset::find(name) {
+            Some(p) => {
+                ui::note(&format!("프리셋 실행: {} — {}", p.name, p.description));
+                let mut prompt = p.prompt;
+                if !extra.is_empty() {
+                    prompt.push_str("\n\n추가 지시: ");
+                    prompt.push_str(&extra.join(" "));
+                }
+                Some(prompt)
+            }
+            None => {
+                ui::error(&format!("'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang preset list"));
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
+    // 단발 실행 모드(직접 입력 또는 프리셋).
+    let one_shot = preset_prompt.unwrap_or_else(|| cli.prompt.join(" "));
     if !one_shot.trim().is_empty() {
         messages.push(Message::user(one_shot));
         let answer = agent::run_turn(&client, &cfg, &tools, &ctx, &mut messages).await?;
@@ -320,6 +376,27 @@ fn cmd_sessions() -> Result<()> {
     }
     println!();
     ui::info("가장 최근 세션을 이어가려면: wonjang --continue");
+    Ok(())
+}
+
+fn cmd_preset_list() -> Result<()> {
+    let presets = preset::load_all();
+    println!("사용 가능한 프리셋({}개):\n", presets.len());
+    for p in &presets {
+        let alias = if p.aliases.is_empty() {
+            String::new()
+        } else {
+            format!("  (별칭: {})", p.aliases.join(", "))
+        };
+        println!("  • {}{}", p.name, alias);
+        ui::info(&format!("     {}", p.description));
+    }
+    println!();
+    ui::info("실행: wonjang preset run <이름> [추가 지시]");
+    ui::info(&format!(
+        "나만의 프리셋 추가: {}",
+        preset::user_presets_path()?.display()
+    ));
     Ok(())
 }
 
