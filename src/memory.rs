@@ -26,6 +26,7 @@ impl Memory {
     }
 
     /// 임의 경로로 메모리 저장소를 연다(테스트/고급 용도).
+    #[allow(dead_code)]
     pub fn with_path(path: PathBuf) -> Self {
         Self { path }
     }

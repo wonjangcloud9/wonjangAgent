@@ -7,6 +7,7 @@ mod agent;
 mod config;
 mod llm;
 mod memory;
+mod session;
 mod tools;
 mod ui;
 
@@ -37,6 +38,10 @@ struct Cli {
     #[arg(short = 'm', long = "model")]
     model: Option<String>,
 
+    /// 가장 최근 대화를 이어서 진행합니다.
+    #[arg(short = 'c', long = "continue")]
+    continue_session: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -47,6 +52,8 @@ enum Commands {
     Config,
     /// 에이전트가 기억하고 있는 사실(영속 메모리)을 보여줍니다.
     Memory,
+    /// 저장된 대화 세션 목록을 보여줍니다.
+    Sessions,
 }
 
 #[tokio::main]
@@ -68,6 +75,7 @@ async fn run() -> Result<()> {
     match cli.command {
         Some(Commands::Config) => return cmd_config(&cfg),
         Some(Commands::Memory) => return cmd_memory(),
+        Some(Commands::Sessions) => return cmd_sessions(),
         None => {}
     }
 
@@ -89,20 +97,34 @@ async fn run() -> Result<()> {
         auto_approve: cli.yes,
     };
 
-    // 영속 메모리를 로드해 시스템 프롬프트에 주입(이전 세션 맥락 유지).
-    let mem = memory::Memory::load()?;
-    let mut messages = vec![Message::system(agent::system_prompt(mem.prompt_block()))];
+    // 세션: 이어가기(--continue) 또는 새 세션.
+    let (sess, mut messages) = if cli.continue_session {
+        let (s, msgs) = session::Session::latest_or_new()?;
+        if !msgs.is_empty() {
+            ui::info(&format!("이전 대화를 이어갑니다(메시지 {}개).", msgs.len()));
+        }
+        (s, msgs)
+    } else {
+        (session::Session::new()?, Vec::new())
+    };
+
+    // 새 세션이면 영속 메모리를 시스템 프롬프트에 주입(이전 세션 맥락 유지).
+    if messages.is_empty() {
+        let mem = memory::Memory::load()?;
+        messages.push(Message::system(agent::system_prompt(mem.prompt_block())));
+    }
 
     // 단발 실행 모드.
     let one_shot = cli.prompt.join(" ");
     if !one_shot.trim().is_empty() {
         messages.push(Message::user(one_shot));
         agent::run_turn(&client, &cfg, &tools, &ctx, &mut messages).await?;
+        sess.save(&messages).ok();
         return Ok(());
     }
 
     // 대화형 REPL 모드.
-    repl(&client, &cfg, &tools, &ctx, &mut messages).await
+    repl(&client, &cfg, &tools, &ctx, &mut messages, &sess).await
 }
 
 /// 대화형 모드.
@@ -112,6 +134,7 @@ async fn repl(
     tools: &[Box<dyn tools::Tool>],
     ctx: &ToolContext,
     messages: &mut Vec<Message>,
+    sess: &session::Session,
 ) -> Result<()> {
     ui::banner(&cfg.model);
 
@@ -144,6 +167,7 @@ async fn repl(
             }
             "/reset" | "/초기화" => {
                 messages.truncate(1); // 시스템 프롬프트만 남김.
+                sess.save(messages).ok();
                 ui::info("대화 기록을 초기화했습니다.");
                 continue;
             }
@@ -154,6 +178,8 @@ async fn repl(
         if let Err(e) = agent::run_turn(client, cfg, tools, ctx, messages).await {
             ui::error(&format!("{e:#}"));
         }
+        // 매 턴 후 세션을 저장(중간에 종료해도 이어가기 가능).
+        sess.save(messages).ok();
     }
     Ok(())
 }
@@ -164,6 +190,7 @@ fn print_help() {
          /help     이 도움말\n  \
          /reset    대화 기록 초기화\n  \
          /exit     종료\n\n\
+         대화는 자동 저장됩니다. 다음에 `wonjang --continue`로 이어갈 수 있어요.\n\
          그 외에는 무엇이든 한국어로 요청하세요. 예) '이 폴더 파일 정리해줘', \
          'git 상태 알려줘', 'README 초안 작성해줘'",
     );
@@ -189,6 +216,23 @@ fn cmd_config(cfg: &Config) -> Result<()> {
     );
     println!("  max_steps : {}", cfg.max_steps);
     ui::info("\nAPI 키는 보안을 위해 파일에 저장하지 않습니다. 환경 변수를 사용하세요.");
+    Ok(())
+}
+
+fn cmd_sessions() -> Result<()> {
+    let items = session::list()?;
+    if items.is_empty() {
+        ui::info("저장된 세션이 없습니다. 대화를 시작하면 자동으로 저장됩니다.");
+        return Ok(());
+    }
+    println!("저장된 세션(최신순):\n");
+    for (i, (path, preview, count)) in items.iter().enumerate() {
+        let marker = if i == 0 { "→" } else { " " };
+        println!("  {marker} {preview}  ({count}개 메시지)");
+        ui::info(&format!("     {}", path.display()));
+    }
+    println!();
+    ui::info("가장 최근 세션을 이어가려면: wonjang --continue");
     Ok(())
 }
 
