@@ -8,6 +8,7 @@ mod config;
 mod llm;
 mod memory;
 mod session;
+mod skill;
 mod tools;
 mod ui;
 
@@ -54,6 +55,8 @@ enum Commands {
     Memory,
     /// 저장된 대화 세션 목록을 보여줍니다.
     Sessions,
+    /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
+    Skills,
 }
 
 #[tokio::main]
@@ -76,6 +79,7 @@ async fn run() -> Result<()> {
         Some(Commands::Config) => return cmd_config(&cfg),
         Some(Commands::Memory) => return cmd_memory(),
         Some(Commands::Sessions) => return cmd_sessions(),
+        Some(Commands::Skills) => return cmd_skills(),
         None => {}
     }
 
@@ -108,10 +112,14 @@ async fn run() -> Result<()> {
         (session::Session::new()?, Vec::new())
     };
 
-    // 새 세션이면 영속 메모리를 시스템 프롬프트에 주입(이전 세션 맥락 유지).
+    // 새 세션이면 영속 메모리 + 보유 스킬 목록을 시스템 프롬프트에 주입.
     if messages.is_empty() {
         let mem = memory::Memory::load()?;
-        messages.push(Message::system(agent::system_prompt(mem.prompt_block())));
+        let skills = skill::SkillStore::load()?;
+        messages.push(Message::system(agent::system_prompt(
+            mem.prompt_block(),
+            skills.prompt_block(),
+        )));
     }
 
     // 단발 실행 모드.
@@ -233,6 +241,21 @@ fn cmd_sessions() -> Result<()> {
     }
     println!();
     ui::info("가장 최근 세션을 이어가려면: wonjang --continue");
+    Ok(())
+}
+
+fn cmd_skills() -> Result<()> {
+    let store = skill::SkillStore::load()?;
+    let skills = store.list()?;
+    println!("  스킬 폴더: {}", store.dir().display());
+    if skills.is_empty() {
+        ui::info("아직 익힌 스킬이 없습니다. 까다로운 작업을 함께 해결하면 쌓입니다.");
+        return Ok(());
+    }
+    println!("\n익힌 스킬 {}개:\n", skills.len());
+    for s in &skills {
+        println!("  • {}  — {}", s.name, s.description);
+    }
     Ok(())
 }
 

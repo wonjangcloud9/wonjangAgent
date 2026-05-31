@@ -6,6 +6,7 @@
 pub mod fs;
 pub mod memory;
 pub mod shell;
+pub mod skill;
 
 use serde_json::Value;
 
@@ -40,6 +41,9 @@ pub fn default_tools() -> Vec<Box<dyn Tool>> {
         Box::new(fs::ListDirTool),
         Box::new(memory::RememberTool),
         Box::new(memory::RecallTool),
+        Box::new(skill::SaveSkillTool),
+        Box::new(skill::ListSkillsTool),
+        Box::new(skill::ReadSkillTool),
     ]
 }
 

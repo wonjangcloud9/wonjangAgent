@@ -12,8 +12,10 @@ use anyhow::Result;
 use owo_colors::OwoColorize;
 use serde_json::Value;
 
-/// 한국어 시스템 프롬프트. `memory_block`이 있으면 학습된 사실을 주입한다.
-pub fn system_prompt(memory_block: Option<String>) -> String {
+/// 한국어 시스템 프롬프트.
+///
+/// `memory_block`은 학습된 사실, `skills_block`은 보유 스킬 목록을 주입한다.
+pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>) -> String {
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "(알 수 없음)".to_string());
@@ -28,12 +30,14 @@ pub fn system_prompt(memory_block: Option<String>) -> String {
          - 파괴적이거나 되돌리기 어려운 작업(삭제, 덮어쓰기, 외부 전송)은 먼저 사용자에게 \
          이유와 함께 알리고 신중히 진행하세요.\n\
          - 사용자/환경에 대해 앞으로도 유용할 사실을 알게 되면 remember 도구로 기억하세요.\n\
+         - 까다로운 작업을 해결한 뒤 재사용할 만한 절차는 save_skill로 저장하고, 비슷한 \
+         작업 전에는 관련 스킬을 read_skill로 펼쳐 참고하세요.\n\
          - 작업을 마치면 무엇을 했고 결과가 어떤지 한국어로 요약합니다.\n\n\
          실행 환경:\n\
          - 운영체제: {os}\n\
          - 현재 작업 디렉터리: {cwd}\n"
     );
-    if let Some(block) = memory_block {
+    for block in [memory_block, skills_block].into_iter().flatten() {
         prompt.push('\n');
         prompt.push_str(&block);
         prompt.push('\n');
