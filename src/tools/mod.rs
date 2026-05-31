@@ -9,6 +9,7 @@ pub mod fs;
 pub mod mcp;
 pub mod memory;
 pub mod notes;
+pub mod notion;
 pub mod reminder;
 pub mod shell;
 pub mod skill;
@@ -70,6 +71,8 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(clipboard::WriteClipboardTool),
         Box::new(dday::AddDdayTool),
         Box::new(dday::ListDdaysTool),
+        Box::new(notion::NotionSearchTool),
+        Box::new(notion::NotionAppendTool),
     ]
 }
 

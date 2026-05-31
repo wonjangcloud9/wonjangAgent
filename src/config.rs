@@ -55,6 +55,10 @@ pub struct Config {
     #[serde(default)]
     pub discord_webhook: String,
 
+    /// 노션 통합 토큰(비밀값 — 파일에 저장하지 않고 환경 변수로만 받음).
+    #[serde(default)]
+    pub notion_token: String,
+
     /// 연결할 MCP 서버 목록(외부 도구).
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
@@ -94,6 +98,7 @@ impl Default for Config {
             backend: default_backend(),
             obsidian_vault: String::new(),
             discord_webhook: String::new(),
+            notion_token: String::new(),
             mcp_servers: Vec::new(),
             telegram_token: String::new(),
             telegram_allowed_ids: Vec::new(),
@@ -145,6 +150,11 @@ impl Config {
                 cfg.discord_webhook = v;
             }
         }
+        if let Ok(v) = std::env::var("WONJANG_NOTION_TOKEN") {
+            if !v.is_empty() {
+                cfg.notion_token = v;
+            }
+        }
         // API 키: 전용 변수 우선, 없으면 흔한 변수로 폴백.
         for key in ["WONJANG_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"] {
             if let Ok(v) = std::env::var(key) {
@@ -176,6 +186,7 @@ impl Config {
         let mut to_save = self.clone();
         to_save.api_key = String::new(); // 보안: 키는 파일에 남기지 않는다.
         to_save.telegram_token = String::new(); // 보안: 토큰도 파일에 남기지 않는다.
+        to_save.notion_token = String::new(); // 보안: 노션 토큰도 파일에 남기지 않는다.
         let text = toml::to_string_pretty(&to_save)?;
         std::fs::write(&path, text)?;
         Ok(path)

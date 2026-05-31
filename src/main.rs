@@ -15,6 +15,7 @@ mod llm;
 mod mcp;
 mod memory;
 mod notes;
+mod notion;
 mod preset;
 mod push;
 mod reminders;
@@ -101,6 +102,11 @@ enum Commands {
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
+    /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
+    Notion {
+        #[command(subcommand)]
+        action: NotionAction,
+    },
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
@@ -128,6 +134,22 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum NotionAction {
+    /// 노션 검색. 예: wonjang notion search "회의록"
+    Search {
+        /// 검색어
+        query: String,
+    },
+    /// 페이지에 기록. 예: wonjang notion append <page_id> "오늘 메모"
+    Append {
+        /// 대상 페이지 id
+        page_id: String,
+        /// 덧붙일 텍스트
+        text: String,
     },
 }
 
@@ -239,6 +261,7 @@ async fn run() -> Result<()> {
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Dday { action }) => return cmd_dday(action),
         Some(Commands::Status) => return cmd_status(),
+        Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
@@ -483,6 +506,14 @@ fn cmd_config(cfg: &Config) -> Result<()> {
             "(미설정)"
         } else {
             &cfg.obsidian_vault
+        }
+    );
+    println!(
+        "  노션      : {}",
+        if cfg.notion_token.is_empty() {
+            "(토큰 미설정)"
+        } else {
+            "(토큰 설정됨)"
         }
     );
     println!(
@@ -782,6 +813,39 @@ fn cmd_status() -> Result<()> {
     }
 
     println!();
+    Ok(())
+}
+
+fn cmd_notion(cfg: &Config, action: &NotionAction) -> Result<()> {
+    let token = cfg.notion_token.trim();
+    if token.is_empty() {
+        ui::error("노션 토큰이 없습니다.");
+        ui::info(
+            "환경 변수 WONJANG_NOTION_TOKEN 에 통합 토큰을 설정하고, 대상 페이지/DB의 \
+             연결(Connections)에 그 통합을 추가하세요. (notion.so/my-integrations)",
+        );
+        std::process::exit(1);
+    }
+    let token = token.to_string();
+    match action {
+        NotionAction::Search { query } => {
+            let q = query.clone();
+            let hits = util::run_async(async move { notion::search(&token, &q, 10).await })?;
+            if hits.is_empty() {
+                ui::info("검색 결과가 없습니다(통합이 해당 페이지에 연결됐는지 확인하세요).");
+            } else {
+                for h in &hits {
+                    println!("[{}] {}", h.kind, h.title);
+                    ui::info(&format!("   id: {}", h.id));
+                }
+            }
+        }
+        NotionAction::Append { page_id, text } => {
+            let (p, t) = (page_id.clone(), text.clone());
+            util::run_async(async move { notion::append_paragraph(&token, &p, &t).await })?;
+            ui::note("노션 페이지에 기록했습니다.");
+        }
+    }
     Ok(())
 }
 
