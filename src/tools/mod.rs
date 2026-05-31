@@ -7,6 +7,7 @@ pub mod fs;
 pub mod memory;
 pub mod shell;
 pub mod skill;
+pub mod subagent;
 pub mod web;
 
 use serde_json::Value;
@@ -33,8 +34,8 @@ pub trait Tool: Send + Sync {
     fn execute(&self, args: &Value, ctx: &ToolContext) -> anyhow::Result<String>;
 }
 
-/// 기본 도구 모음을 반환한다.
-pub fn default_tools() -> Vec<Box<dyn Tool>> {
+/// 서브에이전트가 쓰는 도구 모음(spawn 계열 제외 → 무한 재귀 방지).
+pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(shell::ShellTool),
         Box::new(fs::ReadFileTool),
@@ -48,6 +49,36 @@ pub fn default_tools() -> Vec<Box<dyn Tool>> {
         Box::new(web::WebSearchTool),
         Box::new(web::WebFetchTool),
     ]
+}
+
+/// 기본 도구 모음(서브에이전트 도구 + spawn 계열).
+pub fn default_tools() -> Vec<Box<dyn Tool>> {
+    let mut tools = subagent_tools();
+    tools.push(Box::new(subagent::SpawnSubagentTool));
+    tools.push(Box::new(subagent::SpawnSubagentsTool));
+    tools
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_has_spawn_but_subagent_does_not() {
+        let default_names: Vec<&str> = default_tools().iter().map(|t| t.name()).collect();
+        let sub_names: Vec<&str> = subagent_tools().iter().map(|t| t.name()).collect();
+
+        // 기본 도구에는 spawn 계열이 있다.
+        assert!(default_names.contains(&"spawn_subagent"));
+        assert!(default_names.contains(&"spawn_subagents"));
+
+        // 서브에이전트 도구에는 spawn 계열이 없어야 한다(무한 재귀 방지).
+        assert!(!sub_names.contains(&"spawn_subagent"));
+        assert!(!sub_names.contains(&"spawn_subagents"));
+
+        // 기본 = 서브에이전트 + spawn 2종.
+        assert_eq!(default_names.len(), sub_names.len() + 2);
+    }
 }
 
 /// 도구 목록을 OpenAI 호환 `tools` 배열(JSON)로 직렬화한다.

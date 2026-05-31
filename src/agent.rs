@@ -48,14 +48,15 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
 /// 한 번의 사용자 요청을 처리하는 에이전트 루프.
 ///
 /// `messages`는 누적 대화 기록(REPL에서 재사용). 함수가 끝나면 모델의 최종
-/// 답변까지 포함된 상태가 된다.
+/// 답변까지 포함된 상태가 된다. 최종 답변 텍스트를 반환하며(없으면 None),
+/// **출력은 호출자가 담당**한다(서브에이전트는 출력 대신 결과를 회수).
 pub async fn run_turn(
     client: &LlmClient,
     cfg: &Config,
     tools: &[Box<dyn Tool>],
     ctx: &ToolContext,
     messages: &mut Vec<Message>,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let tools_spec = tools_json(tools);
 
     for _step in 0..cfg.max_steps {
@@ -93,18 +94,23 @@ pub async fn run_turn(
         }
 
         // 도구 호출이 없으면 최종 답변.
-        if let Some(content) = &reply.content {
-            println!("\n{} {}\n", ui::agent_label(), content);
-        }
+        let answer = reply.content.clone();
         messages.push(reply);
-        return Ok(());
+        return Ok(answer);
     }
 
     ui::note(&format!(
         "최대 단계({})에 도달해 멈췄습니다. 작업이 복잡하면 더 작게 나눠 다시 요청해 주세요.",
         cfg.max_steps
     ));
-    Ok(())
+    Ok(None)
+}
+
+/// 최종 답변을 원장 라벨과 함께 출력하는 헬퍼(대화형/단발/크론 공용).
+pub fn print_answer(answer: &Option<String>) {
+    if let Some(content) = answer {
+        println!("\n{} {}\n", ui::agent_label(), content);
+    }
 }
 
 /// 이름으로 도구를 찾아 실행한다.

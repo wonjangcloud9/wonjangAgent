@@ -12,6 +12,7 @@ mod session;
 mod skill;
 mod tools;
 mod ui;
+mod util;
 mod web;
 
 use anyhow::Result;
@@ -167,7 +168,8 @@ async fn run() -> Result<()> {
     let one_shot = cli.prompt.join(" ");
     if !one_shot.trim().is_empty() {
         messages.push(Message::user(one_shot));
-        agent::run_turn(&client, &cfg, &tools, &ctx, &mut messages).await?;
+        let answer = agent::run_turn(&client, &cfg, &tools, &ctx, &mut messages).await?;
+        agent::print_answer(&answer);
         sess.save(&messages).ok();
         return Ok(());
     }
@@ -224,8 +226,9 @@ async fn repl(
         }
 
         messages.push(Message::user(input.to_string()));
-        if let Err(e) = agent::run_turn(client, cfg, tools, ctx, messages).await {
-            ui::error(&format!("{e:#}"));
+        match agent::run_turn(client, cfg, tools, ctx, messages).await {
+            Ok(answer) => agent::print_answer(&answer),
+            Err(e) => ui::error(&format!("{e:#}")),
         }
         // 매 턴 후 세션을 저장(중간에 종료해도 이어가기 가능).
         sess.save(messages).ok();
@@ -359,8 +362,9 @@ async fn cmd_cron_run(
                 Message::system(agent::system_prompt(mem.prompt_block(), skills.prompt_block())),
                 Message::user(prompt),
             ];
-            if let Err(e) = agent::run_turn(client, cfg, tools, &ctx, &mut messages).await {
-                ui::error(&format!("작업 #{id} 오류: {e:#}"));
+            match agent::run_turn(client, cfg, tools, &ctx, &mut messages).await {
+                Ok(answer) => agent::print_answer(&answer),
+                Err(e) => ui::error(&format!("작업 #{id} 오류: {e:#}")),
             }
 
             // 실행 시각 기록.

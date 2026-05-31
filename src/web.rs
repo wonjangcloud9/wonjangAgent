@@ -6,26 +6,8 @@
 //! 검색은 별도 API 키 없이 DuckDuckGo HTML 엔드포인트를 사용한다(베스트 에포트).
 
 use anyhow::{Context, Result};
-use std::future::Future;
 
 const UA: &str = "Mozilla/5.0 (compatible; wonjang-agent/0.1; +https://github.com/wonjangcloud9/wonjangAgent)";
-
-/// 비동기 작업을 동기 컨텍스트에서 실행한다(전용 스레드 + current-thread 런타임).
-pub fn run_async<T, F>(fut: F) -> Result<T>
-where
-    F: Future<Output = Result<T>> + Send + 'static,
-    T: Send + 'static,
-{
-    std::thread::spawn(move || -> Result<T> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .context("런타임 생성 실패")?;
-        rt.block_on(fut)
-    })
-    .join()
-    .map_err(|_| anyhow::anyhow!("웹 작업 스레드가 패닉했습니다"))?
-}
 
 fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()

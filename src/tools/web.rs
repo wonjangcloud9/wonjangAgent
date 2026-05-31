@@ -41,7 +41,7 @@ impl Tool for WebSearchTool {
             .unwrap_or(5)
             .clamp(1, 10) as usize;
 
-        let results = web::run_async(async move { web::search(&query, limit).await })?;
+        let results = crate::util::run_async(async move { web::search(&query, limit).await })?;
         if results.is_empty() {
             return Ok("검색 결과를 찾지 못했습니다(검색 엔진이 일시적으로 막혔을 수 있습니다).".to_string());
         }
@@ -85,6 +85,6 @@ impl Tool for WebFetchTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("'url' 인자가 필요합니다"))?
             .to_string();
-        web::run_async(async move { web::fetch(&url, 12000).await })
+        crate::util::run_async(async move { web::fetch(&url, 12000).await })
     }
 }
