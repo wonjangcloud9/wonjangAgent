@@ -59,6 +59,16 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
+      - name: 인증 진단
+        run: |
+          node -v && npm -v
+          if npm whoami; then
+            echo "✅ npm 인증 OK"
+          else
+            echo "⚠️ npm 인증 실패 — NPM_TOKEN이 'Automation' 토큰인지, 그리고 발행 권한이 있는지 확인하세요."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: 태그에서 버전 설정
         working-directory: npm
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
