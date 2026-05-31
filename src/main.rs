@@ -5,6 +5,7 @@
 
 mod agent;
 mod cli_backend;
+mod clipboard;
 mod config;
 mod cron;
 mod engine;

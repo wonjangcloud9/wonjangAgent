@@ -3,6 +3,7 @@
 //! 에이전트가 로컬 환경을 다루기 위한 도구들을 정의한다. 각 도구는 LLM에
 //! 전달할 JSON 스키마(`spec`)와 실제 실행 로직(`execute`)을 제공한다.
 
+pub mod clipboard;
 pub mod fs;
 pub mod mcp;
 pub mod memory;
@@ -64,6 +65,8 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(todo::AddTodoTool),
         Box::new(todo::ListTodosTool),
         Box::new(todo::CompleteTodoTool),
+        Box::new(clipboard::ReadClipboardTool),
+        Box::new(clipboard::WriteClipboardTool),
     ]
 }
 
