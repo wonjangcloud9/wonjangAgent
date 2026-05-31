@@ -4,6 +4,7 @@
 //! 전달할 JSON 스키마(`spec`)와 실제 실행 로직(`execute`)을 제공한다.
 
 pub mod clipboard;
+pub mod dday;
 pub mod fs;
 pub mod mcp;
 pub mod memory;
@@ -67,6 +68,8 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(todo::CompleteTodoTool),
         Box::new(clipboard::ReadClipboardTool),
         Box::new(clipboard::WriteClipboardTool),
+        Box::new(dday::AddDdayTool),
+        Box::new(dday::ListDdaysTool),
     ]
 }
 

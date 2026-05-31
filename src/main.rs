@@ -8,6 +8,7 @@ mod cli_backend;
 mod clipboard;
 mod config;
 mod cron;
+mod ddays;
 mod engine;
 mod gateway;
 mod llm;
@@ -92,6 +93,11 @@ enum Commands {
         #[arg(trailing_var_arg = true)]
         message: Vec<String>,
     },
+    /// 디데이(중요한 날까지 남은 일수)를 보거나 등록/삭제합니다.
+    Dday {
+        #[command(subcommand)]
+        action: Option<DdayAction>,
+    },
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
@@ -119,6 +125,24 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DdayAction {
+    /// 디데이 목록(기본).
+    List,
+    /// 디데이 추가. 예: wonjang dday add "수능" 2026-11-19
+    Add {
+        /// 디데이 이름(여러 단어면 따옴표)
+        label: String,
+        /// 목표 날짜 YYYY-MM-DD
+        date: String,
+    },
+    /// id로 디데이 삭제.
+    Remove {
+        /// 삭제할 디데이 id
+        id: u64,
     },
 }
 
@@ -210,6 +234,7 @@ async fn run() -> Result<()> {
         Some(Commands::Remind { action }) => return cmd_remind(action),
         Some(Commands::Todo { action }) => return cmd_todo(action),
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
+        Some(Commands::Dday { action }) => return cmd_dday(action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
@@ -677,6 +702,43 @@ fn cmd_notify(cfg: &Config, message: &[String]) -> Result<()> {
         "{sent}개 채널로 푸시했습니다 ({})",
         channels.join(", ")
     ));
+    Ok(())
+}
+
+fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
+    let mut store = ddays::DdayStore::load()?;
+    match action {
+        Some(DdayAction::Add { label, date }) => {
+            let id = store.add(label, date)?;
+            let days = ddays::days_until(ddays::parse_date(date)?, ddays::today());
+            ui::note(&format!(
+                "디데이 #{id} 등록: {label} ({date}, {})",
+                ddays::dday_label(days)
+            ));
+        }
+        Some(DdayAction::Remove { id }) => {
+            if store.remove(*id)? {
+                ui::note(&format!("디데이 #{id}을(를) 삭제했습니다."));
+            } else {
+                ui::error(&format!("디데이 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        None | Some(DdayAction::List) => {
+            if store.all().is_empty() {
+                ui::info("등록된 디데이가 없습니다. 추가: wonjang dday add \"수능\" 2026-11-19");
+                return Ok(());
+            }
+            let today = ddays::today();
+            println!("디데이:\n");
+            for d in store.all() {
+                let label = ddays::parse_date(&d.date)
+                    .map(|dt| ddays::dday_label(ddays::days_until(dt, today)))
+                    .unwrap_or_else(|_| "?".to_string());
+                println!("  {:>7}  {}  ({})", label, d.label, d.date);
+            }
+            println!();
+        }
+    }
     Ok(())
 }
 
