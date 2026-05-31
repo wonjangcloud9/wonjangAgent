@@ -11,6 +11,7 @@ pub mod reminder;
 pub mod shell;
 pub mod skill;
 pub mod subagent;
+pub mod todo;
 pub mod web;
 
 use serde_json::Value;
@@ -60,6 +61,9 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(reminder::AddReminderTool),
         Box::new(reminder::ListRemindersTool),
         Box::new(reminder::RemoveReminderTool),
+        Box::new(todo::AddTodoTool),
+        Box::new(todo::ListTodosTool),
+        Box::new(todo::CompleteTodoTool),
     ]
 }
 

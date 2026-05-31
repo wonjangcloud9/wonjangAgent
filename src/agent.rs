@@ -45,7 +45,8 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 약속·알림 등록: `{exe} remind add <분> \"<제목>\"` (절대 시각은 지금부터 몇 분 \
          뒤인지 계산해 분으로 주세요. 현재 시각은 `date`로 확인). 반복은 `--every`로: \
          매일=`--every @daily`, 매시간=`--every @hourly`. add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
-         - 예정된 알림 확인: `{exe} remind`\n"
+         - 예정된 알림 확인: `{exe} remind`\n\
+         - 할 일 추가/확인/완료: `{exe} todo add \"<할 일>\"`, `{exe} todo`, `{exe} todo done <id>`\n"
     );
 
     // 옵시디언 볼트가 설정돼 있으면 안내(양 백엔드 모두 활용).

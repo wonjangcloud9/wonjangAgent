@@ -165,7 +165,8 @@ pub fn builtin() -> Vec<Preset> {
              \n1) 오늘 날짜와 요일('date'로 확인)\
              \n2) 오늘 서울 날씨(web_search로 기온·강수)\
              \n3) 예정된 약속·알림('wonjang remind' 또는 list_reminders로 확인해 가까운 순서로)\
-             \n4) 짧은 응원 한마디.\
+             \n4) 오늘의 할 일('wonjang todo' 또는 list_todos로 확인)\
+             \n5) 짧은 응원 한마디.\
              \n간결한 불릿으로 정리해줘.",
         ),
     ]

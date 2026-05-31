@@ -18,6 +18,7 @@ mod reminders;
 mod safety;
 mod session;
 mod skill;
+mod todos;
 mod tools;
 mod ui;
 mod util;
@@ -78,6 +79,11 @@ enum Commands {
         #[command(subcommand)]
         action: Option<RemindAction>,
     },
+    /// 할 일(체크리스트)을 보거나 추가/완료합니다.
+    Todo {
+        #[command(subcommand)]
+        action: Option<TodoAction>,
+    },
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
@@ -106,6 +112,29 @@ enum PresetAction {
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum TodoAction {
+    /// 할 일 목록(기본).
+    List,
+    /// 할 일 추가. 예: wonjang todo add "장보기"
+    Add {
+        /// 할 일 내용(여러 단어면 따옴표)
+        text: String,
+    },
+    /// id로 할 일 완료 처리.
+    Done {
+        /// 완료할 할 일 id
+        id: u64,
+    },
+    /// id로 할 일 삭제.
+    Remove {
+        /// 삭제할 할 일 id
+        id: u64,
+    },
+    /// 완료된 할 일을 모두 정리.
+    Clear,
 }
 
 #[derive(Subcommand)]
@@ -171,6 +200,7 @@ async fn run() -> Result<()> {
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
         Some(Commands::Remind { action }) => return cmd_remind(action),
+        Some(Commands::Todo { action }) => return cmd_todo(action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
@@ -597,6 +627,52 @@ fn check_due_reminders() {
         store.handle_fired(r.id, now);
     }
     store.save().ok();
+}
+
+fn cmd_todo(action: &Option<TodoAction>) -> Result<()> {
+    let mut store = todos::TodoStore::load()?;
+    match action {
+        Some(TodoAction::Add { text }) => {
+            if text.trim().is_empty() {
+                ui::error("할 일 내용이 필요합니다. 예: wonjang todo add \"장보기\"");
+                std::process::exit(1);
+            }
+            let id = store.add(text)?;
+            ui::note(&format!("할 일 #{id} 추가: {text}"));
+        }
+        Some(TodoAction::Done { id }) => {
+            if store.complete(*id)? {
+                ui::note(&format!("할 일 #{id} 완료! 👍"));
+            } else {
+                ui::error(&format!("할 일 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        Some(TodoAction::Remove { id }) => {
+            if store.remove(*id)? {
+                ui::note(&format!("할 일 #{id}을(를) 삭제했습니다."));
+            } else {
+                ui::error(&format!("할 일 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        Some(TodoAction::Clear) => {
+            let n = store.clear_done()?;
+            ui::note(&format!("완료된 할 일 {n}개를 정리했습니다."));
+        }
+        None | Some(TodoAction::List) => {
+            let pending = store.pending();
+            if pending.is_empty() {
+                ui::info("할 일이 없습니다. 깔끔하네요! 추가: wonjang todo add \"할 일\"");
+                return Ok(());
+            }
+            println!("할 일:\n");
+            for t in pending {
+                println!("  ☐ #{}  {}", t.id, t.text);
+            }
+            println!();
+            ui::info("완료: wonjang todo done <id>   |   정리: wonjang todo clear");
+        }
+    }
+    Ok(())
 }
 
 fn cmd_remind(action: &Option<RemindAction>) -> Result<()> {
