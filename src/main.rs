@@ -11,6 +11,7 @@ mod session;
 mod skill;
 mod tools;
 mod ui;
+mod web;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
