@@ -14,6 +14,7 @@ mod mcp;
 mod memory;
 mod notes;
 mod preset;
+mod push;
 mod reminders;
 mod safety;
 mod session;
@@ -83,6 +84,12 @@ enum Commands {
     Todo {
         #[command(subcommand)]
         action: Option<TodoAction>,
+    },
+    /// 설정된 채널(디스코드/텔레그램)로 메시지를 푸시합니다.
+    Notify {
+        /// 보낼 메시지
+        #[arg(trailing_var_arg = true)]
+        message: Vec<String>,
     },
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
@@ -201,6 +208,7 @@ async fn run() -> Result<()> {
         Some(Commands::Skills) => return cmd_skills(),
         Some(Commands::Remind { action }) => return cmd_remind(action),
         Some(Commands::Todo { action }) => return cmd_todo(action),
+        Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
@@ -430,6 +438,23 @@ fn cmd_config(cfg: &Config) -> Result<()> {
     );
     println!("  max_steps : {}", cfg.max_steps);
     println!("  MCP 서버  : {}개", cfg.mcp_servers.len());
+    let channels = push::configured_channels(cfg);
+    println!(
+        "  푸시 채널  : {}",
+        if channels.is_empty() {
+            "(없음)".to_string()
+        } else {
+            channels.join(", ")
+        }
+    );
+    println!(
+        "  옵시디언  : {}",
+        if cfg.obsidian_vault.is_empty() {
+            "(미설정)"
+        } else {
+            &cfg.obsidian_vault
+        }
+    );
     println!(
         "  텔레그램  : {} / 허용 chat_id {}개",
         if cfg.telegram_token.is_empty() {
@@ -602,15 +627,15 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
             store.save().ok();
         }
 
-        // 약속·알림 확인: 때가 된 알림을 데스크탑 알림 + 로그로 띄운다.
-        check_due_reminders();
+        // 약속·알림 확인: 때가 된 알림을 데스크탑 알림 + 푸시 채널로 띄운다.
+        check_due_reminders(cfg);
 
         tokio::time::sleep(tick).await;
     }
 }
 
-/// 때가 된 약속·알림을 띄우고 처리 표시한다.
-fn check_due_reminders() {
+/// 때가 된 약속·알림을 띄우고 처리 표시한다(데스크탑 + 푸시 채널).
+fn check_due_reminders(cfg: &Config) {
     let mut store = match reminders::ReminderStore::load() {
         Ok(s) => s,
         Err(_) => return,
@@ -623,10 +648,35 @@ fn check_due_reminders() {
     for r in &due {
         ui::note(&format!("🔔 알림: {}", r.title));
         reminders::desktop_notify("원장 알림 🔔", &r.title);
+        // 설정된 채널(디스코드/텔레그램)로도 푸시 → 외출 중에도 받음.
+        push::push_blocking(cfg, &format!("🔔 {}", r.title));
         // 반복이면 다음 회차로 재예약, 아니면 완료 표시.
         store.handle_fired(r.id, now);
     }
     store.save().ok();
+}
+
+fn cmd_notify(cfg: &Config, message: &[String]) -> Result<()> {
+    let msg = message.join(" ");
+    if msg.trim().is_empty() {
+        ui::error("보낼 메시지가 필요합니다. 예: wonjang notify \"집에 가는 중\"");
+        std::process::exit(1);
+    }
+    let channels = push::configured_channels(cfg);
+    if channels.is_empty() {
+        ui::error("설정된 푸시 채널이 없습니다.");
+        ui::info(
+            "디스코드: WONJANG_DISCORD_WEBHOOK 에 웹훅 URL을 설정하거나,\n  \
+             텔레그램: 토큰 + telegram_allowed_ids 를 설정하세요.",
+        );
+        std::process::exit(1);
+    }
+    let sent = push::push_blocking(cfg, &msg);
+    ui::note(&format!(
+        "{sent}개 채널로 푸시했습니다 ({})",
+        channels.join(", ")
+    ));
+    Ok(())
 }
 
 fn cmd_todo(action: &Option<TodoAction>) -> Result<()> {

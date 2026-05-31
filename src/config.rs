@@ -51,6 +51,10 @@ pub struct Config {
     #[serde(default)]
     pub obsidian_vault: String,
 
+    /// 디스코드 웹훅 URL(푸시 알림용). 비어 있으면 비활성.
+    #[serde(default)]
+    pub discord_webhook: String,
+
     /// 연결할 MCP 서버 목록(외부 도구).
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
@@ -89,6 +93,7 @@ impl Default for Config {
             max_steps: default_max_steps(),
             backend: default_backend(),
             obsidian_vault: String::new(),
+            discord_webhook: String::new(),
             mcp_servers: Vec::new(),
             telegram_token: String::new(),
             telegram_allowed_ids: Vec::new(),
@@ -133,6 +138,11 @@ impl Config {
         if let Ok(v) = std::env::var("WONJANG_OBSIDIAN_VAULT") {
             if !v.is_empty() {
                 cfg.obsidian_vault = v;
+            }
+        }
+        if let Ok(v) = std::env::var("WONJANG_DISCORD_WEBHOOK") {
+            if !v.is_empty() {
+                cfg.discord_webhook = v;
             }
         }
         // API 키: 전용 변수 우선, 없으면 흔한 변수로 폴백.

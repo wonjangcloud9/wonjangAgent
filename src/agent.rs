@@ -46,7 +46,8 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          뒤인지 계산해 분으로 주세요. 현재 시각은 `date`로 확인). 반복은 `--every`로: \
          매일=`--every @daily`, 매시간=`--every @hourly`. add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
          - 예정된 알림 확인: `{exe} remind`\n\
-         - 할 일 추가/확인/완료: `{exe} todo add \"<할 일>\"`, `{exe} todo`, `{exe} todo done <id>`\n"
+         - 할 일 추가/확인/완료: `{exe} todo add \"<할 일>\"`, `{exe} todo`, `{exe} todo done <id>`\n\
+         - 휴대폰으로 푸시 알림(디스코드/텔레그램): `{exe} notify \"<메시지>\"`\n"
     );
 
     // 옵시디언 볼트가 설정돼 있으면 안내(양 백엔드 모두 활용).
