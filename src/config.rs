@@ -51,6 +51,10 @@ pub struct Config {
     #[serde(default)]
     pub obsidian_vault: String,
 
+    /// 매일 자동 브리핑 시각("HH:MM", 예 "08:00"). 비면 비활성. 스케줄러가 켜져 있어야 동작.
+    #[serde(default)]
+    pub briefing_time: String,
+
     /// 디스코드 웹훅 URL(푸시 알림용). 비어 있으면 비활성.
     #[serde(default)]
     pub discord_webhook: String,
@@ -101,6 +105,7 @@ impl Default for Config {
             max_steps: default_max_steps(),
             backend: default_backend(),
             obsidian_vault: String::new(),
+            briefing_time: String::new(),
             discord_webhook: String::new(),
             notion_token: String::new(),
             kakao_access_token: String::new(),
@@ -148,6 +153,11 @@ impl Config {
         if let Ok(v) = std::env::var("WONJANG_OBSIDIAN_VAULT") {
             if !v.is_empty() {
                 cfg.obsidian_vault = v;
+            }
+        }
+        if let Ok(v) = std::env::var("WONJANG_BRIEFING_TIME") {
+            if !v.is_empty() {
+                cfg.briefing_time = v;
             }
         }
         if let Ok(v) = std::env::var("WONJANG_DISCORD_WEBHOOK") {

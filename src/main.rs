@@ -4,6 +4,7 @@
 //! 재구성한다: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
 
 mod agent;
+mod briefing;
 mod cli_backend;
 mod clipboard;
 mod config;
@@ -586,6 +587,14 @@ fn cmd_config(cfg: &Config) -> Result<()> {
         }
     );
     println!(
+        "  자동 브리핑: {}",
+        if cfg.briefing_time.is_empty() {
+            "(꺼짐)".to_string()
+        } else {
+            format!("매일 {} (cron run 필요)", cfg.briefing_time)
+        }
+    );
+    println!(
         "  텔레그램  : {} / 허용 chat_id {}개",
         if cfg.telegram_token.is_empty() {
             "토큰 없음"
@@ -711,12 +720,19 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         "스케줄러 시작 — 등록된 작업 {}개. 종료는 Ctrl-C.",
         store.tasks.len()
     ));
+    if !cfg.briefing_time.trim().is_empty() {
+        ui::info(&format!(
+            "매일 {} 자동 브리핑이 켜져 있어요(설정된 채널로 푸시).",
+            cfg.briefing_time
+        ));
+    }
     // 무인 실행이지만 위험 명령은 기본 차단(allow_dangerous=false).
     let ctx = ToolContext {
         auto_approve: true,
         allow_dangerous: false,
     };
     let tick = std::time::Duration::from_secs(30);
+    let mut last_briefed: Option<String> = None;
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
@@ -760,7 +776,53 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         // 약속·알림 확인: 때가 된 알림을 데스크탑 알림 + 푸시 채널로 띄운다.
         check_due_reminders(cfg);
 
+        // 매일 자동 브리핑(설정된 시각이 지났고 오늘 아직 안 보냈으면).
+        maybe_send_briefing(eng, cfg, &ctx, &mut last_briefed).await;
+
         tokio::time::sleep(tick).await;
+    }
+}
+
+/// 설정된 아침 시각이 되면 브리핑을 생성해 푸시 채널로 보낸다.
+async fn maybe_send_briefing(
+    eng: &Engine,
+    cfg: &Config,
+    ctx: &ToolContext,
+    last_briefed: &mut Option<String>,
+) {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    if !briefing::should_brief(
+        &cfg.briefing_time,
+        last_briefed.as_deref(),
+        &today,
+        now.hour(),
+        now.minute(),
+    ) {
+        return;
+    }
+    *last_briefed = Some(today);
+    ui::note("☀️ 아침 브리핑을 생성하는 중…");
+
+    let Some(p) = preset::find("브리핑") else {
+        return;
+    };
+    let mem = memory::Memory::load().ok().and_then(|m| m.prompt_block());
+    let skills = skill::SkillStore::load()
+        .ok()
+        .and_then(|s| s.prompt_block());
+    let mut messages = vec![
+        Message::system(agent::system_prompt(mem, skills)),
+        Message::user(p.prompt),
+    ];
+    match eng.run(cfg, ctx, &mut messages).await {
+        Ok(Some(answer)) => {
+            let sent = push::push(cfg, &answer).await;
+            ui::note(&format!("아침 브리핑 전송({sent}개 채널)."));
+        }
+        Ok(None) => {}
+        Err(e) => ui::error(&format!("브리핑 생성 오류: {e:#}")),
     }
 }
 
