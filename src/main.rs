@@ -11,6 +11,7 @@ mod cron;
 mod ddays;
 mod engine;
 mod expenses;
+mod focus;
 mod gateway;
 mod habits;
 mod llm;
@@ -115,6 +116,15 @@ enum Commands {
     Habit {
         #[command(subcommand)]
         action: Option<HabitAction>,
+    },
+    /// 집중(뽀모도로) 타이머. 예: wonjang 집중 25 코딩 (생략 시 오늘 요약)
+    #[command(alias = "집중")]
+    Focus {
+        /// 집중 시간(분). 생략하면 오늘 집중 요약.
+        minutes: Option<i64>,
+        /// 무엇에 집중하는지(선택)
+        #[arg(trailing_var_arg = true)]
+        label: Vec<String>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -319,6 +329,7 @@ async fn run() -> Result<()> {
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Expense { action }) => return cmd_expense(action),
         Some(Commands::Habit { action }) => return cmd_habit(action),
+        Some(Commands::Focus { minutes, label }) => return cmd_focus(*minutes, label),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -878,6 +889,58 @@ fn cmd_status() -> Result<()> {
     }
 
     println!();
+    Ok(())
+}
+
+fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
+    let today = focus::today_str();
+    match minutes {
+        Some(m) if m > 0 => {
+            let label = label.join(" ");
+            // 세션 기록.
+            let mut store = focus::FocusStore::load()?;
+            store.add(m, &label)?;
+            // 끝나는 시각에 알림 등록(스케줄러가 켜져 있으면 울림).
+            let title = if label.is_empty() {
+                "집중 완료! 🎉".to_string()
+            } else {
+                format!("집중 완료: {label} 🎉")
+            };
+            let mut rem = reminders::ReminderStore::load()?;
+            rem.add(reminders::now_unix() + m * 60, &title, None)?;
+
+            let what = if label.is_empty() {
+                String::new()
+            } else {
+                format!(" ({label})")
+            };
+            ui::note(&format!("⏳ 집중 시작{what} — {}분", m));
+            ui::info(&format!(
+                "{}분 뒤 알림이 울려요(스케줄러: wonjang cron run). 오늘 누적 {}",
+                m,
+                focus::fmt_minutes(store.today_total(&today))
+            ));
+        }
+        Some(_) => {
+            ui::error("집중 시간은 1분 이상이어야 합니다. 예: wonjang 집중 25 코딩");
+        }
+        None => {
+            let store = focus::FocusStore::load()?;
+            let total = store.today_total(&today);
+            let count = store.today_count(&today);
+            if count == 0 {
+                ui::info("오늘 집중 기록이 없어요. 시작: wonjang 집중 25 코딩");
+            } else {
+                println!();
+                println!(
+                    "  🍅 오늘 집중: {} ({}회 세션)",
+                    focus::fmt_minutes(total),
+                    count
+                );
+                println!();
+            }
+        }
+    }
     Ok(())
 }
 

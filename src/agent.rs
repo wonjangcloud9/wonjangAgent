@@ -52,6 +52,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 비서 현황 한눈에: `{exe} 현황`\n\
          - 가계부(지출): `{exe} 지출 add <금액> <분류> [메모]`, `{exe} 지출`(오늘/이번달 합계)\n\
          - 습관 체크: `{exe} 습관 add \"<이름>\"`, `{exe} 습관 done <이름>`, `{exe} 습관`(연속일수)\n\
+         - 집중(뽀모도로): `{exe} 집중 <분> [무엇]`(타이머+알림), `{exe} 집중`(오늘 집중 요약)\n\
          - 노션 검색/기록(설정된 경우): `{exe} notion search \"<검색어>\"`, `{exe} notion append <page_id> \"<내용>\"`\n"
     );
 
