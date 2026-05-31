@@ -25,6 +25,8 @@ pub struct ToolSpec {
 pub struct ToolContext {
     /// true이면 위험 작업(쉘 실행 등)을 묻지 않고 자동 승인한다.
     pub auto_approve: bool,
+    /// true이면 위험 명령(rm -rf 등)도 허용한다. 무인 모드 기본 차단 해제용.
+    pub allow_dangerous: bool,
 }
 
 /// 모든 도구가 구현하는 트레이트.

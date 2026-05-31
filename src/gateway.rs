@@ -80,7 +80,11 @@ pub async fn run_telegram(client: &LlmClient, cfg: &Config, tools: &[Box<dyn Too
         ui::info(&format!("허용된 chat_id: {:?}", cfg.telegram_allowed_ids));
     }
 
-    let ctx = ToolContext { auto_approve: true }; // 원격/무인 실행.
+    // 원격/무인 실행 — 위험 명령은 기본 차단.
+    let ctx = ToolContext {
+        auto_approve: true,
+        allow_dangerous: false,
+    };
     let mut histories: HashMap<i64, Vec<Message>> = HashMap::new();
     let mut offset: i64 = 0;
 

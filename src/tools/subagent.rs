@@ -24,10 +24,18 @@ fn subagent_prompt() -> String {
 }
 
 /// 하위 작업 하나를 실행하고 최종 답변을 반환한다.
-async fn run_subagent(cfg: Config, task: String, auto_approve: bool) -> Result<String> {
+async fn run_subagent(
+    cfg: Config,
+    task: String,
+    auto_approve: bool,
+    allow_dangerous: bool,
+) -> Result<String> {
     let client = LlmClient::new(cfg.base_url.clone(), cfg.api_key.clone(), cfg.model.clone());
     let tools = subagent_tools();
-    let ctx = ToolContext { auto_approve };
+    let ctx = ToolContext {
+        auto_approve,
+        allow_dangerous,
+    };
     let mut messages = vec![
         Message::system(subagent_prompt()),
         Message::user(task),
@@ -67,10 +75,11 @@ impl Tool for SpawnSubagentTool {
             .ok_or_else(|| anyhow::anyhow!("'task' 인자가 필요합니다"))?
             .to_string();
         let auto = ctx.auto_approve;
+        let danger = ctx.allow_dangerous;
         ui::tool_result(&format!("서브에이전트 시작: {}", first_line(&task)));
         crate::util::run_async(async move {
             let cfg = Config::load()?;
-            run_subagent(cfg, task, auto).await
+            run_subagent(cfg, task, auto, danger).await
         })
     }
 }
@@ -114,6 +123,7 @@ impl Tool for SpawnSubagentsTool {
             return Ok("실행할 하위 작업이 없습니다.".to_string());
         }
         let auto = ctx.auto_approve;
+        let danger = ctx.allow_dangerous;
         ui::tool_result(&format!("서브에이전트 {}개 병렬 시작", tasks.len()));
 
         crate::util::run_async(async move {
@@ -122,9 +132,8 @@ impl Tool for SpawnSubagentsTool {
             let mut handles = Vec::new();
             for (i, task) in tasks.into_iter().enumerate() {
                 let cfg = cfg.clone();
-                let auto = auto;
                 handles.push(tokio::spawn(async move {
-                    (i + 1, run_subagent(cfg, task, auto).await)
+                    (i + 1, run_subagent(cfg, task, auto, danger).await)
                 }));
             }
 

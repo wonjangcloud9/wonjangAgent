@@ -11,6 +11,7 @@ mod llm;
 mod mcp;
 mod memory;
 mod preset;
+mod safety;
 mod session;
 mod skill;
 mod tools;
@@ -40,6 +41,10 @@ struct Cli {
     /// 셸 명령 등 작업을 자동 승인(확인 없이 실행).
     #[arg(short = 'y', long = "yes")]
     yes: bool,
+
+    /// 위험 명령(rm -rf, sudo 등)도 허용(무인 모드의 기본 차단 해제).
+    #[arg(long = "allow-dangerous")]
+    allow_dangerous: bool,
 
     /// 사용할 모델을 일시적으로 지정.
     #[arg(short = 'm', long = "model")]
@@ -185,6 +190,7 @@ async fn run() -> Result<()> {
     let tools = tools; // 이후 불변.
     let ctx = ToolContext {
         auto_approve: cli.yes,
+        allow_dangerous: cli.allow_dangerous,
     };
 
     // 크론 데몬(LLM 필요).
@@ -481,7 +487,11 @@ async fn cmd_cron_run(
         store.tasks.len()
     ));
     // 무인 실행이므로 도구를 자동 승인한다.
-    let ctx = ToolContext { auto_approve: true };
+    // 무인 실행이지만 위험 명령은 기본 차단(allow_dangerous=false).
+    let ctx = ToolContext {
+        auto_approve: true,
+        allow_dangerous: false,
+    };
     let tick = std::time::Duration::from_secs(30);
 
     loop {

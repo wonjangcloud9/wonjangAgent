@@ -41,8 +41,32 @@ impl Tool for ShellTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("'command' 인자가 필요합니다"))?;
 
-        if !ctx.auto_approve && !confirm(command)? {
-            return Ok("사용자가 명령 실행을 거부했습니다.".to_string());
+        // 안전장치: 위험 명령은 무인 모드에서 차단, 대화형에서 강한 경고.
+        match crate::safety::classify_danger(command) {
+            Some(reason) => {
+                if ctx.auto_approve {
+                    if !ctx.allow_dangerous {
+                        return Ok(format!(
+                            "⛔ 위험 명령 차단({reason}): {command}\n\
+                             자동 승인 모드에서는 실행하지 않습니다. \
+                             정말 필요하면 사람이 직접 실행하거나 --allow-dangerous 로 명시 허용하세요."
+                        ));
+                    }
+                    println!(
+                        "  {} {} {}",
+                        "⚠️ 위험 명령 자동 실행".bright_red().bold(),
+                        format!("({reason})").red(),
+                        command.bright_white()
+                    );
+                } else if !confirm_dangerous(command, reason)? {
+                    return Ok("사용자가 위험 명령 실행을 거부했습니다.".to_string());
+                }
+            }
+            None => {
+                if !ctx.auto_approve && !confirm(command)? {
+                    return Ok("사용자가 명령 실행을 거부했습니다.".to_string());
+                }
+            }
         }
 
         let output = Command::new("zsh").arg("-lc").arg(command).output()?;
@@ -80,6 +104,27 @@ fn confirm(command: &str) -> Result<bool> {
     Ok(ans == "y" || ans == "yes" || ans == "예")
 }
 
+/// 위험 명령에 대한 강한 경고 + 확인.
+fn confirm_dangerous(command: &str, reason: &str) -> Result<bool> {
+    println!();
+    println!(
+        "  {} {}",
+        "⚠️  위험 명령 감지".bright_red().bold(),
+        format!("— {reason}").red()
+    );
+    print!(
+        "  {} {}\n  {} ",
+        "▶".bright_red().bold(),
+        command.bright_white().bold(),
+        "정말 실행할까요? 위험을 이해했다면 [y] 입력:".bright_red()
+    );
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let ans = input.trim().to_lowercase();
+    Ok(ans == "y" || ans == "yes" || ans == "예")
+}
+
 /// 너무 긴 출력을 잘라 컨텍스트 폭주를 막는다.
 fn truncate(s: &str) -> String {
     const MAX: usize = 8000;
@@ -91,5 +136,47 @@ fn truncate(s: &str) -> String {
             &s[..MAX],
             MAX
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn ctx(auto: bool, danger: bool) -> ToolContext {
+        ToolContext {
+            auto_approve: auto,
+            allow_dangerous: danger,
+        }
+    }
+
+    #[test]
+    fn blocks_dangerous_in_auto_mode() {
+        let out = ShellTool
+            .execute(&json!({ "command": "rm -rf /tmp/no_such_xyz" }), &ctx(true, false))
+            .unwrap();
+        assert!(out.contains("차단"), "차단되어야 함: {out}");
+    }
+
+    #[test]
+    fn runs_safe_in_auto_mode() {
+        let out = ShellTool
+            .execute(&json!({ "command": "echo 안녕하세요" }), &ctx(true, false))
+            .unwrap();
+        assert!(out.contains("안녕하세요"), "출력: {out}");
+    }
+
+    #[test]
+    fn allows_dangerous_when_opted_in() {
+        // killall(위험 분류)이지만 없는 프로세스라 무해 — 차단되지 않고 실행됨.
+        let out = ShellTool
+            .execute(
+                &json!({ "command": "killall definitely_no_such_proc_xyz" }),
+                &ctx(true, true),
+            )
+            .unwrap();
+        assert!(!out.contains("차단"), "허용 시 실행되어야 함: {out}");
+        assert!(out.contains("종료 코드"));
     }
 }
