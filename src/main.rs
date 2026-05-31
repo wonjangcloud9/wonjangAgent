@@ -5,6 +5,7 @@
 
 mod agent;
 mod config;
+mod cron;
 mod llm;
 mod memory;
 mod session;
@@ -58,6 +59,31 @@ enum Commands {
     Sessions,
     /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
     Skills,
+    /// 예약 작업(크론)을 관리하고 실행합니다.
+    Cron {
+        #[command(subcommand)]
+        action: CronAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum CronAction {
+    /// 예약 작업을 추가합니다. 예: wonjang cron add "@daily" "어제 받은 메일 요약해줘"
+    Add {
+        /// 스케줄(@hourly, @daily, @every 30m, 2h 등)
+        schedule: String,
+        /// 실행할 요청
+        prompt: String,
+    },
+    /// 등록된 예약 작업 목록을 보여줍니다.
+    List,
+    /// id로 예약 작업을 삭제합니다.
+    Remove {
+        /// 삭제할 작업 id
+        id: u64,
+    },
+    /// 스케줄러를 실행합니다(포그라운드 데몬). 종료는 Ctrl-C.
+    Run,
 }
 
 #[tokio::main]
@@ -75,12 +101,18 @@ async fn run() -> Result<()> {
         cfg.model = m.clone();
     }
 
-    // 서브커맨드 처리.
-    match cli.command {
+    // LLM이 필요 없는 서브커맨드 처리.
+    match &cli.command {
         Some(Commands::Config) => return cmd_config(&cfg),
         Some(Commands::Memory) => return cmd_memory(),
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
+        Some(Commands::Cron { action }) => match action {
+            CronAction::Add { schedule, prompt } => return cmd_cron_add(schedule, prompt),
+            CronAction::List => return cmd_cron_list(),
+            CronAction::Remove { id } => return cmd_cron_remove(*id),
+            CronAction::Run => {} // 아래에서 클라이언트 구성 후 데몬 실행.
+        },
         None => {}
     }
 
@@ -101,6 +133,14 @@ async fn run() -> Result<()> {
     let ctx = ToolContext {
         auto_approve: cli.yes,
     };
+
+    // 크론 데몬(LLM 필요).
+    if let Some(Commands::Cron {
+        action: CronAction::Run,
+    }) = &cli.command
+    {
+        return cmd_cron_run(&client, &cfg, &tools).await;
+    }
 
     // 세션: 이어가기(--continue) 또는 새 세션.
     let (sess, mut messages) = if cli.continue_session {
@@ -243,6 +283,95 @@ fn cmd_sessions() -> Result<()> {
     println!();
     ui::info("가장 최근 세션을 이어가려면: wonjang --continue");
     Ok(())
+}
+
+fn cmd_cron_add(schedule: &str, prompt: &str) -> Result<()> {
+    let mut store = cron::CronStore::load()?;
+    let id = store.add(schedule, prompt)?;
+    ui::note(&format!("예약 작업 #{id} 등록: [{schedule}] {prompt}"));
+    ui::info("스케줄러를 켜려면: wonjang cron run");
+    Ok(())
+}
+
+fn cmd_cron_list() -> Result<()> {
+    let store = cron::CronStore::load()?;
+    if store.tasks.is_empty() {
+        ui::info("등록된 예약 작업이 없습니다. 예: wonjang cron add \"@daily\" \"할 일 요약해줘\"");
+        return Ok(());
+    }
+    println!("예약 작업 목록:\n");
+    for t in &store.tasks {
+        let state = if t.enabled { "켜짐" } else { "꺼짐" };
+        println!("  #{}  [{}]  ({})", t.id, t.schedule, state);
+        println!("      {}", t.prompt);
+    }
+    println!();
+    ui::info("스케줄러 실행: wonjang cron run   |   삭제: wonjang cron remove <id>");
+    Ok(())
+}
+
+fn cmd_cron_remove(id: u64) -> Result<()> {
+    let mut store = cron::CronStore::load()?;
+    if store.remove(id)? {
+        ui::note(&format!("예약 작업 #{id}을(를) 삭제했습니다."));
+    } else {
+        ui::error(&format!("작업 #{id}을(를) 찾을 수 없습니다."));
+    }
+    Ok(())
+}
+
+/// 크론 데몬 — 포그라운드에서 주기적으로 due 작업을 실행한다.
+async fn cmd_cron_run(
+    client: &LlmClient,
+    cfg: &Config,
+    tools: &[Box<dyn tools::Tool>],
+) -> Result<()> {
+    let store = cron::CronStore::load()?;
+    ui::note(&format!(
+        "스케줄러 시작 — 등록된 작업 {}개. 종료는 Ctrl-C.",
+        store.tasks.len()
+    ));
+    // 무인 실행이므로 도구를 자동 승인한다.
+    let ctx = ToolContext { auto_approve: true };
+    let tick = std::time::Duration::from_secs(30);
+
+    loop {
+        // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
+        let mut store = cron::CronStore::load()?;
+        let now = cron::now_ms();
+        let due_ids: Vec<u64> = store
+            .tasks
+            .iter()
+            .filter(|t| cron::is_due(t, now))
+            .map(|t| t.id)
+            .collect();
+
+        for id in due_ids {
+            let prompt = match store.tasks.iter().find(|t| t.id == id) {
+                Some(t) => t.prompt.clone(),
+                None => continue,
+            };
+            ui::note(&format!("▶ 예약 작업 #{id} 실행: {prompt}"));
+
+            let mem = memory::Memory::load()?;
+            let skills = skill::SkillStore::load()?;
+            let mut messages = vec![
+                Message::system(agent::system_prompt(mem.prompt_block(), skills.prompt_block())),
+                Message::user(prompt),
+            ];
+            if let Err(e) = agent::run_turn(client, cfg, tools, &ctx, &mut messages).await {
+                ui::error(&format!("작업 #{id} 오류: {e:#}"));
+            }
+
+            // 실행 시각 기록.
+            if let Some(t) = store.tasks.iter_mut().find(|t| t.id == id) {
+                t.last_run_ms = Some(cron::now_ms());
+            }
+            store.save().ok();
+        }
+
+        tokio::time::sleep(tick).await;
+    }
 }
 
 fn cmd_skills() -> Result<()> {

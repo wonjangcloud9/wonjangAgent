@@ -23,6 +23,7 @@
 - 📚 **스킬(절차 기억)** — 까다로운 작업을 해결하면 그 방법을 스킬로 저장하고,
   비슷한 일을 만나면 스스로 꺼내 재사용합니다.
 - 💾 **세션 저장/이어가기** — 대화가 자동 저장되어 `--continue`로 언제든 이어집니다.
+- ⏰ **예약 작업(크론)** — "매일", "30분마다" 같은 일정으로 작업을 무인 실행합니다.
 - 🛡 **안전 우선** — 셸 명령은 기본적으로 실행 전 사용자 승인을 요청(`--yes`로 생략).
 - 💬 **대화형 REPL + 단발 실행** 모두 지원.
 
@@ -102,6 +103,22 @@ wonjang sessions      # 저장된 대화 목록(최신순)
 wonjang --continue    # 가장 최근 대화 이어가기
 ```
 
+**예약 작업(크론)**
+
+일정에 맞춰 작업을 무인 실행합니다. 스케줄은 간격 기반입니다 —
+`@minutely` · `@hourly` · `@daily` · `@weekly`, 또는 `@every 30m`, `2h`, `1d` 처럼 지정.
+
+```bash
+wonjang cron add "@daily" "오늘 한 git 커밋들 요약해줘"
+wonjang cron add "@every 30m" "다운로드 폴더를 종류별로 정리해줘"
+wonjang cron list                 # 등록된 작업 목록
+wonjang cron remove 1             # 작업 삭제
+wonjang cron run                  # 스케줄러 실행(포그라운드, Ctrl-C로 종료)
+```
+
+> ⚠️ `cron run`은 무인 실행이라 도구(셸 명령 포함)를 자동 승인합니다. 신뢰할 수
+> 있는 작업만 등록하세요.
+
 **REPL 슬래시 명령**
 
 | 명령 | 설명 |
@@ -147,6 +164,7 @@ src/
 ├── memory.rs     # 영속 메모리(세션 간 사실 유지)
 ├── session.rs    # 세션 저장/이어가기
 ├── skill.rs      # 스킬(절차 기억) 저장소
+├── cron.rs       # 예약 작업 스케줄러
 ├── web.rs        # 웹 검색/가져오기 코어
 ├── ui.rs         # 한국어 우선 터미널 UI
 └── tools/        # 로컬 환경 도구
@@ -166,7 +184,7 @@ src/
 - [x] v0.3 — 세션 저장/이어가기(`--continue`, `wonjang sessions`)
 - [x] v0.4 — 스킬(절차 기억) 저장/재사용(save_skill/list_skills/read_skill, `wonjang skills`)
 - [x] v0.5 — 웹 검색/페이지 가져오기(web_search/web_fetch, API 키 불필요)
-- [ ] 크론 스케줄러(무인 자동화)
+- [x] v0.6 — 예약 작업 스케줄러(`wonjang cron`, 간격 기반 무인 실행)
 - [ ] 서브에이전트, MCP 연동
 - [ ] 메시징 게이트웨이(텔레그램/슬랙 등)
 
