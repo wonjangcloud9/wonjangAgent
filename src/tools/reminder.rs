@@ -25,7 +25,8 @@ impl Tool for AddReminderTool {
                 "properties": {
                     "title": { "type": "string", "description": "알림 내용(예: '치과 예약')" },
                     "in_minutes": { "type": "integer", "description": "지금부터 N분 뒤(상대 시간)" },
-                    "at_unix": { "type": "integer", "description": "알릴 절대 시각(epoch 초)" }
+                    "at_unix": { "type": "integer", "description": "알릴 절대 시각(epoch 초)" },
+                    "repeat_minutes": { "type": "integer", "description": "반복 주기(분). 매일=1440, 매시간=60" }
                 },
                 "required": ["title"]
             }),
@@ -45,11 +46,16 @@ impl Tool for AddReminderTool {
         } else {
             return Err(anyhow!("'in_minutes' 또는 'at_unix' 중 하나가 필요합니다"));
         };
+        let repeat = args
+            .get("repeat_minutes")
+            .and_then(|v| v.as_i64())
+            .map(|m| m * 60);
         let mut store = ReminderStore::load()?;
-        let id = store.add(at, title)?;
+        let id = store.add(at, title, repeat)?;
         Ok(format!(
-            "알림 #{id} 등록: '{title}' ({})",
-            reminders::relative(at, now)
+            "알림 #{id} 등록: '{title}' ({}{})",
+            reminders::relative(at, now),
+            reminders::repeat_label(repeat)
         ))
     }
 }
@@ -80,10 +86,11 @@ impl Tool for ListRemindersTool {
         let mut out = String::new();
         for r in up {
             out.push_str(&format!(
-                "#{}  {} — {}\n",
+                "#{}  {} — {}{}\n",
                 r.id,
                 r.title,
-                reminders::relative(r.at_unix, now)
+                reminders::relative(r.at_unix, now),
+                reminders::repeat_label(r.repeat_secs)
             ));
         }
         Ok(out)

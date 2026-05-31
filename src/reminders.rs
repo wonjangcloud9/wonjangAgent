@@ -19,6 +19,9 @@ pub struct Reminder {
     pub title: String,
     #[serde(default)]
     pub notified: bool,
+    /// 반복 주기(초). 있으면 알린 뒤 다음 회차로 재예약된다.
+    #[serde(default)]
+    pub repeat_secs: Option<i64>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -59,8 +62,8 @@ impl ReminderStore {
         Ok(())
     }
 
-    /// 새 알림을 추가하고 id를 반환한다.
-    pub fn add(&mut self, at_unix: i64, title: &str) -> Result<u64> {
+    /// 새 알림을 추가하고 id를 반환한다(`repeat_secs`가 있으면 반복).
+    pub fn add(&mut self, at_unix: i64, title: &str, repeat_secs: Option<i64>) -> Result<u64> {
         self.next_id += 1;
         let id = self.next_id;
         self.items.push(Reminder {
@@ -68,10 +71,29 @@ impl ReminderStore {
             at_unix,
             title: title.trim().to_string(),
             notified: false,
+            repeat_secs: repeat_secs.filter(|s| *s > 0),
         });
         self.items.sort_by_key(|r| r.at_unix);
         self.save()?;
         Ok(id)
+    }
+
+    /// 알림이 발화된 뒤 처리: 반복이면 다음 회차로 재예약, 아니면 완료 표시.
+    pub fn handle_fired(&mut self, id: u64, now: i64) {
+        if let Some(r) = self.items.iter_mut().find(|r| r.id == id) {
+            match r.repeat_secs {
+                Some(p) if p > 0 => {
+                    let mut next = r.at_unix;
+                    while next <= now {
+                        next += p;
+                    }
+                    r.at_unix = next;
+                    r.notified = false;
+                }
+                _ => r.notified = true,
+            }
+        }
+        self.items.sort_by_key(|r| r.at_unix);
     }
 
     pub fn remove(&mut self, id: u64) -> Result<bool> {
@@ -91,12 +113,6 @@ impl ReminderStore {
             .filter(|r| !r.notified && r.at_unix <= now)
             .cloned()
             .collect()
-    }
-
-    pub fn mark_notified(&mut self, id: u64) {
-        if let Some(r) = self.items.iter_mut().find(|r| r.id == id) {
-            r.notified = true;
-        }
     }
 
     /// 아직 안 지난(예정된) 알림들(시각순).
@@ -120,6 +136,19 @@ pub fn relative(at_unix: i64, now: i64) -> String {
         format!("{}시간 {}분 후", m / 60, m % 60)
     } else {
         format!("{}일 후", m / (60 * 24))
+    }
+}
+
+/// 반복 주기를 사람이 읽는 라벨로(없으면 빈 문자열).
+pub fn repeat_label(repeat_secs: Option<i64>) -> String {
+    match repeat_secs {
+        Some(86400) => " · 매일 반복".to_string(),
+        Some(604800) => " · 매주 반복".to_string(),
+        Some(3600) => " · 매시간 반복".to_string(),
+        Some(s) if s % 86400 == 0 => format!(" · {}일마다 반복", s / 86400),
+        Some(s) if s % 3600 == 0 => format!(" · {}시간마다 반복", s / 3600),
+        Some(s) => format!(" · {}분마다 반복", s / 60),
+        None => String::new(),
     }
 }
 
@@ -153,18 +182,44 @@ mod tests {
             at_unix: 1000,
             title: "치과".into(),
             notified: false,
+            repeat_secs: None,
         });
         s.items.push(Reminder {
             id: 2,
             at_unix: 5000,
             title: "회의".into(),
             notified: false,
+            repeat_secs: None,
         });
         assert_eq!(s.due(2000).len(), 1); // id1만 지남
         assert_eq!(s.due(2000)[0].title, "치과");
-        s.mark_notified(1);
+        s.handle_fired(1, 2000); // 반복 아님 → 완료 표시
         assert_eq!(s.due(2000).len(), 0); // 알림 처리됨
         assert_eq!(s.upcoming(2000).len(), 1); // id2 예정
+    }
+
+    #[test]
+    fn recurring_reschedules_to_future() {
+        let mut s = ReminderStore::default();
+        s.items.push(Reminder {
+            id: 1,
+            at_unix: 1000,
+            title: "약 먹기".into(),
+            notified: false,
+            repeat_secs: Some(86400), // 매일
+        });
+        // 1000에 발화, 지금이 2000이면 다음 회차는 1000+86400.
+        s.handle_fired(1, 2000);
+        let r = &s.items[0];
+        assert_eq!(r.at_unix, 1000 + 86400);
+        assert!(!r.notified); // 반복이므로 완료 표시 안 함
+    }
+
+    #[test]
+    fn repeat_label_format() {
+        assert_eq!(repeat_label(Some(86400)), " · 매일 반복");
+        assert_eq!(repeat_label(Some(3600)), " · 매시간 반복");
+        assert_eq!(repeat_label(None), "");
     }
 
     #[test]

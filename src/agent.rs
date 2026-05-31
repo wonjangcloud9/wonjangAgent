@@ -43,7 +43,8 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 현재 작업 디렉터리: {cwd}\n\n\
          비서 기능(셸로 원장 명령을 직접 쓸 수 있습니다. 실행 파일: {exe}):\n\
          - 약속·알림 등록: `{exe} remind add <분> \"<제목>\"` (절대 시각은 지금부터 몇 분 \
-         뒤인지 계산해 분으로 주세요. 현재 시각은 `date`로 확인). add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
+         뒤인지 계산해 분으로 주세요. 현재 시각은 `date`로 확인). 반복은 `--every`로: \
+         매일=`--every @daily`, 매시간=`--every @hourly`. add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
          - 예정된 알림 확인: `{exe} remind`\n"
     );
 

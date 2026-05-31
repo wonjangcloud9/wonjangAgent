@@ -112,13 +112,15 @@ enum PresetAction {
 enum RemindAction {
     /// 예정된 알림 목록(기본).
     List,
-    /// 알림 추가. 예: wonjang remind add 30 물 마시기
+    /// 알림 추가. 예: wonjang remind add 30 "물 마시기" --every @daily
     Add {
-        /// 지금부터 N분 뒤
+        /// 지금부터 N분 뒤(첫 알림)
         minutes: i64,
-        /// 알림 제목
-        #[arg(trailing_var_arg = true)]
-        title: Vec<String>,
+        /// 알림 제목(여러 단어면 따옴표로 감싸기)
+        title: String,
+        /// 반복 주기(@daily, @weekly, @hourly, 1d, 12h 등)
+        #[arg(long = "every")]
+        every: Option<String>,
     },
     /// id로 알림 삭제.
     Remove {
@@ -591,25 +593,36 @@ fn check_due_reminders() {
     for r in &due {
         ui::note(&format!("🔔 알림: {}", r.title));
         reminders::desktop_notify("원장 알림 🔔", &r.title);
-        store.mark_notified(r.id);
+        // 반복이면 다음 회차로 재예약, 아니면 완료 표시.
+        store.handle_fired(r.id, now);
     }
     store.save().ok();
 }
 
 fn cmd_remind(action: &Option<RemindAction>) -> Result<()> {
     let now = reminders::now_unix();
-    if let Some(RemindAction::Add { minutes, title }) = action {
-        let title = title.join(" ");
+    if let Some(RemindAction::Add {
+        minutes,
+        title,
+        every,
+    }) = action
+    {
         if title.trim().is_empty() {
-            ui::error("알림 제목이 필요합니다. 예: wonjang remind add 30 물 마시기");
+            ui::error("알림 제목이 필요합니다. 예: wonjang remind add 30 \"물 마시기\"");
             std::process::exit(1);
         }
+        // 반복 주기 파싱(크론의 스케줄 파서 재사용).
+        let repeat = match every {
+            Some(e) => Some(cron::parse_schedule(e)?.interval.as_secs() as i64),
+            None => None,
+        };
         let mut store = reminders::ReminderStore::load()?;
         let at = now + minutes * 60;
-        let id = store.add(at, &title)?;
+        let id = store.add(at, title, repeat)?;
         ui::note(&format!(
-            "알림 #{id} 등록: '{title}' ({})",
-            reminders::relative(at, now)
+            "알림 #{id} 등록: '{title}' ({}{})",
+            reminders::relative(at, now),
+            reminders::repeat_label(repeat)
         ));
         ui::info("때가 되면 알리려면 스케줄러를 켜 두세요: wonjang cron run");
         return Ok(());
@@ -636,10 +649,11 @@ fn cmd_remind(action: &Option<RemindAction>) -> Result<()> {
     println!("예정된 약속·알림:\n");
     for r in up {
         println!(
-            "  #{}  {}  ({})",
+            "  #{}  {}  ({}{})",
             r.id,
             r.title,
-            reminders::relative(r.at_unix, now)
+            reminders::relative(r.at_unix, now),
+            reminders::repeat_label(r.repeat_secs)
         );
     }
     println!();
