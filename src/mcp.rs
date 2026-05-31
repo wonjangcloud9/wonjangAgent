@@ -69,8 +69,7 @@ impl McpClient {
                 "clientInfo": { "name": "wonjang", "version": env!("CARGO_PKG_VERSION") }
             }
         });
-        send_recv(&mut stdin, &mut reader, &init, 1)
-            .context("MCP initialize 실패")?;
+        send_recv(&mut stdin, &mut reader, &init, 1).context("MCP initialize 실패")?;
 
         // 2) initialized 알림(응답 없음).
         write_msg(
@@ -80,8 +79,7 @@ impl McpClient {
 
         // 3) tools/list.
         let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} });
-        let result = send_recv(&mut stdin, &mut reader, &list, 2)
-            .context("MCP tools/list 실패")?;
+        let result = send_recv(&mut stdin, &mut reader, &list, 2).context("MCP tools/list 실패")?;
         let tools = parse_tools(&result);
 
         // 4) 워커 스레드: 이후 tools/call 요청을 순차 처리.

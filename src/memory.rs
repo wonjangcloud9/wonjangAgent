@@ -48,7 +48,10 @@ impl Memory {
         }
         let existing = self.read();
         // 동일 내용이 이미 있으면 추가하지 않는다.
-        if existing.lines().any(|l| l.trim_start_matches("- ").trim() == fact) {
+        if existing
+            .lines()
+            .any(|l| l.trim_start_matches("- ").trim() == fact)
+        {
             return Ok(());
         }
         let mut content = existing;

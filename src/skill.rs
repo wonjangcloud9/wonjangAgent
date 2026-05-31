@@ -60,8 +60,7 @@ impl SkillStore {
     /// 이름으로 스킬 본문 전체를 읽는다.
     pub fn read(&self, name: &str) -> Result<String> {
         let path = self.path_for(name);
-        std::fs::read_to_string(&path)
-            .with_context(|| format!("'{name}' 스킬을 찾을 수 없습니다"))
+        std::fs::read_to_string(&path).with_context(|| format!("'{name}' 스킬을 찾을 수 없습니다"))
     }
 
     /// 저장된 스킬 메타데이터 목록(이름순).

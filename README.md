@@ -1,5 +1,8 @@
 # 원장 에이전트 (wonjangAgent)
 
+[![CI](https://github.com/wonjangcloud9/wonjangAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/wonjangcloud9/wonjangAgent/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/wonjang-agent.svg)](https://www.npmjs.com/package/wonjang-agent)
+
 > 로컬 환경을 다루는 **한국어 우선** 자율 AI 에이전트 — Rust로 작성.
 
 **제공자(provider) 무관 LLM**, **로컬 도구**, **에이전트 루프**, 그리고 한국
@@ -38,19 +41,26 @@
 
 ## 설치
 
+### npm (권장)
+
+```bash
+npm install -g wonjang-agent
+```
+
+설치 시 플랫폼에 맞는 네이티브 바이너리를 자동으로 내려받아 `wonjang` 명령으로
+바로 쓸 수 있습니다. 지원: macOS(arm64/x64) · Linux(x64) · Windows(x64).
+
+### 소스 빌드 (cargo)
+
 Rust 툴체인이 필요합니다([rustup.rs](https://rustup.rs)).
 
 ```bash
+# 저장소에서 바로 설치
+cargo install --git https://github.com/wonjangcloud9/wonjangAgent
+
+# 또는 클론 후 빌드
 git clone https://github.com/wonjangcloud9/wonjangAgent.git
-cd wonjangAgent
-cargo build --release
-# 결과물: ./target/release/wonjang
-```
-
-선택: PATH에 추가
-
-```bash
-cargo install --path .
+cd wonjangAgent && cargo build --release   # 결과물: ./target/release/wonjang
 ```
 
 ## 설정
@@ -282,8 +292,21 @@ src/
 
 - [x] v0.10 — 작업 프리셋(`wonjang preset`, 한국어 빌트인 + 사용자 정의)
 - [x] v0.11 — 위험 명령 안전장치(무인 모드 기본 차단) + 프리셋 13종으로 확장
+- [x] v0.12 — CI(fmt/clippy/test) + 멀티플랫폼 릴리스 + npm 배포(`npm i -g wonjang-agent`)
 - [ ] 슬랙/카카오 게이트웨이, 음성 입력 등
-- [ ] 메시징 게이트웨이(텔레그램/슬랙 등)
+
+## 개발
+
+```bash
+cargo test            # 단위 테스트
+cargo test -- --ignored   # 네트워크가 필요한 라이브 테스트(web/mcp)
+cargo fmt --check     # 포맷 검사
+cargo clippy --all-targets -- -D warnings
+```
+
+푸시·PR마다 CI(포맷·클리피·테스트)가 돌고, `v*` 태그를 푸시하면 멀티플랫폼
+바이너리를 빌드해 GitHub Release에 올리고 npm에 배포합니다. 자세한 릴리스 절차는
+[CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
 
 ## 라이선스
 

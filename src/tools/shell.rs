@@ -131,11 +131,7 @@ fn truncate(s: &str) -> String {
     if s.len() <= MAX {
         s.to_string()
     } else {
-        format!(
-            "{}\n… (출력이 길어 {}자에서 잘림)",
-            &s[..MAX],
-            MAX
-        )
+        format!("{}\n… (출력이 길어 {}자에서 잘림)", &s[..MAX], MAX)
     }
 }
 
@@ -154,7 +150,10 @@ mod tests {
     #[test]
     fn blocks_dangerous_in_auto_mode() {
         let out = ShellTool
-            .execute(&json!({ "command": "rm -rf /tmp/no_such_xyz" }), &ctx(true, false))
+            .execute(
+                &json!({ "command": "rm -rf /tmp/no_such_xyz" }),
+                &ctx(true, false),
+            )
             .unwrap();
         assert!(out.contains("차단"), "차단되어야 함: {out}");
     }

@@ -129,10 +129,7 @@ fn parse_duration(s: &str) -> Result<Duration> {
     if s.is_empty() {
         bail!("스케줄이 비어 있습니다. 예: '30m', '@every 2h', '@daily'");
     }
-    let (num_part, unit) = s.split_at(
-        s.find(|c: char| !c.is_ascii_digit())
-            .unwrap_or(s.len()),
-    );
+    let (num_part, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
     let n: u64 = num_part
         .parse()
         .with_context(|| format!("숫자를 해석할 수 없습니다: '{s}'"))?;
@@ -167,15 +164,30 @@ mod tests {
 
     #[test]
     fn parse_named_schedules() {
-        assert_eq!(parse_schedule("@hourly").unwrap().interval, Duration::from_secs(3600));
-        assert_eq!(parse_schedule("@daily").unwrap().interval, Duration::from_secs(86400));
+        assert_eq!(
+            parse_schedule("@hourly").unwrap().interval,
+            Duration::from_secs(3600)
+        );
+        assert_eq!(
+            parse_schedule("@daily").unwrap().interval,
+            Duration::from_secs(86400)
+        );
     }
 
     #[test]
     fn parse_duration_forms() {
-        assert_eq!(parse_schedule("30m").unwrap().interval, Duration::from_secs(1800));
-        assert_eq!(parse_schedule("@every 2h").unwrap().interval, Duration::from_secs(7200));
-        assert_eq!(parse_schedule("1d").unwrap().interval, Duration::from_secs(86400));
+        assert_eq!(
+            parse_schedule("30m").unwrap().interval,
+            Duration::from_secs(1800)
+        );
+        assert_eq!(
+            parse_schedule("@every 2h").unwrap().interval,
+            Duration::from_secs(7200)
+        );
+        assert_eq!(
+            parse_schedule("1d").unwrap().interval,
+            Duration::from_secs(86400)
+        );
     }
 
     #[test]

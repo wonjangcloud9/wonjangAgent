@@ -36,10 +36,7 @@ async fn run_subagent(
         auto_approve,
         allow_dangerous,
     };
-    let mut messages = vec![
-        Message::system(subagent_prompt()),
-        Message::user(task),
-    ];
+    let mut messages = vec![Message::system(subagent_prompt()), Message::user(task)];
     let answer = agent::run_turn(&client, &cfg, &tools, &ctx, &mut messages).await?;
     Ok(answer.unwrap_or_else(|| "(서브에이전트가 답변을 내지 못했습니다)".to_string()))
 }

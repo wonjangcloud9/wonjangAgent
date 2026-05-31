@@ -114,11 +114,17 @@ pub fn list() -> Result<Vec<(PathBuf, String, usize)>> {
                     .find(|m| m.role == "user")
                     .and_then(|m| m.content.clone())
                     .unwrap_or_else(|| "(빈 세션)".to_string());
-                let preview = preview.lines().next().unwrap_or("").chars().take(60).collect();
+                let preview = preview
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(60)
+                    .collect();
                 items.push((ms, path, preview, messages.len()));
             }
         }
     }
-    items.sort_by(|a, b| b.0.cmp(&a.0)); // 최신순
+    items.sort_by_key(|it| std::cmp::Reverse(it.0)); // 최신순
     Ok(items.into_iter().map(|(_, p, pv, n)| (p, pv, n)).collect())
 }

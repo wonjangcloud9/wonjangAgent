@@ -2,3 +2,9 @@
 **/*.rs.bk
 Cargo.lock.bak
 .DS_Store
+
+# npm 패키지: 내려받은 바이너리 / 의존성
+npm/bin/wonjang
+npm/bin/wonjang.exe
+npm/node_modules/
+npm/*.tgz

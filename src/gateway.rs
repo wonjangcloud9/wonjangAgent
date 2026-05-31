@@ -68,7 +68,9 @@ pub async fn run_telegram(client: &LlmClient, cfg: &Config, tools: &[Box<dyn Too
 
     // 봇 정보 확인(토큰 유효성 검증).
     match get_me(&http, &base).await {
-        Ok(name) => ui::note(&format!("텔레그램 게이트웨이 시작 — 봇 '@{name}'. 종료는 Ctrl-C.")),
+        Ok(name) => ui::note(&format!(
+            "텔레그램 게이트웨이 시작 — 봇 '@{name}'. 종료는 Ctrl-C."
+        )),
         Err(e) => bail!("텔레그램 연결 실패(토큰 확인): {e:#}"),
     }
     if cfg.telegram_allowed_ids.is_empty() {

@@ -7,7 +7,8 @@
 
 use anyhow::{Context, Result};
 
-const UA: &str = "Mozilla/5.0 (compatible; wonjang-agent/0.1; +https://github.com/wonjangcloud9/wonjangAgent)";
+const UA: &str =
+    "Mozilla/5.0 (compatible; wonjang-agent/0.1; +https://github.com/wonjangcloud9/wonjangAgent)";
 
 fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
@@ -83,7 +84,11 @@ fn parse_ddg(html: &str, limit: usize) -> Vec<SearchResult> {
         let url = decode_ddg_url(&href);
         let snippet = snippets.get(i).cloned().unwrap_or_default();
         if !title.is_empty() {
-            results.push(SearchResult { title, url, snippet });
+            results.push(SearchResult {
+                title,
+                url,
+                snippet,
+            });
         }
     }
     results
@@ -293,6 +298,10 @@ mod tests {
     async fn live_search_returns_results() {
         let results = search("rust 프로그래밍 언어", 5).await.unwrap();
         assert!(!results.is_empty(), "검색 결과가 비어 있음");
-        assert!(results[0].url.starts_with("http"), "URL: {}", results[0].url);
+        assert!(
+            results[0].url.starts_with("http"),
+            "URL: {}",
+            results[0].url
+        );
     }
 }

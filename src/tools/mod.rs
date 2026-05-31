@@ -62,6 +62,26 @@ pub fn default_tools() -> Vec<Box<dyn Tool>> {
     tools
 }
 
+/// 도구 목록을 OpenAI 호환 `tools` 배열(JSON)로 직렬화한다.
+pub fn tools_json(tools: &[Box<dyn Tool>]) -> Value {
+    Value::Array(
+        tools
+            .iter()
+            .map(|t| {
+                let spec = t.spec();
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": spec.name,
+                        "description": spec.description,
+                        "parameters": spec.parameters,
+                    }
+                })
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,24 +102,4 @@ mod tests {
         // 기본 = 서브에이전트 + spawn 2종.
         assert_eq!(default_names.len(), sub_names.len() + 2);
     }
-}
-
-/// 도구 목록을 OpenAI 호환 `tools` 배열(JSON)로 직렬화한다.
-pub fn tools_json(tools: &[Box<dyn Tool>]) -> Value {
-    Value::Array(
-        tools
-            .iter()
-            .map(|t| {
-                let spec = t.spec();
-                serde_json::json!({
-                    "type": "function",
-                    "function": {
-                        "name": spec.name,
-                        "description": spec.description,
-                        "parameters": spec.parameters,
-                    }
-                })
-            })
-            .collect(),
-    )
 }

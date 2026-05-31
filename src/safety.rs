@@ -52,7 +52,9 @@ pub fn classify_danger(command: &str) -> Option<&'static str> {
     }
 
     // 홈/루트 전체를 지우는 rm 변형(예: "rm -rf ~", "rm -rf $home").
-    if norm.contains("rm ") && (norm.contains(" ~") || norm.contains(" /") || norm.contains("$home")) {
+    if norm.contains("rm ")
+        && (norm.contains(" ~") || norm.contains(" /") || norm.contains("$home"))
+    {
         // 위 rm 패턴에서 못 잡은 광범위 삭제.
         if norm.contains("-r") || norm.contains("-f") {
             return Some("광범위 파일 삭제(rm)");

@@ -61,9 +61,6 @@ pub fn banner(model: &str) {
         "로컬 환경을 다루는 한국어 우선 AI 에이전트".dimmed()
     );
     println!("  {} {}", "모델:".dimmed(), model.bright_white());
-    println!(
-        "  {}",
-        "도움말은 /help, 종료는 /exit 또는 Ctrl-D".dimmed()
-    );
+    println!("  {}", "도움말은 /help, 종료는 /exit 또는 Ctrl-D".dimmed());
     println!();
 }

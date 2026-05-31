@@ -109,7 +109,10 @@ impl LlmClient {
             .http
             .post(&url)
             .bearer_auth(&self.api_key)
-            .header("HTTP-Referer", "https://github.com/wonjangcloud9/wonjangAgent")
+            .header(
+                "HTTP-Referer",
+                "https://github.com/wonjangcloud9/wonjangAgent",
+            )
             .header("X-Title", "wonjang-agent")
             .json(&body)
             .send()

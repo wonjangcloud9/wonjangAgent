@@ -243,7 +243,9 @@ async fn run() -> Result<()> {
                 Some(prompt)
             }
             None => {
-                ui::error(&format!("'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang preset list"));
+                ui::error(&format!(
+                    "'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang preset list"
+                ));
                 std::process::exit(1);
             }
         }
@@ -339,9 +341,12 @@ fn cmd_config(cfg: &Config) -> Result<()> {
     let path = config::config_path()?;
     if !path.exists() {
         let saved = cfg.save()?;
-        ui::note(&format!("기본 설정 파일을 생성했습니다: {}", saved.display()));
+        ui::note(&format!(
+            "기본 설정 파일을 생성했습니다: {}",
+            saved.display()
+        ));
     }
-    println!("{}", "현재 설정:".to_string());
+    println!("현재 설정:");
     println!("  설정 파일 : {}", path.display());
     println!("  base_url  : {}", cfg.base_url);
     println!("  model     : {}", cfg.model);
@@ -414,7 +419,6 @@ fn cmd_mcp(cfg: &Config) -> Result<()> {
             config::config_path()?.display()
         );
         println!(
-            "{}",
             r#"[[mcp_servers]]
 name = "fs"
 command = "npx"
@@ -515,7 +519,10 @@ async fn cmd_cron_run(
             let mem = memory::Memory::load()?;
             let skills = skill::SkillStore::load()?;
             let mut messages = vec![
-                Message::system(agent::system_prompt(mem.prompt_block(), skills.prompt_block())),
+                Message::system(agent::system_prompt(
+                    mem.prompt_block(),
+                    skills.prompt_block(),
+                )),
                 Message::user(prompt),
             ];
             match agent::run_turn(client, cfg, tools, &ctx, &mut messages).await {

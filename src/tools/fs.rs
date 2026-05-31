@@ -63,7 +63,8 @@ impl Tool for WriteFileTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "write_file",
-            description: "파일에 내용을 씁니다(기존 파일은 덮어씀). 필요한 상위 디렉터리는 자동 생성됩니다.",
+            description:
+                "파일에 내용을 씁니다(기존 파일은 덮어씀). 필요한 상위 디렉터리는 자동 생성됩니다.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -83,9 +84,11 @@ impl Tool for WriteFileTool {
                 std::fs::create_dir_all(parent).ok();
             }
         }
-        std::fs::write(path, content)
-            .with_context(|| format!("파일을 쓸 수 없습니다: {path}"))?;
-        Ok(format!("'{path}'에 {}바이트를 저장했습니다.", content.len()))
+        std::fs::write(path, content).with_context(|| format!("파일을 쓸 수 없습니다: {path}"))?;
+        Ok(format!(
+            "'{path}'에 {}바이트를 저장했습니다.",
+            content.len()
+        ))
     }
 }
 

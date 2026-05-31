@@ -43,7 +43,10 @@ impl Tool for WebSearchTool {
 
         let results = crate::util::run_async(async move { web::search(&query, limit).await })?;
         if results.is_empty() {
-            return Ok("검색 결과를 찾지 못했습니다(검색 엔진이 일시적으로 막혔을 수 있습니다).".to_string());
+            return Ok(
+                "검색 결과를 찾지 못했습니다(검색 엔진이 일시적으로 막혔을 수 있습니다)."
+                    .to_string(),
+            );
         }
         let mut out = String::new();
         for (i, r) in results.iter().enumerate() {
