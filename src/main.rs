@@ -881,6 +881,43 @@ fn cmd_status() -> Result<()> {
         }
     }
 
+    // 습관(오늘 완료/전체).
+    let habit = habits::HabitStore::load()?;
+    if !habit.items.is_empty() {
+        let today_s = habits::today_str();
+        let done = habit
+            .items
+            .iter()
+            .filter(|h| h.done_today(&today_s))
+            .count();
+        println!("  🔥 습관: 오늘 {}/{} 완료", done, habit.items.len());
+        let pending: Vec<&str> = habit
+            .items
+            .iter()
+            .filter(|h| !h.done_today(&today_s))
+            .map(|h| h.name.as_str())
+            .take(4)
+            .collect();
+        if !pending.is_empty() {
+            ui::info(&format!("     남은 습관: {}", pending.join(", ")));
+        }
+    }
+
+    // 오늘 집중 시간.
+    let foc = focus::FocusStore::load()?;
+    let foc_today = focus::today_str();
+    let foc_min = foc.today_total(&foc_today);
+    if foc_min > 0 {
+        println!("  🍅 오늘 집중: {}", focus::fmt_minutes(foc_min));
+    }
+
+    // 오늘 지출.
+    let exp = expenses::ExpenseStore::load()?;
+    let exp_today = exp.total_on(&expenses::today_str());
+    if exp_today > 0 {
+        println!("  💰 오늘 지출: {}", expenses::won(exp_today));
+    }
+
     // 예약 작업.
     let cron = cron::CronStore::load()?;
     let enabled = cron.tasks.iter().filter(|t| t.enabled).count();
