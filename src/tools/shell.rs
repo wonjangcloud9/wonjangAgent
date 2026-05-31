@@ -69,7 +69,8 @@ impl Tool for ShellTool {
             }
         }
 
-        let output = Command::new("zsh").arg("-lc").arg(command).output()?;
+        let (shell, flag) = pick_shell();
+        let output = Command::new(&shell).arg(flag).arg(command).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -123,6 +124,24 @@ fn confirm_dangerous(command: &str, reason: &str) -> Result<bool> {
     io::stdin().read_line(&mut input)?;
     let ans = input.trim().to_lowercase();
     Ok(ans == "y" || ans == "yes" || ans == "예")
+}
+
+/// 실행에 쓸 셸과 플래그를 이식성 있게 고른다.
+///
+/// 사용자의 로그인 셸($SHELL)을 우선 사용해 PATH/별칭을 그대로 활용하고,
+/// 없으면 흔한 셸로 폴백한다. zsh/bash는 로그인 모드(-lc), sh 폴백은 -c.
+fn pick_shell() -> (String, &'static str) {
+    if let Ok(sh) = std::env::var("SHELL") {
+        if !sh.is_empty() && std::path::Path::new(&sh).exists() {
+            return (sh, "-lc");
+        }
+    }
+    for cand in ["/bin/zsh", "/bin/bash", "/usr/bin/bash"] {
+        if std::path::Path::new(cand).exists() {
+            return (cand.to_string(), "-lc");
+        }
+    }
+    ("/bin/sh".to_string(), "-c")
 }
 
 /// 너무 긴 출력을 잘라 컨텍스트 폭주를 막는다.
