@@ -6,6 +6,7 @@
 pub mod fs;
 pub mod mcp;
 pub mod memory;
+pub mod notes;
 pub mod shell;
 pub mod skill;
 pub mod subagent;
@@ -51,6 +52,10 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(skill::ReadSkillTool),
         Box::new(web::WebSearchTool),
         Box::new(web::WebFetchTool),
+        Box::new(notes::NoteSearchTool),
+        Box::new(notes::NoteReadTool),
+        Box::new(notes::NoteAppendTool),
+        Box::new(notes::NoteListTool),
     ]
 }
 

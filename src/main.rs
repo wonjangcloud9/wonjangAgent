@@ -12,6 +12,7 @@ mod gateway;
 mod llm;
 mod mcp;
 mod memory;
+mod notes;
 mod preset;
 mod safety;
 mod session;

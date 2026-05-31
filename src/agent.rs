@@ -37,6 +37,19 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 운영체제: {os}\n\
          - 현재 작업 디렉터리: {cwd}\n"
     );
+
+    // 옵시디언 볼트가 설정돼 있으면 안내(양 백엔드 모두 활용).
+    if let Ok(cfg) = Config::load() {
+        if let Some(vault) = crate::notes::vault_path(&cfg.obsidian_vault) {
+            prompt.push_str(&format!(
+                "\n옵시디언 볼트(노트 저장소): {}\n\
+                 - 노트 검색은 note_search, 읽기는 note_read, 기록은 note_append를 사용하세요.\n\
+                 - 일지/메모/할 일은 이 볼트의 마크다운 노트로 관리합니다.\n",
+                vault.display()
+            ));
+        }
+    }
+
     for block in [memory_block, skills_block].into_iter().flatten() {
         prompt.push('\n');
         prompt.push_str(&block);
