@@ -10,6 +10,7 @@ mod config;
 mod cron;
 mod ddays;
 mod engine;
+mod expenses;
 mod gateway;
 mod llm;
 mod mcp;
@@ -102,6 +103,12 @@ enum Commands {
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
+    /// 가계부: 지출을 기록하거나 합계를 봅니다.
+    #[command(alias = "지출")]
+    Expense {
+        #[command(subcommand)]
+        action: Option<ExpenseAction>,
+    },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
         #[command(subcommand)]
@@ -134,6 +141,27 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ExpenseAction {
+    /// 오늘 지출 추가. 예: wonjang 지출 add 8000 식비 점심
+    Add {
+        /// 금액(원)
+        amount: i64,
+        /// 분류(식비/교통/배달 등)
+        category: String,
+        /// 메모(선택)
+        #[arg(trailing_var_arg = true)]
+        note: Vec<String>,
+    },
+    /// 이번 달 분류별 지출.
+    Month,
+    /// id로 지출 기록 삭제.
+    Remove {
+        /// 삭제할 지출 id
+        id: u64,
     },
 }
 
@@ -261,6 +289,7 @@ async fn run() -> Result<()> {
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Dday { action }) => return cmd_dday(action),
         Some(Commands::Status) => return cmd_status(),
+        Some(Commands::Expense { action }) => return cmd_expense(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -820,6 +849,84 @@ fn cmd_status() -> Result<()> {
     }
 
     println!();
+    Ok(())
+}
+
+fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
+    let mut store = expenses::ExpenseStore::load()?;
+    let today = expenses::today_str();
+    let ym = expenses::this_month();
+    match action {
+        Some(ExpenseAction::Add {
+            amount,
+            category,
+            note,
+        }) => {
+            let note = note.join(" ");
+            let id = store.add(*amount, category, &note)?;
+            ui::note(&format!(
+                "지출 #{id} 기록: {} ({category})",
+                expenses::won(*amount)
+            ));
+            ui::info(&format!(
+                "오늘 합계 {} · 이번 달 {}",
+                expenses::won(store.total_on(&today)),
+                expenses::won(store.total_in_month(&ym))
+            ));
+        }
+        Some(ExpenseAction::Remove { id }) => {
+            if store.remove(*id)? {
+                ui::note(&format!("지출 #{id}을(를) 삭제했습니다."));
+            } else {
+                ui::error(&format!("지출 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        Some(ExpenseAction::Month) => {
+            let by = store.by_category_in_month(&ym);
+            if by.is_empty() {
+                ui::info("이번 달 지출 기록이 없어요.");
+                return Ok(());
+            }
+            println!("이번 달({ym}) 분류별 지출:\n");
+            for (cat, amt) in by {
+                println!("  {cat:<8} {}", expenses::won(amt));
+            }
+            println!("\n  합계: {}", expenses::won(store.total_in_month(&ym)));
+        }
+        None => {
+            println!();
+            println!(
+                "  💰 오늘({today}) 지출: {}",
+                expenses::won(store.total_on(&today))
+            );
+            println!(
+                "     이번 달({ym}) 지출: {}",
+                expenses::won(store.total_in_month(&ym))
+            );
+            let recent = store.recent(5);
+            if !recent.is_empty() {
+                println!("\n  최근 지출:");
+                for e in recent {
+                    let note = if e.note.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" - {}", e.note)
+                    };
+                    println!(
+                        "     {} {} ({}){}",
+                        e.date,
+                        expenses::won(e.amount),
+                        e.category,
+                        note
+                    );
+                }
+            }
+            println!();
+            ui::info(
+                "기록: wonjang 지출 add <금액> <분류> [메모]   |   이번달: wonjang 지출 month",
+            );
+        }
+    }
     Ok(())
 }
 

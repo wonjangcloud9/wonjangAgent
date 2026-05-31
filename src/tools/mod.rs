@@ -5,6 +5,7 @@
 
 pub mod clipboard;
 pub mod dday;
+pub mod expense;
 pub mod fs;
 pub mod mcp;
 pub mod memory;
@@ -73,6 +74,8 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(dday::ListDdaysTool),
         Box::new(notion::NotionSearchTool),
         Box::new(notion::NotionAppendTool),
+        Box::new(expense::AddExpenseTool),
+        Box::new(expense::ExpenseSummaryTool),
     ]
 }
 
