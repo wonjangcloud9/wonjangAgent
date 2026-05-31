@@ -206,7 +206,8 @@ pub fn builtin() -> Vec<Preset> {
              \n3) 예정된 약속·알림('wonjang remind' 또는 list_reminders로 확인해 가까운 순서로)\
              \n4) 오늘의 할 일('wonjang todo' 또는 list_todos로 확인)\
              \n5) 다가오는 디데이('wonjang dday' 또는 list_ddays로 확인, 가까운 것 위주)\
-             \n6) 짧은 응원 한마디.\
+             \n6) 오늘 아직 안 한 습관('wonjang 습관' 또는 list_habits로 확인)\
+             \n7) 짧은 응원 한마디.\
              \n간결한 불릿으로 정리해줘.",
         ),
     ]

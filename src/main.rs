@@ -12,6 +12,7 @@ mod ddays;
 mod engine;
 mod expenses;
 mod gateway;
+mod habits;
 mod llm;
 mod mcp;
 mod memory;
@@ -109,6 +110,12 @@ enum Commands {
         #[command(subcommand)]
         action: Option<ExpenseAction>,
     },
+    /// 습관 트래커: 매일 습관을 체크하고 연속 일수를 봅니다.
+    #[command(alias = "습관")]
+    Habit {
+        #[command(subcommand)]
+        action: Option<HabitAction>,
+    },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
         #[command(subcommand)]
@@ -141,6 +148,27 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum HabitAction {
+    /// 습관 목록(오늘 여부 + 연속 일수). 기본.
+    List,
+    /// 습관 추가. 예: wonjang 습관 add "운동"
+    Add {
+        /// 습관 이름
+        name: String,
+    },
+    /// 오늘 습관 완료. 예: wonjang 습관 done 운동
+    Done {
+        /// 습관 이름 또는 id
+        habit: String,
+    },
+    /// id로 습관 삭제.
+    Remove {
+        /// 삭제할 습관 id
+        id: u64,
     },
 }
 
@@ -290,6 +318,7 @@ async fn run() -> Result<()> {
         Some(Commands::Dday { action }) => return cmd_dday(action),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Expense { action }) => return cmd_expense(action),
+        Some(Commands::Habit { action }) => return cmd_habit(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -849,6 +878,43 @@ fn cmd_status() -> Result<()> {
     }
 
     println!();
+    Ok(())
+}
+
+fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
+    let mut store = habits::HabitStore::load()?;
+    match action {
+        Some(HabitAction::Add { name }) => {
+            let id = store.add(name)?;
+            ui::note(&format!("습관 #{id} 추가: {name}. 오늘부터 시작해 봐요!"));
+        }
+        Some(HabitAction::Done { habit }) => match store.check(habit)? {
+            Some((name, streak)) => ui::note(&format!("'{name}' 완료! 🔥 {streak}일 연속")),
+            None => ui::error(&format!("'{habit}' 습관을 찾을 수 없습니다.")),
+        },
+        Some(HabitAction::Remove { id }) => {
+            if store.remove(*id)? {
+                ui::note(&format!("습관 #{id}을(를) 삭제했습니다."));
+            } else {
+                ui::error(&format!("습관 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        None | Some(HabitAction::List) => {
+            if store.items.is_empty() {
+                ui::info("등록된 습관이 없어요. 추가: wonjang 습관 add \"운동\"");
+                return Ok(());
+            }
+            let today = habits::today();
+            let today_s = habits::today_str();
+            println!("습관:\n");
+            for h in &store.items {
+                let mark = if h.done_today(&today_s) { "✓" } else { "·" };
+                println!("  {} #{}  {}  🔥{}일", mark, h.id, h.name, h.streak(today));
+            }
+            println!();
+            ui::info("완료: wonjang 습관 done <이름>   |   추가: wonjang 습관 add \"<이름>\"");
+        }
+    }
     Ok(())
 }
 
