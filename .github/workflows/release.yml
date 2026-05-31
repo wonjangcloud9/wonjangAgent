@@ -19,8 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 인텔(x64) 빌드도 macos-14(애플실리콘)에서 크로스 컴파일 — 느린 인텔
+          # 러너 대기를 피한다(러너 가용성↑).
           - { os: macos-14, target: aarch64-apple-darwin }
-          - { os: macos-13, target: x86_64-apple-darwin }
+          - { os: macos-14, target: x86_64-apple-darwin }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     steps:
