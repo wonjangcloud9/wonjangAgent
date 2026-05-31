@@ -4,6 +4,7 @@
 //! 재구성한다: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
 
 mod agent;
+mod bookmarks;
 mod briefing;
 mod cli_backend;
 mod clipboard;
@@ -127,6 +128,18 @@ enum Commands {
         #[arg(trailing_var_arg = true)]
         label: Vec<String>,
     },
+    /// 즐겨찾기 관리(사이트/폴더/앱 단축어).
+    #[command(alias = "즐겨찾기")]
+    Bookmark {
+        #[command(subcommand)]
+        action: Option<BookmarkAction>,
+    },
+    /// 즐겨찾기/URL/경로를 기본 프로그램으로 엽니다. 예: wonjang 열기 노션
+    #[command(alias = "열기")]
+    Open {
+        /// 즐겨찾기 이름 또는 URL/경로
+        target: String,
+    },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
         #[command(subcommand)]
@@ -159,6 +172,24 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BookmarkAction {
+    /// 즐겨찾기 목록(기본).
+    List,
+    /// 즐겨찾기 추가. 예: wonjang 즐겨찾기 add 노션 https://notion.so
+    Add {
+        /// 단축 이름
+        name: String,
+        /// 대상(URL/경로/앱)
+        target: String,
+    },
+    /// id로 즐겨찾기 삭제.
+    Remove {
+        /// 삭제할 즐겨찾기 id
+        id: u64,
     },
 }
 
@@ -331,6 +362,8 @@ async fn run() -> Result<()> {
         Some(Commands::Expense { action }) => return cmd_expense(action),
         Some(Commands::Habit { action }) => return cmd_habit(action),
         Some(Commands::Focus { minutes, label }) => return cmd_focus(*minutes, label),
+        Some(Commands::Bookmark { action }) => return cmd_bookmark(action),
+        Some(Commands::Open { target }) => return cmd_open(target),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -988,6 +1021,48 @@ fn cmd_status() -> Result<()> {
     }
 
     println!();
+    Ok(())
+}
+
+fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
+    let mut store = bookmarks::BookmarkStore::load()?;
+    match action {
+        Some(BookmarkAction::Add { name, target }) => {
+            let id = store.add(name, target)?;
+            ui::note(&format!("즐겨찾기 #{id} 추가: {name} → {target}"));
+        }
+        Some(BookmarkAction::Remove { id }) => {
+            if store.remove(*id)? {
+                ui::note(&format!("즐겨찾기 #{id}을(를) 삭제했습니다."));
+            } else {
+                ui::error(&format!("즐겨찾기 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        None | Some(BookmarkAction::List) => {
+            if store.items.is_empty() {
+                ui::info("즐겨찾기가 없어요. 추가: wonjang 즐겨찾기 add 노션 https://notion.so");
+                return Ok(());
+            }
+            println!("즐겨찾기:\n");
+            for b in &store.items {
+                println!("  #{}  {}  →  {}", b.id, b.name, b.target);
+            }
+            println!();
+            ui::info("열기: wonjang 열기 <이름>");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_open(target: &str) -> Result<()> {
+    let store = bookmarks::BookmarkStore::load()?;
+    // 즐겨찾기 이름이면 그 대상을, 아니면 입력 자체(URL/경로)를 연다.
+    let (label, to_open) = match store.find(target) {
+        Some(b) => (b.name.clone(), b.target.clone()),
+        None => (target.to_string(), target.to_string()),
+    };
+    bookmarks::open_target(&to_open)?;
+    ui::note(&format!("'{label}' 열었어요 → {to_open}"));
     Ok(())
 }
 
