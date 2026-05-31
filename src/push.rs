@@ -17,6 +17,9 @@ pub fn configured_channels(cfg: &Config) -> Vec<&'static str> {
     if !cfg.telegram_token.trim().is_empty() && !cfg.telegram_allowed_ids.is_empty() {
         v.push("telegram");
     }
+    if !cfg.kakao_access_token.trim().is_empty() {
+        v.push("kakao");
+    }
     v
 }
 
@@ -48,6 +51,14 @@ pub async fn push(cfg: &Config, message: &str) -> usize {
                 sent += 1;
             }
         }
+    }
+
+    if !cfg.kakao_access_token.trim().is_empty()
+        && kakao_send(&http, &cfg.kakao_access_token, message)
+            .await
+            .is_ok()
+    {
+        sent += 1;
     }
     sent
 }
@@ -82,6 +93,23 @@ async fn telegram_send(
     Ok(())
 }
 
+/// 카카오톡 '나에게 보내기'(메모 API)로 푸시한다.
+async fn kakao_send(http: &reqwest::Client, token: &str, message: &str) -> Result<()> {
+    let template = serde_json::json!({
+        "object_type": "text",
+        "text": message,
+        "link": { "web_url": "https://github.com/wonjangcloud9/wonjangAgent" }
+    })
+    .to_string();
+    http.post("https://kapi.kakao.com/v2/api/talk/memo/default/send")
+        .bearer_auth(token)
+        .form(&[("template_object", template.as_str())])
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +123,10 @@ mod tests {
         cfg.telegram_token = "t".into();
         cfg.telegram_allowed_ids = vec![1];
         assert_eq!(configured_channels(&cfg), vec!["discord", "telegram"]);
+        cfg.kakao_access_token = "k".into();
+        assert_eq!(
+            configured_channels(&cfg),
+            vec!["discord", "telegram", "kakao"]
+        );
     }
 }

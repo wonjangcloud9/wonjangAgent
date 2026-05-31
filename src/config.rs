@@ -59,6 +59,10 @@ pub struct Config {
     #[serde(default)]
     pub notion_token: String,
 
+    /// 카카오톡 액세스 토큰('나에게 보내기' 푸시용, 비밀값 — 환경 변수로만).
+    #[serde(default)]
+    pub kakao_access_token: String,
+
     /// 연결할 MCP 서버 목록(외부 도구).
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
@@ -99,6 +103,7 @@ impl Default for Config {
             obsidian_vault: String::new(),
             discord_webhook: String::new(),
             notion_token: String::new(),
+            kakao_access_token: String::new(),
             mcp_servers: Vec::new(),
             telegram_token: String::new(),
             telegram_allowed_ids: Vec::new(),
@@ -155,6 +160,11 @@ impl Config {
                 cfg.notion_token = v;
             }
         }
+        if let Ok(v) = std::env::var("WONJANG_KAKAO_TOKEN") {
+            if !v.is_empty() {
+                cfg.kakao_access_token = v;
+            }
+        }
         // API 키: 전용 변수 우선, 없으면 흔한 변수로 폴백.
         for key in ["WONJANG_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"] {
             if let Ok(v) = std::env::var(key) {
@@ -187,6 +197,7 @@ impl Config {
         to_save.api_key = String::new(); // 보안: 키는 파일에 남기지 않는다.
         to_save.telegram_token = String::new(); // 보안: 토큰도 파일에 남기지 않는다.
         to_save.notion_token = String::new(); // 보안: 노션 토큰도 파일에 남기지 않는다.
+        to_save.kakao_access_token = String::new(); // 보안: 카카오 토큰도 파일에 남기지 않는다.
         let text = toml::to_string_pretty(&to_save)?;
         std::fs::write(&path, text)?;
         Ok(path)

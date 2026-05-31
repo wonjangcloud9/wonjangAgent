@@ -733,10 +733,17 @@ fn cmd_notify(cfg: &Config, message: &[String]) -> Result<()> {
         std::process::exit(1);
     }
     let sent = push::push_blocking(cfg, &msg);
-    ui::note(&format!(
-        "{sent}개 채널로 푸시했습니다 ({})",
-        channels.join(", ")
-    ));
+    if sent == 0 {
+        ui::error(&format!(
+            "푸시 실패 — 채널 설정(토큰/웹훅)을 확인하세요. (설정된 채널: {})",
+            channels.join(", ")
+        ));
+    } else {
+        ui::note(&format!(
+            "{sent}개 채널로 푸시했습니다 ({})",
+            channels.join(", ")
+        ));
+    }
     Ok(())
 }
 
