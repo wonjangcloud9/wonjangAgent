@@ -4,6 +4,7 @@
 //! 전달할 JSON 스키마(`spec`)와 실제 실행 로직(`execute`)을 제공한다.
 
 pub mod fs;
+pub mod mcp;
 pub mod memory;
 pub mod shell;
 pub mod skill;

@@ -6,7 +6,23 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// MCP 서버 한 개의 실행 설정.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    /// 도구 이름 접두사로 쓰이는 서버 별칭.
+    pub name: String,
+    /// 실행 명령(예: "npx", "python3").
+    pub command: String,
+    /// 명령 인자.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// 추가 환경 변수.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -25,6 +41,10 @@ pub struct Config {
     /// 한 작업당 최대 에이전트 루프(도구 호출 왕복) 횟수.
     #[serde(default = "default_max_steps")]
     pub max_steps: u32,
+
+    /// 연결할 MCP 서버 목록(외부 도구).
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 fn default_base_url() -> String {
@@ -46,6 +66,7 @@ impl Default for Config {
             model: default_model(),
             api_key: String::new(),
             max_steps: default_max_steps(),
+            mcp_servers: Vec::new(),
         }
     }
 }

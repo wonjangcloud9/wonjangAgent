@@ -20,6 +20,8 @@
 - 🌐 **웹 검색/가져오기** — 별도 API 키 없이 웹을 검색하고 페이지 본문을 읽어옵니다.
 - 👥 **서브에이전트** — 큰 작업을 격리된 하위 에이전트에 위임하고, 여러 개를
   병렬로 동시에 처리합니다.
+- 🔗 **MCP 연동** — 외부 MCP 서버(파일시스템·깃허브 등)를 연결해 그 도구들을
+  원장 도구로 바로 사용합니다.
 - 🧠 **영속 메모리** — 사용자/환경에 대해 배운 사실을 디스크에 저장하고 다음
   세션에 자동으로 불러와 "함께 성장"합니다.
 - 📚 **스킬(절차 기억)** — 까다로운 작업을 해결하면 그 방법을 스킬로 저장하고,
@@ -121,6 +123,22 @@ wonjang cron run                  # 스케줄러 실행(포그라운드, Ctrl-C�
 > ⚠️ `cron run`은 무인 실행이라 도구(셸 명령 포함)를 자동 승인합니다. 신뢰할 수
 > 있는 작업만 등록하세요.
 
+**MCP 서버 연동**
+
+외부 [MCP](https://modelcontextprotocol.io) 서버를 연결하면 그 도구들이
+`mcp_<서버>_<도구>` 이름으로 에이전트에 자동 등록됩니다. 설정 파일에 추가하세요:
+
+```toml
+[[mcp_servers]]
+name = "fs"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/work"]
+```
+
+```bash
+wonjang mcp     # 연결 확인 + 제공 도구 목록
+```
+
 **REPL 슬래시 명령**
 
 | 명령 | 설명 |
@@ -169,6 +187,7 @@ src/
 ├── session.rs    # 세션 저장/이어가기
 ├── skill.rs      # 스킬(절차 기억) 저장소
 ├── cron.rs       # 예약 작업 스케줄러
+├── mcp.rs        # MCP 클라이언트(stdio JSON-RPC)
 ├── web.rs        # 웹 검색/가져오기 코어
 ├── util.rs       # 공용 유틸(동기↔비동기 브리지)
 ├── ui.rs         # 한국어 우선 터미널 UI
@@ -178,7 +197,8 @@ src/
     ├── memory.rs
     ├── skill.rs
     ├── web.rs
-    └── subagent.rs
+    ├── subagent.rs
+    └── mcp.rs
 ```
 
 ## 로드맵
@@ -192,7 +212,8 @@ src/
 - [x] v0.5 — 웹 검색/페이지 가져오기(web_search/web_fetch, API 키 불필요)
 - [x] v0.6 — 예약 작업 스케줄러(`wonjang cron`, 간격 기반 무인 실행)
 - [x] v0.7 — 서브에이전트(spawn_subagent/spawn_subagents, 병렬 작업 분할)
-- [ ] MCP 연동
+- [x] v0.8 — MCP 연동(외부 도구 서버 stdio 연결, `wonjang mcp`)
+- [ ] 메시징 게이트웨이(텔레그램/슬랙 등)
 - [ ] 메시징 게이트웨이(텔레그램/슬랙 등)
 
 ## 라이선스

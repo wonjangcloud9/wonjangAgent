@@ -7,6 +7,7 @@ mod agent;
 mod config;
 mod cron;
 mod llm;
+mod mcp;
 mod memory;
 mod session;
 mod skill;
@@ -60,6 +61,8 @@ enum Commands {
     Sessions,
     /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
     Skills,
+    /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
+    Mcp,
     /// 예약 작업(크론)을 관리하고 실행합니다.
     Cron {
         #[command(subcommand)]
@@ -108,6 +111,7 @@ async fn run() -> Result<()> {
         Some(Commands::Memory) => return cmd_memory(),
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
+        Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Cron { action }) => match action {
             CronAction::Add { schedule, prompt } => return cmd_cron_add(schedule, prompt),
             CronAction::List => return cmd_cron_list(),
@@ -130,7 +134,19 @@ async fn run() -> Result<()> {
     }
 
     let client = LlmClient::new(cfg.base_url.clone(), cfg.api_key.clone(), cfg.model.clone());
-    let tools = default_tools();
+    let mut tools = default_tools();
+    // 설정된 MCP 서버에 연결해 외부 도구를 등록한다(실패해도 계속 진행).
+    for srv in &cfg.mcp_servers {
+        match mcp::McpClient::connect(&srv.name, &srv.command, &srv.args, &srv.env) {
+            Ok(c) => {
+                let n = c.tools.len();
+                tools.extend(tools::mcp::tools_from_client(std::sync::Arc::new(c)));
+                ui::info(&format!("MCP '{}' 연결됨 — 도구 {n}개", srv.name));
+            }
+            Err(e) => ui::error(&format!("MCP '{}' 연결 실패: {e:#}", srv.name)),
+        }
+    }
+    let tools = tools; // 이후 불변.
     let ctx = ToolContext {
         auto_approve: cli.yes,
     };
@@ -285,6 +301,40 @@ fn cmd_sessions() -> Result<()> {
     }
     println!();
     ui::info("가장 최근 세션을 이어가려면: wonjang --continue");
+    Ok(())
+}
+
+fn cmd_mcp(cfg: &Config) -> Result<()> {
+    if cfg.mcp_servers.is_empty() {
+        ui::info("설정된 MCP 서버가 없습니다.");
+        println!(
+            "\n설정 파일({})에 다음과 같이 추가하세요:\n",
+            config::config_path()?.display()
+        );
+        println!(
+            "{}",
+            r#"[[mcp_servers]]
+name = "fs"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]"#
+        );
+        return Ok(());
+    }
+    for srv in &cfg.mcp_servers {
+        println!("• {} ({} {})", srv.name, srv.command, srv.args.join(" "));
+        match mcp::McpClient::connect(&srv.name, &srv.command, &srv.args, &srv.env) {
+            Ok(c) => {
+                if c.tools.is_empty() {
+                    ui::info("    (제공 도구 없음)");
+                }
+                for t in &c.tools {
+                    let desc = t.description.lines().next().unwrap_or("");
+                    println!("    - {} : {}", t.name, desc);
+                }
+            }
+            Err(e) => ui::error(&format!("    연결 실패: {e:#}")),
+        }
+    }
     Ok(())
 }
 
