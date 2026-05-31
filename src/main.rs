@@ -32,6 +32,7 @@ mod todos;
 mod tools;
 mod ui;
 mod util;
+mod weather;
 mod web;
 
 use anyhow::Result;
@@ -146,6 +147,13 @@ enum Commands {
     Subway {
         /// 역 이름
         station: String,
+    },
+    /// 실시간 날씨. 예: wonjang 날씨 (생략 시 서울) / wonjang 날씨 부산
+    #[command(alias = "날씨")]
+    Weather {
+        /// 지역 이름(선택)
+        #[arg(trailing_var_arg = true)]
+        location: Vec<String>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -372,6 +380,7 @@ async fn run() -> Result<()> {
         Some(Commands::Bookmark { action }) => return cmd_bookmark(action),
         Some(Commands::Open { target }) => return cmd_open(target),
         Some(Commands::Subway { station }) => return cmd_subway(&cfg, station),
+        Some(Commands::Weather { location }) => return cmd_weather(location),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1059,6 +1068,22 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_weather(location: &[String]) -> Result<()> {
+    let loc = location.join(" ");
+    let w = util::run_async(async move { weather::weather(&loc).await })?;
+    println!();
+    println!(
+        "  ☀️ {} 날씨: {} {:.0}°C (체감 {:.0}°C)",
+        w.place, w.desc, w.temp, w.feels
+    );
+    println!(
+        "     습도 {}% · 강수 {}mm · 오늘 {:.0}~{:.0}°C",
+        w.humidity, w.precip, w.today_min, w.today_max
+    );
+    println!();
     Ok(())
 }
 

@@ -123,10 +123,10 @@ pub fn builtin() -> Vec<Preset> {
         ),
         Preset::new(
             "날씨",
-            "원하는 지역의 날씨 검색",
+            "원하는 지역의 실시간 날씨",
             &["weather"],
-            "오늘의 날씨를 알려줘. 지역이 지정되지 않았으면 서울 기준으로, web_search로 \
-             최신 날씨를 찾아 기온과 강수 여부를 한국어로 요약해줘.",
+            "weather_now 도구(또는 'wonjang 날씨 [지역]' 명령)로 실시간 날씨를 가져와 \
+             기온·체감·강수·최저최고를 한국어로 친근하게 알려줘. 지역이 없으면 서울.",
         ),
         Preset::new(
             "환율",
@@ -202,7 +202,7 @@ pub fn builtin() -> Vec<Preset> {
             &["briefing", "아침브리핑"],
             "사용자를 위한 오늘의 아침 브리핑을 한국어로 친근하게 만들어줘. 다음을 포함해:\
              \n1) 오늘 날짜와 요일('date'로 확인)\
-             \n2) 오늘 서울 날씨(web_search로 기온·강수)\
+             \n2) 오늘 서울 날씨(weather_now 도구 또는 'wonjang 날씨'로 정확하게)\
              \n3) 예정된 약속·알림('wonjang remind' 또는 list_reminders로 확인해 가까운 순서로)\
              \n4) 오늘의 할 일('wonjang todo' 또는 list_todos로 확인)\
              \n5) 다가오는 디데이('wonjang dday' 또는 list_ddays로 확인, 가까운 것 위주)\

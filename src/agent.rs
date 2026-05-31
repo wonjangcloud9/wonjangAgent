@@ -55,6 +55,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 집중(뽀모도로): `{exe} 집중 <분> [무엇]`(타이머+알림), `{exe} 집중`(오늘 집중 요약)\n\
          - 즐겨찾기/열기: `{exe} 즐겨찾기 add <이름> <URL/경로>`, `{exe} 열기 <이름>`\n\
          - 서울 지하철 실시간 도착: `{exe} 지하철 <역이름>`(또는 subway_arrivals 도구)\n\
+         - 실시간 날씨: `{exe} 날씨 [지역]`(또는 weather_now 도구) — web_search보다 정확\n\
          - 노션 검색/기록(설정된 경우): `{exe} notion search \"<검색어>\"`, `{exe} notion append <page_id> \"<내용>\"`\n"
     );
 
