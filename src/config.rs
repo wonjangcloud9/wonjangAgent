@@ -45,6 +45,14 @@ pub struct Config {
     /// 연결할 MCP 서버 목록(외부 도구).
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
+
+    /// 텔레그램 봇 토큰(비밀값 — 파일에 저장하지 않고 환경 변수로만 받음).
+    #[serde(default)]
+    pub telegram_token: String,
+
+    /// 텔레그램에서 작업을 허용할 chat_id 목록(보안 화이트리스트).
+    #[serde(default)]
+    pub telegram_allowed_ids: Vec<i64>,
 }
 
 fn default_base_url() -> String {
@@ -67,6 +75,8 @@ impl Default for Config {
             api_key: String::new(),
             max_steps: default_max_steps(),
             mcp_servers: Vec::new(),
+            telegram_token: String::new(),
+            telegram_allowed_ids: Vec::new(),
         }
     }
 }
@@ -109,6 +119,15 @@ impl Config {
                 }
             }
         }
+        // 텔레그램 봇 토큰(비밀값) — 환경 변수로만.
+        for key in ["WONJANG_TELEGRAM_TOKEN", "TELEGRAM_BOT_TOKEN"] {
+            if let Ok(v) = std::env::var(key) {
+                if !v.is_empty() {
+                    cfg.telegram_token = v;
+                    break;
+                }
+            }
+        }
 
         Ok(cfg)
     }
@@ -121,6 +140,7 @@ impl Config {
         }
         let mut to_save = self.clone();
         to_save.api_key = String::new(); // 보안: 키는 파일에 남기지 않는다.
+        to_save.telegram_token = String::new(); // 보안: 토큰도 파일에 남기지 않는다.
         let text = toml::to_string_pretty(&to_save)?;
         std::fs::write(&path, text)?;
         Ok(path)

@@ -6,6 +6,7 @@
 mod agent;
 mod config;
 mod cron;
+mod gateway;
 mod llm;
 mod mcp;
 mod memory;
@@ -63,6 +64,8 @@ enum Commands {
     Skills,
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
+    /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
+    Telegram,
     /// 예약 작업(크론)을 관리하고 실행합니다.
     Cron {
         #[command(subcommand)]
@@ -112,6 +115,7 @@ async fn run() -> Result<()> {
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
+        Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Cron { action }) => match action {
             CronAction::Add { schedule, prompt } => return cmd_cron_add(schedule, prompt),
             CronAction::List => return cmd_cron_list(),
@@ -157,6 +161,11 @@ async fn run() -> Result<()> {
     }) = &cli.command
     {
         return cmd_cron_run(&client, &cfg, &tools).await;
+    }
+
+    // 텔레그램 게이트웨이(LLM 필요).
+    if let Some(Commands::Telegram) = &cli.command {
+        return gateway::run_telegram(&client, &cfg, &tools).await;
     }
 
     // 세션: 이어가기(--continue) 또는 새 세션.
@@ -283,7 +292,17 @@ fn cmd_config(cfg: &Config) -> Result<()> {
         }
     );
     println!("  max_steps : {}", cfg.max_steps);
-    ui::info("\nAPI 키는 보안을 위해 파일에 저장하지 않습니다. 환경 변수를 사용하세요.");
+    println!("  MCP 서버  : {}개", cfg.mcp_servers.len());
+    println!(
+        "  텔레그램  : {} / 허용 chat_id {}개",
+        if cfg.telegram_token.is_empty() {
+            "토큰 없음"
+        } else {
+            "토큰 설정됨"
+        },
+        cfg.telegram_allowed_ids.len()
+    );
+    ui::info("\nAPI 키·토큰 등 비밀값은 파일에 저장하지 않습니다. 환경 변수를 사용하세요.");
     Ok(())
 }
 
