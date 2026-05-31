@@ -57,6 +57,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 서울 지하철 실시간 도착: `{exe} 지하철 <역이름>`(또는 subway_arrivals 도구)\n\
          - 실시간 날씨: `{exe} 날씨 [지역]`(또는 weather_now 도구) — web_search보다 정확\n\
          - 미세먼지: `{exe} 미세먼지 [지역]`(또는 air_quality 도구) — 환경부 등급 포함\n\
+         - 환율: `{exe} 환율`(주요통화) 또는 `{exe} 환율 <금액> <통화>`(환산), exchange_rate 도구\n\
          - 노션 검색/기록(설정된 경우): `{exe} notion search \"<검색어>\"`, `{exe} notion append <page_id> \"<내용>\"`\n"
     );
 

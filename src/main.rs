@@ -13,6 +13,7 @@ mod config;
 mod cron;
 mod ddays;
 mod engine;
+mod exchange;
 mod expenses;
 mod focus;
 mod gateway;
@@ -162,6 +163,14 @@ enum Commands {
         /// 지역 이름(선택)
         #[arg(trailing_var_arg = true)]
         location: Vec<String>,
+    },
+    /// 환율. 예: wonjang 환율 (주요통화) / wonjang 환율 100 USD (환산)
+    #[command(alias = "환율")]
+    Exchange {
+        /// 환산할 금액(선택)
+        amount: Option<f64>,
+        /// 통화 코드(선택, 예: USD JPY)
+        currency: Option<String>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -390,6 +399,7 @@ async fn run() -> Result<()> {
         Some(Commands::Subway { station }) => return cmd_subway(&cfg, station),
         Some(Commands::Weather { location }) => return cmd_weather(location),
         Some(Commands::Air { location }) => return cmd_air(location),
+        Some(Commands::Exchange { amount, currency }) => return cmd_exchange(*amount, currency),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1077,6 +1087,40 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_exchange(amount: Option<f64>, currency: &Option<String>) -> Result<()> {
+    let (date, rates) = util::run_async(async move { exchange::fetch().await })?;
+    println!();
+    match currency {
+        Some(cur) => {
+            let per = exchange::krw_per(cur, &rates)
+                .ok_or_else(|| anyhow::anyhow!("'{cur}' 환율을 찾을 수 없습니다"))?;
+            let amt = amount.unwrap_or(1.0);
+            println!(
+                "  💱 {} {} = {}원",
+                exchange::comma(amt, 0),
+                cur.to_uppercase(),
+                exchange::comma(amt * per, 0)
+            );
+        }
+        None => {
+            println!("  💱 환율 (원화 기준)");
+            for (code, unit) in [("USD", 1.0), ("JPY", 100.0), ("EUR", 1.0), ("CNY", 1.0)] {
+                if let Some(per) = exchange::krw_per(code, &rates) {
+                    let name = exchange::currency_name(code);
+                    println!(
+                        "     {} {code}({name}) = {}원",
+                        exchange::comma(unit, 0),
+                        exchange::comma(unit * per, 0)
+                    );
+                }
+            }
+        }
+    }
+    ui::info(&format!("     ({})", date.trim()));
+    println!();
     Ok(())
 }
 

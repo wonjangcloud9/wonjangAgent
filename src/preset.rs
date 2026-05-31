@@ -130,10 +130,10 @@ pub fn builtin() -> Vec<Preset> {
         ),
         Preset::new(
             "환율",
-            "원/달러 등 환율 조회",
+            "실시간 환율 조회",
             &["fx", "exchange"],
-            "현재 원/달러(USD/KRW) 환율을 web_search로 찾아 알려줘. 다른 통화가 지정되면 \
-             그 통화 기준으로 조회해.",
+            "exchange_rate 도구(또는 'wonjang 환율' 명령)로 실시간 환율을 가져와 한국어로 \
+             알려줘. 특정 통화/금액이 지정되면 그걸로 원화 환산해줘.",
         ),
         Preset::new(
             "일지",
