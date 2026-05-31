@@ -7,6 +7,7 @@ pub mod fs;
 pub mod mcp;
 pub mod memory;
 pub mod notes;
+pub mod reminder;
 pub mod shell;
 pub mod skill;
 pub mod subagent;
@@ -56,6 +57,9 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(notes::NoteReadTool),
         Box::new(notes::NoteAppendTool),
         Box::new(notes::NoteListTool),
+        Box::new(reminder::AddReminderTool),
+        Box::new(reminder::ListRemindersTool),
+        Box::new(reminder::RemoveReminderTool),
     ]
 }
 

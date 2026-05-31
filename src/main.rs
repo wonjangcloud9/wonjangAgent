@@ -14,6 +14,7 @@ mod mcp;
 mod memory;
 mod notes;
 mod preset;
+mod reminders;
 mod safety;
 mod session;
 mod skill;
@@ -72,6 +73,11 @@ enum Commands {
     Sessions,
     /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
     Skills,
+    /// 약속·알림을 보거나 등록/삭제합니다.
+    Remind {
+        #[command(subcommand)]
+        action: Option<RemindAction>,
+    },
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
@@ -99,6 +105,25 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum RemindAction {
+    /// 예정된 알림 목록(기본).
+    List,
+    /// 알림 추가. 예: wonjang remind add 30 물 마시기
+    Add {
+        /// 지금부터 N분 뒤
+        minutes: i64,
+        /// 알림 제목
+        #[arg(trailing_var_arg = true)]
+        title: Vec<String>,
+    },
+    /// id로 알림 삭제.
+    Remove {
+        /// 삭제할 알림 id
+        id: u64,
     },
 }
 
@@ -143,6 +168,7 @@ async fn run() -> Result<()> {
         Some(Commands::Memory) => return cmd_memory(),
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
+        Some(Commands::Remind { action }) => return cmd_remind(action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
@@ -544,8 +570,81 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
             store.save().ok();
         }
 
+        // 약속·알림 확인: 때가 된 알림을 데스크탑 알림 + 로그로 띄운다.
+        check_due_reminders();
+
         tokio::time::sleep(tick).await;
     }
+}
+
+/// 때가 된 약속·알림을 띄우고 처리 표시한다.
+fn check_due_reminders() {
+    let mut store = match reminders::ReminderStore::load() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let now = reminders::now_unix();
+    let due = store.due(now);
+    if due.is_empty() {
+        return;
+    }
+    for r in &due {
+        ui::note(&format!("🔔 알림: {}", r.title));
+        reminders::desktop_notify("원장 알림 🔔", &r.title);
+        store.mark_notified(r.id);
+    }
+    store.save().ok();
+}
+
+fn cmd_remind(action: &Option<RemindAction>) -> Result<()> {
+    let now = reminders::now_unix();
+    if let Some(RemindAction::Add { minutes, title }) = action {
+        let title = title.join(" ");
+        if title.trim().is_empty() {
+            ui::error("알림 제목이 필요합니다. 예: wonjang remind add 30 물 마시기");
+            std::process::exit(1);
+        }
+        let mut store = reminders::ReminderStore::load()?;
+        let at = now + minutes * 60;
+        let id = store.add(at, &title)?;
+        ui::note(&format!(
+            "알림 #{id} 등록: '{title}' ({})",
+            reminders::relative(at, now)
+        ));
+        ui::info("때가 되면 알리려면 스케줄러를 켜 두세요: wonjang cron run");
+        return Ok(());
+    }
+    if let Some(RemindAction::Remove { id }) = action {
+        let mut store = reminders::ReminderStore::load()?;
+        if store.remove(*id)? {
+            ui::note(&format!("알림 #{id}을(를) 삭제했습니다."));
+        } else {
+            ui::error(&format!("알림 #{id}을(를) 찾을 수 없습니다."));
+        }
+        return Ok(());
+    }
+
+    // 기본: 목록.
+    let store = reminders::ReminderStore::load()?;
+    let up = store.upcoming(now);
+    if up.is_empty() {
+        ui::info(
+            "예정된 약속·알림이 없습니다. 대화로 등록해 보세요. 예) '내일 오후 3시 치과 알려줘'",
+        );
+        return Ok(());
+    }
+    println!("예정된 약속·알림:\n");
+    for r in up {
+        println!(
+            "  #{}  {}  ({})",
+            r.id,
+            r.title,
+            reminders::relative(r.at_unix, now)
+        );
+    }
+    println!();
+    ui::info("때가 되면 알림을 띄우려면 스케줄러를 켜 두세요: wonjang cron run");
+    Ok(())
 }
 
 fn cmd_skills() -> Result<()> {

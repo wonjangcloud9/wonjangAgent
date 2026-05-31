@@ -20,6 +20,11 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "(알 수 없음)".to_string());
     let os = std::env::consts::OS;
+    // 현재 실행 파일 경로(미설치 환경에서도 CLI 백엔드가 정확히 호출하도록).
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| "wonjang".to_string());
     let mut prompt = format!(
         "당신은 '원장'이라는 이름의 자율 AI 에이전트입니다. 사용자의 로컬 컴퓨터 환경을 \
          직접 다루어 작업을 수행합니다.\n\n\
@@ -35,7 +40,11 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 작업을 마치면 무엇을 했고 결과가 어떤지 한국어로 요약합니다.\n\n\
          실행 환경:\n\
          - 운영체제: {os}\n\
-         - 현재 작업 디렉터리: {cwd}\n"
+         - 현재 작업 디렉터리: {cwd}\n\n\
+         비서 기능(셸로 원장 명령을 직접 쓸 수 있습니다. 실행 파일: {exe}):\n\
+         - 약속·알림 등록: `{exe} remind add <분> \"<제목>\"` (절대 시각은 지금부터 몇 분 \
+         뒤인지 계산해 분으로 주세요. 현재 시각은 `date`로 확인). add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
+         - 예정된 알림 확인: `{exe} remind`\n"
     );
 
     // 옵시디언 볼트가 설정돼 있으면 안내(양 백엔드 모두 활용).
