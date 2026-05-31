@@ -27,6 +27,7 @@ mod reminders;
 mod safety;
 mod session;
 mod skill;
+mod subway;
 mod todos;
 mod tools;
 mod ui;
@@ -139,6 +140,12 @@ enum Commands {
     Open {
         /// 즐겨찾기 이름 또는 URL/경로
         target: String,
+    },
+    /// 서울 지하철 실시간 도착정보. 예: wonjang 지하철 강남
+    #[command(alias = "지하철")]
+    Subway {
+        /// 역 이름
+        station: String,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -364,6 +371,7 @@ async fn run() -> Result<()> {
         Some(Commands::Focus { minutes, label }) => return cmd_focus(*minutes, label),
         Some(Commands::Bookmark { action }) => return cmd_bookmark(action),
         Some(Commands::Open { target }) => return cmd_open(target),
+        Some(Commands::Subway { station }) => return cmd_subway(&cfg, station),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1051,6 +1059,24 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_subway(cfg: &Config, station: &str) -> Result<()> {
+    let key = cfg.seoul_api_key.clone();
+    let st = station.to_string();
+    let list = util::run_async(async move { subway::arrivals(&key, &st, 10).await })?;
+    if list.is_empty() {
+        ui::info(&format!(
+            "'{station}' 도착 정보가 없어요. 역 이름을 확인하거나 잠시 후 다시 시도하세요."
+        ));
+        return Ok(());
+    }
+    println!("\n  🚇 {station} 실시간 도착:\n");
+    for a in &list {
+        println!("  [{}] {} — {}", a.line, a.direction, a.message);
+    }
+    println!();
     Ok(())
 }
 

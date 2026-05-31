@@ -67,6 +67,10 @@ pub struct Config {
     #[serde(default)]
     pub kakao_access_token: String,
 
+    /// 서울 열린데이터광장 API 키(지하철 실시간 도착). 비면 'sample'(테스트용).
+    #[serde(default = "default_seoul_api_key")]
+    pub seoul_api_key: String,
+
     /// 연결할 MCP 서버 목록(외부 도구).
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
@@ -96,6 +100,10 @@ fn default_backend() -> String {
     "auto".to_string()
 }
 
+fn default_seoul_api_key() -> String {
+    "sample".to_string()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -109,6 +117,7 @@ impl Default for Config {
             discord_webhook: String::new(),
             notion_token: String::new(),
             kakao_access_token: String::new(),
+            seoul_api_key: default_seoul_api_key(),
             mcp_servers: Vec::new(),
             telegram_token: String::new(),
             telegram_allowed_ids: Vec::new(),
@@ -173,6 +182,11 @@ impl Config {
         if let Ok(v) = std::env::var("WONJANG_KAKAO_TOKEN") {
             if !v.is_empty() {
                 cfg.kakao_access_token = v;
+            }
+        }
+        if let Ok(v) = std::env::var("WONJANG_SEOUL_API_KEY") {
+            if !v.is_empty() {
+                cfg.seoul_api_key = v;
             }
         }
         // API 키: 전용 변수 우선, 없으면 흔한 변수로 폴백.

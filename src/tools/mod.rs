@@ -16,6 +16,7 @@ pub mod reminder;
 pub mod shell;
 pub mod skill;
 pub mod subagent;
+pub mod subway;
 pub mod todo;
 pub mod web;
 
@@ -80,6 +81,7 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(habit::AddHabitTool),
         Box::new(habit::CheckHabitTool),
         Box::new(habit::ListHabitsTool),
+        Box::new(subway::SubwayTool),
     ]
 }
 
