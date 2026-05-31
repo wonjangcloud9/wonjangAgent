@@ -4,6 +4,7 @@
 //! 전달할 JSON 스키마(`spec`)와 실제 실행 로직(`execute`)을 제공한다.
 
 pub mod fs;
+pub mod memory;
 pub mod shell;
 
 use serde_json::Value;
@@ -37,6 +38,8 @@ pub fn default_tools() -> Vec<Box<dyn Tool>> {
         Box::new(fs::ReadFileTool),
         Box::new(fs::WriteFileTool),
         Box::new(fs::ListDirTool),
+        Box::new(memory::RememberTool),
+        Box::new(memory::RecallTool),
     ]
 }
 

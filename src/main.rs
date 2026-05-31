@@ -6,6 +6,7 @@
 mod agent;
 mod config;
 mod llm;
+mod memory;
 mod tools;
 mod ui;
 
@@ -44,6 +45,8 @@ struct Cli {
 enum Commands {
     /// 현재 설정을 보여주고, 없으면 기본 설정 파일을 생성합니다.
     Config,
+    /// 에이전트가 기억하고 있는 사실(영속 메모리)을 보여줍니다.
+    Memory,
 }
 
 #[tokio::main]
@@ -62,8 +65,10 @@ async fn run() -> Result<()> {
     }
 
     // 서브커맨드 처리.
-    if let Some(Commands::Config) = cli.command {
-        return cmd_config(&cfg);
+    match cli.command {
+        Some(Commands::Config) => return cmd_config(&cfg),
+        Some(Commands::Memory) => return cmd_memory(),
+        None => {}
     }
 
     // API 키 확인.
@@ -84,7 +89,9 @@ async fn run() -> Result<()> {
         auto_approve: cli.yes,
     };
 
-    let mut messages = vec![Message::system(agent::system_prompt())];
+    // 영속 메모리를 로드해 시스템 프롬프트에 주입(이전 세션 맥락 유지).
+    let mem = memory::Memory::load()?;
+    let mut messages = vec![Message::system(agent::system_prompt(mem.prompt_block()))];
 
     // 단발 실행 모드.
     let one_shot = cli.prompt.join(" ");
@@ -182,5 +189,17 @@ fn cmd_config(cfg: &Config) -> Result<()> {
     );
     println!("  max_steps : {}", cfg.max_steps);
     ui::info("\nAPI 키는 보안을 위해 파일에 저장하지 않습니다. 환경 변수를 사용하세요.");
+    Ok(())
+}
+
+fn cmd_memory() -> Result<()> {
+    let mem = memory::Memory::load()?;
+    println!("  메모리 파일: {}", mem.path().display());
+    let content = mem.read();
+    if content.trim().is_empty() {
+        ui::info("아직 기억하고 있는 사실이 없습니다. 대화하면서 점점 쌓입니다.");
+    } else {
+        println!("\n{}", content.trim());
+    }
     Ok(())
 }
