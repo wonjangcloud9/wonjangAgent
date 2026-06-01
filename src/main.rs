@@ -3,6 +3,7 @@
 //! 헤르메스 에이전트(NousResearch/hermes-agent)의 핵심 아이디어를 러스트로
 //! 재구성한다: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
 
+mod age;
 mod agent;
 mod airquality;
 mod backup;
@@ -218,6 +219,12 @@ enum Commands {
     Pyeong {
         /// 변환할 숫자
         value: f64,
+    },
+    /// 만 나이 계산(만 나이 통일법 기준). 예: wonjang 나이 1990-03-15
+    #[command(alias = "나이")]
+    Age {
+        /// 생일 (YYYY-MM-DD)
+        birth: String,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -478,6 +485,7 @@ async fn run() -> Result<()> {
         Some(Commands::News { query }) => return cmd_news(query),
         Some(Commands::Lotto { games }) => return cmd_lotto(*games),
         Some(Commands::Pyeong { value }) => return cmd_pyeong(*value),
+        Some(Commands::Age { birth }) => return cmd_age(birth),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1437,6 +1445,25 @@ fn cmd_pyeong(value: f64) -> Result<()> {
     println!("  📐 평수 변환");
     println!("     {value:.0}평 = {:.1}㎡", pyeong::pyeong_to_m2(value));
     println!("     {value:.0}㎡ = {:.1}평", pyeong::m2_to_pyeong(value));
+    println!();
+    Ok(())
+}
+
+fn cmd_age(birth: &str) -> Result<()> {
+    let birth = age::parse_birth(birth)?;
+    let today = chrono::Local::now().date_naive();
+    let man = age::korean_age(birth, today);
+    let yeon = age::year_age(birth, today);
+    let dday = age::days_to_birthday(birth, today);
+    println!();
+    println!("  🎂 나이 계산 ({})", birth.format("%Y년 %m월 %d일생"));
+    println!("     만 나이: {man}세");
+    println!("     연 나이: {yeon}세  (현재 연도 − 출생 연도)");
+    if dday == 0 {
+        println!("     🎉 오늘이 생일이에요!");
+    } else {
+        println!("     다음 생일까지 {dday}일 남았어요");
+    }
     println!();
     Ok(())
 }
