@@ -75,6 +75,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 뉴스 헤드라인: `{exe} 뉴스 [검색어]`(또는 news_headlines 도구)\n\
          - 긱뉴스(개발/기술/스타트업): `{exe} 긱뉴스 [개수]` (개발자용 한국 기술 뉴스)\n\
          - GitHub 저장소 정보: `{exe} 깃헙 <owner/repo>` (별·이슈·최신 릴리스)\n\
+         - 내 공인 IP·통신사·위치: `{exe} 내아이피` (VPN/네트워크 확인)\n\
          - QR 코드 생성: `{exe} qr <텍스트/URL>` 또는 `{exe} qr --wifi <SSID> --비번 <비번>` (터미널에 스캔용 QR)\n\
          - 한국 공휴일: `{exe} 공휴일 [년도]` (설날·추석 포함, 다음 빨간날 D-day). web_search보다 정확\n\
          - 생활·금융 계산기(정확한 사용법은 `{exe} 도움` 참고): 평수 `{exe} 평`, 만나이 `{exe} 나이`, 실수령 `{exe} 실수령`, 시급 `{exe} 시급`, 대출 `{exe} 대출`, 예적금 `{exe} 예금`/`{exe} 적금`, 할인 `{exe} 할인`, 부가세 `{exe} 부가세`, 날짜 `{exe} 날짜`, 시간 `{exe} 시간`, 진법 `{exe} 진법`, 단위변환 `{exe} 변환`, BMI `{exe} bmi`, 글자수 `{exe} 글자수`, 초성 `{exe} 초성`, 한영타 `{exe} 영타`/`{exe} 한타`, 한글금액 `{exe} 금액`, 사칙연산 `{exe} 계산`, 더치페이 `{exe} 더치`, 제비뽑기 `{exe} 뽑기`, 메뉴추천 `{exe} 메뉴`, 로또 `{exe} 로또`\n\

@@ -50,6 +50,7 @@ mod lotto;
 mod mcp;
 mod memory;
 mod menu;
+mod myip;
 mod news;
 mod notes;
 mod notion;
@@ -551,6 +552,9 @@ enum Commands {
         /// owner/repo
         slug: String,
     },
+    /// 내 공인 IP·통신사·위치 확인. 예: wonjang 내아이피
+    #[command(alias = "내아이피")]
+    Myip,
     /// QR 코드를 터미널에 생성합니다. 예: wonjang qr https://example.com
     Qr {
         /// QR로 만들 텍스트/URL
@@ -927,6 +931,7 @@ async fn run() -> Result<()> {
             password,
         }) => return cmd_qr(text, wifi.as_deref(), password),
         Some(Commands::Github { slug }) => return cmd_github(slug),
+        Some(Commands::Myip) => return cmd_myip(),
         Some(Commands::Bike { query }) => return cmd_bike(&cfg, query.as_deref()),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
@@ -1643,6 +1648,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 공휴일 [년도]", "한국 공휴일(설날·추석 포함)"),
                 ("wonjang 긱뉴스 [개수]", "개발·기술·스타트업 뉴스"),
                 ("wonjang 깃헙 <owner/repo>", "GitHub 저장소 정보"),
+                ("wonjang 내아이피", "공인 IP·통신사·위치"),
             ],
         ),
         (
@@ -2706,6 +2712,33 @@ fn cmd_bike(cfg: &Config, query: Option<&str>) -> Result<()> {
             "  {} 'sample' 키라 고정 예시(망원역 일대)만 나와요. 서울 무료 키를 넣으면 전체 조회.",
             "ⓘ".dimmed()
         );
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_myip() -> Result<()> {
+    use owo_colors::OwoColorize;
+    let info = util::run_async(async move { myip::fetch().await })?;
+    println!();
+    println!("  🌐 내 공인 IP");
+    println!("     {}", info.ip.bright_cyan().bold());
+    let loc: Vec<&str> = [
+        info.country.as_str(),
+        info.region.as_str(),
+        info.city.as_str(),
+    ]
+    .into_iter()
+    .filter(|s| !s.is_empty())
+    .collect();
+    if !loc.is_empty() {
+        println!("     위치: {}", loc.join(" "));
+    }
+    if !info.isp.is_empty() {
+        println!("     통신사: {}", info.isp);
+    }
+    if !info.org.is_empty() && info.org != info.isp {
+        println!("     조직: {}", info.org.dimmed());
     }
     println!();
     Ok(())
