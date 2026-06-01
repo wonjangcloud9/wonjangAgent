@@ -32,6 +32,7 @@ mod menu;
 mod news;
 mod notes;
 mod notion;
+mod pick;
 mod preset;
 mod push;
 mod pyeong;
@@ -283,6 +284,18 @@ enum Commands {
         /// 올림 단위(원, 기본 100)
         #[arg(default_value_t = 100)]
         unit: i64,
+    },
+    /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
+    #[command(alias = "뽑기")]
+    Pick {
+        /// 뽑을 인원/개수(기본 1)
+        #[arg(short = 'n', long = "count", default_value_t = 1)]
+        count: usize,
+        /// 순서 섞기(당첨 대신 전체 순서를 보여줌)
+        #[arg(short = 'o', long = "order")]
+        order: bool,
+        /// 후보 항목들(이름·메뉴 등)
+        items: Vec<String>,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -566,6 +579,11 @@ async fn run() -> Result<()> {
             people,
             unit,
         }) => return cmd_dutch(*total, *people, *unit),
+        Some(Commands::Pick {
+            count,
+            order,
+            items,
+        }) => return cmd_pick(items, *count, *order),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1631,6 +1649,36 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_pick(items: &[String], count: usize, order: bool) -> Result<()> {
+    println!();
+    if items.len() < 2 {
+        println!("  뽑을 후보를 2개 이상 입력하세요. 예: wonjang 뽑기 철수 영희 민수");
+        println!();
+        return Ok(());
+    }
+    if order {
+        // draw가 시간 시드로 전체를 섞어 순서를 만든다.
+        let full = pick::draw(items, items.len());
+        println!("  🎲 순서 정하기");
+        for (i, it) in full.iter().enumerate() {
+            println!("     {}. {}", i + 1, it);
+        }
+    } else {
+        let n = count.clamp(1, items.len());
+        let winners = pick::draw(items, n);
+        if n == 1 {
+            println!("  🎯 당첨!  👉 {}", winners[0]);
+        } else {
+            println!("  🎯 {n}명 당첨!");
+            for w in &winners {
+                println!("     • {w}");
+            }
+        }
+    }
     println!();
     Ok(())
 }
