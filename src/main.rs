@@ -15,6 +15,7 @@ mod coin;
 mod config;
 mod cron;
 mod ddays;
+mod deposit;
 mod engine;
 mod exchange;
 mod expenses;
@@ -242,6 +243,26 @@ enum Commands {
         /// 연이율(%). 예: 4.5
         rate: f64,
         /// 상환 개월 수. 예: 360 = 30년
+        months: u32,
+    },
+    /// 정기예금 만기 계산(세후). 예: wonjang 예금 1000 3.5 12
+    #[command(alias = "예금")]
+    Deposit {
+        /// 예치 원금(만 원 단위). 예: 1000 = 1,000만 원
+        manwon: f64,
+        /// 연이율(%). 예: 3.5
+        rate: f64,
+        /// 예치 개월 수. 예: 12
+        months: u32,
+    },
+    /// 정기적금 만기 계산(세후). 예: wonjang 적금 50 4.0 24
+    #[command(alias = "적금")]
+    Savings {
+        /// 월 납입액(만 원 단위). 예: 50 = 50만 원
+        manwon: f64,
+        /// 연이율(%). 예: 4.0
+        rate: f64,
+        /// 납입 개월 수. 예: 24
         months: u32,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
@@ -510,6 +531,16 @@ async fn run() -> Result<()> {
             rate,
             months,
         }) => return cmd_loan(*manwon, *rate, *months),
+        Some(Commands::Deposit {
+            manwon,
+            rate,
+            months,
+        }) => return cmd_deposit(*manwon, *rate, *months, false),
+        Some(Commands::Savings {
+            manwon,
+            rate,
+            months,
+        }) => return cmd_deposit(*manwon, *rate, *months, true),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1544,6 +1575,37 @@ fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
     println!("     마지막 달      {}", w(pp.last_month));
     println!("     총 이자        {}", w(pp.total_interest));
     println!("     총 상환액      {}", w(pp.total_payment));
+    println!();
+    Ok(())
+}
+
+fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<()> {
+    let amount = manwon * 10_000.0;
+    let m = if is_savings {
+        deposit::installment(amount, rate, months)
+    } else {
+        deposit::time_deposit(amount, rate, months)
+    };
+    let w = |v: f64| expenses::won(v.round() as i64);
+    println!();
+    if is_savings {
+        println!(
+            "  🐷 정기적금 ({}만 원/월 · 연 {rate}% · {months}개월)",
+            manwon as i64
+        );
+        println!("     원금 합계      {}", w(m.principal));
+    } else {
+        println!(
+            "  🏦 정기예금 ({}만 원 · 연 {rate}% · {months}개월)",
+            manwon as i64
+        );
+        println!("     예치 원금      {}", w(m.principal));
+    }
+    println!("     세전 이자      {}", w(m.interest_pretax));
+    println!("     ─ 이자소득세   -{}  (15.4%)", w(m.tax));
+    println!("     세후 이자      {}", w(m.interest_aftertax));
+    println!("     ───────────────");
+    println!("     만기 수령액    {}", w(m.total));
     println!();
     Ok(())
 }
