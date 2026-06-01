@@ -96,6 +96,7 @@ enum Commands {
         action: Option<RemindAction>,
     },
     /// 할 일(체크리스트)을 보거나 추가/완료합니다.
+    #[command(alias = "할일")]
     Todo {
         #[command(subcommand)]
         action: Option<TodoAction>,
@@ -114,6 +115,9 @@ enum Commands {
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
+    /// 원장이 할 수 있는 일을 카테고리별로 안내합니다.
+    #[command(alias = "도움")]
+    Guide,
     /// 가계부: 지출을 기록하거나 합계를 봅니다.
     #[command(alias = "지출")]
     Expense {
@@ -413,6 +417,7 @@ async fn run() -> Result<()> {
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Dday { action }) => return cmd_dday(action),
         Some(Commands::Status) => return cmd_status(),
+        Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Expense { action }) => return cmd_expense(action),
         Some(Commands::Habit { action }) => return cmd_habit(action),
         Some(Commands::Focus { minutes, label }) => return cmd_focus(*minutes, label),
@@ -984,6 +989,94 @@ fn greeting() -> &'static str {
 }
 
 /// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
+/// 원장의 기능을 카테고리별로 안내한다.
+fn cmd_guide() -> Result<()> {
+    use owo_colors::OwoColorize;
+    let groups: &[(&str, &[(&str, &str)])] = &[
+        (
+            "💬 대화 & 작업",
+            &[
+                ("wonjang", "대화형 모드(자연어로 무엇이든)"),
+                ("wonjang \"...\"", "한 줄 요청을 바로 실행"),
+                ("wonjang preset list", "자주 쓰는 작업 프리셋 보기"),
+            ],
+        ),
+        (
+            "🌐 실시간 정보 (키 불필요)",
+            &[
+                ("wonjang 날씨 [지역]", "실시간 날씨"),
+                ("wonjang 미세먼지 [지역]", "PM10·PM2.5 + 등급"),
+                ("wonjang 지하철 <역>", "서울 지하철 실시간 도착"),
+                ("wonjang 환율 [금액 통화]", "실시간 환율·환산"),
+                ("wonjang 코인 [심볼]", "업비트 코인 시세"),
+                ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
+            ],
+        ),
+        (
+            "📅 일정 & 집중",
+            &[
+                (
+                    "wonjang remind add <분> \"약속\"",
+                    "약속·알림(반복 --every)",
+                ),
+                ("wonjang 할일 / todo", "할 일 체크리스트"),
+                ("wonjang dday add \"수능\" <날짜>", "디데이"),
+                ("wonjang 집중 <분> [무엇]", "뽀모도로 타이머"),
+            ],
+        ),
+        (
+            "📒 기록 & 지식",
+            &[
+                ("wonjang 지출 add <금액> <분류>", "가계부"),
+                ("wonjang 습관 done <이름>", "습관 트래커(연속일수)"),
+                ("wonjang 일지/메모 (프리셋)", "옵시디언 노트"),
+                ("wonjang notion search \"...\"", "노션 검색/기록"),
+            ],
+        ),
+        (
+            "📲 알림 & 편의",
+            &[
+                ("wonjang notify \"메시지\"", "카카오/디스코드/텔레그램 푸시"),
+                ("wonjang 열기 <이름>", "즐겨찾기/URL 열기"),
+                ("wonjang 로또", "로또 자동번호"),
+            ],
+        ),
+        (
+            "🤖 24시간 자동화",
+            &[
+                ("wonjang cron add \"@daily\" \"...\"", "예약 작업"),
+                ("wonjang cron run", "스케줄러 켜기(알림·자동브리핑)"),
+                ("wonjang telegram", "텔레그램으로 원격 조작"),
+            ],
+        ),
+        (
+            "📊 한눈에",
+            &[
+                ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
+                ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
+                ("wonjang config", "설정·연동 상태"),
+            ],
+        ),
+    ];
+
+    println!();
+    println!(
+        "  {}  {}",
+        "원장 — 한국어 우선 24시간 비서".bright_cyan().bold(),
+        "할 수 있는 일".dimmed()
+    );
+    for (title, items) in groups {
+        println!("\n  {}", title.bright_white().bold());
+        for (cmd, desc) in *items {
+            println!("     {:<34} {}", cmd.bright_green(), desc.dimmed());
+        }
+    }
+    println!();
+    ui::info("백엔드: API 키가 있으면 그걸로, 없으면 Claude Code/Codex를 자동 연결합니다.");
+    println!();
+    Ok(())
+}
+
 fn cmd_status() -> Result<()> {
     use owo_colors::OwoColorize;
     let now_unix = reminders::now_unix();
