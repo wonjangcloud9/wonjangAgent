@@ -911,34 +911,51 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     }
 }
 
-/// 목표가에 도달한 시세 알림을 푸시하고 발동 표시한다.
+/// 목표가에 도달한 시세 알림을 푸시하고 발동 표시한다(코인 + 환율).
 async fn check_price_watches(cfg: &Config) {
     let mut store = match watch::WatchStore::load() {
         Ok(s) => s,
         Err(_) => return,
     };
-    let markets: Vec<String> = {
-        let mut m: Vec<String> = store.active().iter().map(|w| w.market.clone()).collect();
+    let active: Vec<watch::Watch> = store.active().into_iter().cloned().collect();
+    if active.is_empty() {
+        return;
+    }
+
+    // 코인 시세(업비트).
+    let coin_markets: Vec<String> = {
+        let mut m: Vec<String> = active
+            .iter()
+            .filter(|w| w.kind != "fx")
+            .map(|w| w.market.clone())
+            .collect();
         m.sort();
         m.dedup();
         m
     };
-    if markets.is_empty() {
-        return;
-    }
-    let coins = match coin::fetch(&markets).await {
-        Ok(c) => c,
-        Err(_) => return,
+    let coins = if coin_markets.is_empty() {
+        Vec::new()
+    } else {
+        coin::fetch(&coin_markets).await.unwrap_or_default()
     };
+
+    // 환율(open.er-api).
+    let has_fx = active.iter().any(|w| w.kind == "fx");
+    let rates = if has_fx {
+        exchange::fetch().await.ok().map(|(_, r)| r)
+    } else {
+        None
+    };
+
     let mut changed = false;
-    let active_ids: Vec<u64> = store.active().iter().map(|w| w.id).collect();
-    for id in active_ids {
-        let w = match store.items.iter().find(|w| w.id == id) {
-            Some(w) => w.clone(),
-            None => continue,
+    for w in &active {
+        let price = if w.kind == "fx" {
+            rates.as_ref().and_then(|r| exchange::krw_per(&w.symbol, r))
+        } else {
+            coins.iter().find(|c| c.symbol == w.symbol).map(|c| c.price)
         };
-        if let Some(c) = coins.iter().find(|c| c.symbol == w.symbol) {
-            if watch::should_trigger(&w, c.price) {
+        if let Some(p) = price {
+            if watch::should_trigger(w, p) {
                 let dir = if w.above { "도달" } else { "하락" };
                 ui::note(&format!("🔔 시세 알림: {} {dir}!", w.symbol));
                 push::push_blocking(
@@ -946,11 +963,11 @@ async fn check_price_watches(cfg: &Config) {
                     &format!(
                         "🔔 {} {}원 {dir}! (목표 {}원)",
                         w.symbol,
-                        exchange::comma(c.price, 0),
+                        exchange::comma(p, 0),
                         exchange::comma(w.target, 0)
                     ),
                 );
-                store.mark_triggered(id);
+                store.mark_triggered(w.id);
                 changed = true;
             }
         }
@@ -1290,24 +1307,36 @@ fn cmd_watch(action: &Option<WatchAction>) -> Result<()> {
     let mut store = watch::WatchStore::load()?;
     match action {
         Some(WatchAction::Add { symbol, target }) => {
-            // 현재가로 알림 방향 결정(현재가보다 높으면 '도달=이상', 낮으면 '이하').
             let sym = symbol.to_uppercase();
-            let market = format!("KRW-{sym}");
-            let m = market.clone();
-            let coins = util::run_async(async move { coin::fetch(&[m]).await })?;
-            let current = coins.first().map(|c| c.price);
+            // 통화(USD/JPY 등)면 환율 감시, 아니면 코인 감시.
+            let is_fx = !exchange::currency_name(&sym).is_empty();
+            let kind = if is_fx { "fx" } else { "coin" };
+            // 현재가로 알림 방향 결정(현재가보다 높으면 '이상', 낮으면 '이하').
+            let current = util::run_async({
+                let sym = sym.clone();
+                async move {
+                    if is_fx {
+                        let (_, rates) = exchange::fetch().await?;
+                        Ok(exchange::krw_per(&sym, &rates))
+                    } else {
+                        let coins = coin::fetch(&[format!("KRW-{sym}")]).await?;
+                        Ok(coins.first().map(|c| c.price))
+                    }
+                }
+            })?;
             let above = match current {
                 Some(c) => *target >= c,
                 None => true,
             };
-            let id = store.add(&sym, *target, above)?;
+            let id = store.add(&sym, *target, above, kind)?;
             let dir = if above { "이상" } else { "이하" };
+            let unit = if is_fx { "원(1단위)" } else { "원" };
             ui::note(&format!(
-                "시세 알림 #{id}: {sym}이(가) {}원 {dir}이면 푸시",
+                "시세 알림 #{id}: {sym}이(가) {}{unit} {dir}이면 푸시",
                 exchange::comma(*target, 0)
             ));
             if let Some(c) = current {
-                ui::info(&format!("현재가 {}원", exchange::comma(c, 0)));
+                ui::info(&format!("현재 {}원", exchange::comma(c, 0)));
             }
             ui::info("감시하려면 스케줄러를 켜 두세요: wonjang cron run");
         }

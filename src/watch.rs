@@ -17,8 +17,15 @@ pub struct Watch {
     pub target: f64,
     /// true이면 목표가 '이상'에서, false이면 '이하'에서 알림.
     pub above: bool,
+    /// 감시 종류: "coin"(업비트) 또는 "fx"(환율).
+    #[serde(default = "default_kind")]
+    pub kind: String,
     #[serde(default)]
     pub triggered: bool,
+}
+
+fn default_kind() -> String {
+    "coin".to_string()
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -52,8 +59,8 @@ impl WatchStore {
         Ok(())
     }
 
-    /// 알림을 추가한다. `above`는 현재가 기준으로 호출자가 정한다.
-    pub fn add(&mut self, symbol: &str, target: f64, above: bool) -> Result<u64> {
+    /// 알림을 추가한다. `above`는 현재가 기준으로, `kind`는 "coin"/"fx".
+    pub fn add(&mut self, symbol: &str, target: f64, above: bool, kind: &str) -> Result<u64> {
         let sym = symbol.trim().to_uppercase();
         self.next_id += 1;
         let id = self.next_id;
@@ -63,6 +70,7 @@ impl WatchStore {
             symbol: sym,
             target,
             above,
+            kind: kind.to_string(),
             triggered: false,
         });
         self.save()?;
@@ -113,6 +121,7 @@ mod tests {
             market: "KRW-BTC".into(),
             target,
             above,
+            kind: "coin".into(),
             triggered: false,
         }
     }
