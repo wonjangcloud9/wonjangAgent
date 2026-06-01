@@ -33,6 +33,7 @@ mod focus;
 mod gateway;
 mod habits;
 mod hangul;
+mod holidays;
 mod keyboard;
 mod koreannum;
 mod llm;
@@ -457,6 +458,12 @@ enum Commands {
         /// 주당 근로시간
         weekly_hours: f64,
     },
+    /// 한국 공휴일 조회(설날·추석 포함). 예: wonjang 공휴일 [2026]
+    #[command(alias = "공휴일")]
+    Holiday {
+        /// 연도(생략 시 올해)
+        year: Option<i32>,
+    },
     /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
     #[command(alias = "날짜")]
     Date {
@@ -796,6 +803,7 @@ async fn run() -> Result<()> {
             hourly,
             weekly_hours,
         }) => return cmd_wage(*hourly, *weekly_hours),
+        Some(Commands::Holiday { year }) => return cmd_holiday(*year),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
@@ -1493,6 +1501,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 환율 [금액 통화]", "실시간 환율·환산"),
                 ("wonjang 코인 [심볼]", "업비트 코인 시세"),
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
+                ("wonjang 공휴일 [년도]", "한국 공휴일(설날·추석 포함)"),
             ],
         ),
         (
@@ -2256,6 +2265,71 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_holiday(year: Option<i32>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let today = chrono::Local::now().date_naive();
+    let year = year.unwrap_or_else(|| chrono::Datelike::year(&today));
+    let holidays = util::run_async(async move { holidays::fetch(year).await })?;
+    println!();
+    println!("  🗓️  {year}년 한국 공휴일 ({}일)", holidays.len());
+    if holidays.is_empty() {
+        println!("     데이터를 가져오지 못했어요.");
+        println!();
+        return Ok(());
+    }
+
+    // 같은 이름의 연속된 날짜(연휴)를 한 줄로 묶는다.
+    let mut i = 0;
+    while i < holidays.len() {
+        let start = &holidays[i];
+        let mut end = start;
+        let mut j = i + 1;
+        while j < holidays.len()
+            && holidays[j].name == start.name
+            && (holidays[j].date - holidays[j - 1].date).num_days() == 1
+        {
+            end = &holidays[j];
+            j += 1;
+        }
+        let date_str = if start.date == end.date {
+            format!(
+                "{} ({})",
+                start.date.format("%m-%d"),
+                datecalc::weekday_kr(start.date)
+            )
+        } else {
+            format!(
+                "{}~{}",
+                start.date.format("%m-%d"),
+                end.date.format("%m-%d")
+            )
+        };
+        // D-day(미래면 표시).
+        let dday = datecalc::days_between(today, start.date);
+        let dlabel = if start.date <= today && today <= end.date {
+            "오늘!".bright_red().to_string()
+        } else if dday > 0 {
+            format!("D-{dday}").dimmed().to_string()
+        } else {
+            "지남".dimmed().to_string()
+        };
+        println!("     {:<14} {}  {}", date_str, start.name.bold(), dlabel);
+        i = j;
+    }
+
+    if let Some(next) = holidays::next_after(&holidays, today) {
+        let dday = datecalc::days_between(today, next.date);
+        println!();
+        if dday == 0 {
+            println!("  🎉 오늘은 {}!", next.name);
+        } else {
+            println!("  👉 다음 공휴일: {} 까지 D-{}", next.name, dday);
+        }
+    }
     println!();
     Ok(())
 }
