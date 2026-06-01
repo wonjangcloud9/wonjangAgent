@@ -537,6 +537,11 @@ cargo clippy --all-targets -- -D warnings
 바이너리를 빌드해 GitHub Release에 올리고 npm에 배포합니다. 자세한 릴리스 절차는
 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
 
+> **빌드 정책:** 의존성은 **순수 Rust / rustls**만 씁니다(OpenSSL 등 C 의존성 금지).
+> `x86_64-unknown-linux-musl` 정적 빌드를 깨지 않기 위함입니다 — 예를 들어 TLS가
+> 필요하면 `native-tls`가 아니라 `rustls`(reqwest의 `rustls-tls`, lettre의
+> `tokio1-rustls-tls` 등)를 선택하세요. (현재 의존성 트리에 openssl 0개)
+
 ## 라이선스
 
 MIT
