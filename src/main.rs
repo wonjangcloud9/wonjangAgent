@@ -28,6 +28,7 @@ mod expenses;
 mod focus;
 mod gateway;
 mod habits;
+mod hangul;
 mod llm;
 mod loan;
 mod lotto;
@@ -325,6 +326,12 @@ enum Commands {
     #[command(alias = "글자수")]
     Chars {
         /// 셀 텍스트(여러 단어면 공백으로 이어 붙여 셈)
+        text: Vec<String>,
+    },
+    /// 한글 초성 추출(초성 퀴즈·검색). 예: wonjang 초성 "안녕하세요"
+    #[command(alias = "초성")]
+    Choseong {
+        /// 초성을 뽑을 텍스트
         text: Vec<String>,
     },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
@@ -645,6 +652,7 @@ async fn run() -> Result<()> {
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
         Some(Commands::Chars { text }) => return cmd_chars(text),
+        Some(Commands::Choseong { text }) => return cmd_choseong(text),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1395,6 +1403,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 뽑기 <후보들>", "제비뽑기/추첨"),
                 ("wonjang 메뉴 [카테고리]", "오늘 뭐 먹지?"),
                 ("wonjang 글자수 \"<텍스트>\"", "자소서·SNS 글자수"),
+                ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
             ],
         ),
         (
@@ -1779,6 +1788,21 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
             println!("     (오늘)");
         }
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_choseong(text: &[String]) -> Result<()> {
+    println!();
+    if text.is_empty() {
+        println!("  초성을 뽑을 텍스트를 입력하세요. 예: wonjang 초성 \"안녕하세요\"");
+        println!();
+        return Ok(());
+    }
+    let joined = text.join(" ");
+    println!("  🔡 초성 추출");
+    println!("     {joined}");
+    println!("     👉 {}", hangul::choseong(&joined));
     println!();
     Ok(())
 }
