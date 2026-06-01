@@ -533,6 +533,16 @@ enum Commands {
         /// 도시 검색어(서울/뉴욕/런던…). 생략 시 전체
         city: Option<String>,
     },
+    /// 시간대 변환(도시 간). 예: wonjang 시차 09:00 서울 뉴욕
+    #[command(alias = "시차")]
+    Tzconv {
+        /// 변환할 시각(HH:MM)
+        time: String,
+        /// 출발 도시
+        from: String,
+        /// 도착 도시
+        to: String,
+    },
     /// 유닉스 타임스탬프 변환. 예: wonjang 타임스탬프 1700000000 (없으면 현재)
     #[command(alias = "타임스탬프")]
     Timestamp {
@@ -979,6 +989,7 @@ async fn run() -> Result<()> {
         Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Radix { value }) => return cmd_radix(value),
         Some(Commands::Worldtime { city }) => return cmd_worldtime(city.as_deref()),
+        Some(Commands::Tzconv { time, from, to }) => return cmd_tzconv(time, from, to),
         Some(Commands::Timestamp { value }) => return cmd_timestamp(value.as_deref()),
         Some(Commands::Encode {
             method,
@@ -1722,6 +1733,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
                 ("wonjang 공휴일 [년도]", "한국 공휴일(설날·추석 포함)"),
                 ("wonjang 세계시간 [도시]", "주요 도시 현재 시각(DST)"),
+                ("wonjang 시차 09:00 서울 뉴욕", "도시 간 시간대 변환"),
                 ("wonjang 긱뉴스 [개수]", "개발·기술·스타트업 뉴스"),
                 ("wonjang 깃헙 <owner/repo>", "GitHub 저장소 정보"),
                 ("wonjang 내아이피", "공인 IP·통신사·위치"),
@@ -3111,6 +3123,21 @@ fn cmd_encode(method: &str, text: &[String], decode: bool) -> Result<()> {
     println!();
     println!("  🔠 {} {action}", method.to_lowercase().bright_cyan());
     println!("     {result}");
+    println!();
+    Ok(())
+}
+
+fn cmd_tzconv(time: &str, from: &str, to: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let c = worldtime::convert(time, from, to)?;
+    println!();
+    println!("  🕑 시간대 변환");
+    println!(
+        "     {}  →  {} {}",
+        c.from_label.bold(),
+        c.to_label.bright_cyan().bold(),
+        c.day_note.dimmed()
+    );
     println!();
     Ok(())
 }

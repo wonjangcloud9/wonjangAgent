@@ -64,6 +64,62 @@ fn format_city(name: &str, tz: Tz) -> CityTime {
     }
 }
 
+/// 이름(부분일치)으로 도시의 (정식명, 타임존)을 찾는다.
+pub fn find_tz(name: &str) -> Option<(&'static str, Tz)> {
+    let q = name.trim().to_lowercase();
+    CITIES
+        .iter()
+        .find(|(n, _)| n.to_lowercase().contains(&q))
+        .map(|(n, tz)| (*n, *tz))
+}
+
+/// 도시 간 시간 변환 결과.
+pub struct Conversion {
+    pub from_label: String, // "서울 09:00 (화)"
+    pub to_label: String,   // "뉴욕 20:00 (월)"
+    pub day_note: String,   // "" / "(전날)" / "(다음날)"
+}
+
+/// "HH:MM"을 from 도시 오늘 날짜 기준으로 to 도시 시각으로 변환한다.
+pub fn convert(time: &str, from: &str, to: &str) -> anyhow::Result<Conversion> {
+    use chrono::{Datelike, NaiveTime, TimeZone};
+    let (from_name, from_tz) = find_tz(from)
+        .ok_or_else(|| anyhow::anyhow!("출발 도시를 못 찾았어요: {from} (서울/뉴욕/런던 등)"))?;
+    let (to_name, to_tz) =
+        find_tz(to).ok_or_else(|| anyhow::anyhow!("도착 도시를 못 찾았어요: {to}"))?;
+    let t = NaiveTime::parse_from_str(time.trim(), "%H:%M")
+        .map_err(|_| anyhow::anyhow!("시각은 HH:MM 형식으로 입력하세요 (예: 09:00)"))?;
+
+    // from 도시의 '오늘' 날짜 + 입력 시각.
+    let from_today = Utc::now().with_timezone(&from_tz).date_naive();
+    let naive = from_today.and_time(t);
+    let from_dt = from_tz
+        .from_local_datetime(&naive)
+        .single()
+        .ok_or_else(|| anyhow::anyhow!("해당 시각 변환 실패(서머타임 경계일 수 있어요)"))?;
+    let to_dt = from_dt.with_timezone(&to_tz);
+
+    let day_diff = to_dt.date_naive().num_days_from_ce() - from_dt.date_naive().num_days_from_ce();
+    let day_note = match day_diff {
+        d if d < 0 => "(전날)".to_string(),
+        0 => String::new(),
+        _ => "(다음날)".to_string(),
+    };
+    Ok(Conversion {
+        from_label: format!(
+            "{from_name} {} ({})",
+            from_dt.format("%H:%M"),
+            weekday_kr(from_dt.weekday())
+        ),
+        to_label: format!(
+            "{to_name} {} ({})",
+            to_dt.format("%H:%M"),
+            weekday_kr(to_dt.weekday())
+        ),
+        day_note,
+    })
+}
+
 /// 검색어로 도시를 찾는다(부분일치). 비면 전체.
 pub fn lookup(query: Option<&str>) -> Vec<CityTime> {
     match query {
@@ -104,5 +160,19 @@ mod tests {
     fn partial_search() {
         assert_eq!(lookup(Some("뉴욕")).len(), 1);
         assert!(lookup(Some("없는도시")).is_empty());
+    }
+
+    #[test]
+    fn convert_seoul_to_newyork_is_earlier() {
+        // 서울→뉴욕은 13~14시간 느림(전날이 되기 쉬움). 변환이 성공하고 라벨이 채워짐.
+        let c = convert("09:00", "서울", "뉴욕").unwrap();
+        assert!(c.from_label.starts_with("서울 09:00"));
+        assert!(c.to_label.starts_with("뉴욕"));
+    }
+
+    #[test]
+    fn convert_rejects_unknown_city() {
+        assert!(convert("09:00", "화성", "뉴욕").is_err());
+        assert!(convert("bad", "서울", "뉴욕").is_err());
     }
 }
