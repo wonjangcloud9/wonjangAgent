@@ -64,6 +64,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 평수 변환(평↔㎡): `{exe} 평 <숫자>`\n\
          - 만 나이 계산: `{exe} 나이 <YYYY-MM-DD>` (만 나이·연 나이·다음 생일)\n\
          - 연봉 실수령액: `{exe} 실수령 <연봉(만원)>` (4대 보험+소득세 공제 후)\n\
+         - 대출 상환 계산: `{exe} 대출 <원금(만원)> <연이율%> <개월>` (원리금/원금 균등)\n\
          - 코인 시세 알림: `{exe} 감시 add <심볼> <목표가>` (스케줄러가 도달 시 푸시)\n\
          - 노션 검색/기록(설정된 경우): `{exe} notion search \"<검색어>\"`, `{exe} notion append <page_id> \"<내용>\"`\n"
     );

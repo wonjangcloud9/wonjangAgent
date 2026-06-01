@@ -22,6 +22,7 @@ mod focus;
 mod gateway;
 mod habits;
 mod llm;
+mod loan;
 mod lotto;
 mod mcp;
 mod memory;
@@ -232,6 +233,16 @@ enum Commands {
     Salary {
         /// 연봉(만 원 단위). 예: 3600 = 3,600만 원
         manwon: f64,
+    },
+    /// 대출 상환 계산(원리금/원금 균등). 예: wonjang 대출 30000 4.5 360
+    #[command(alias = "대출")]
+    Loan {
+        /// 원금(만 원 단위). 예: 30000 = 3억
+        manwon: f64,
+        /// 연이율(%). 예: 4.5
+        rate: f64,
+        /// 상환 개월 수. 예: 360 = 30년
+        months: u32,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -494,6 +505,11 @@ async fn run() -> Result<()> {
         Some(Commands::Pyeong { value }) => return cmd_pyeong(*value),
         Some(Commands::Age { birth }) => return cmd_age(birth),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
+        Some(Commands::Loan {
+            manwon,
+            rate,
+            months,
+        }) => return cmd_loan(*manwon, *rate, *months),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1494,6 +1510,40 @@ fn cmd_salary(manwon: f64) -> Result<()> {
     println!("     연 실수령      {}", w(p.net_monthly() * 12.0));
     println!();
     println!("  ※ 2025년 요율·1인 가구·비과세 식대 20만 원 기준 추정치");
+    println!();
+    Ok(())
+}
+
+fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
+    let principal = manwon * 10_000.0;
+    let ep = loan::equal_payment(principal, rate, months);
+    let pp = loan::equal_principal(principal, rate, months);
+    let w = |v: f64| expenses::won(v.round() as i64);
+    let years = months / 12;
+    let rest = months % 12;
+    let term = if rest == 0 {
+        format!("{years}년")
+    } else if years == 0 {
+        format!("{rest}개월")
+    } else {
+        format!("{years}년 {rest}개월")
+    };
+    println!();
+    println!(
+        "  🏦 대출 상환 ({}만 원 · 연 {rate}% · {term})",
+        manwon as i64
+    );
+    println!();
+    println!("  [원리금균등] 매달 같은 금액");
+    println!("     월 상환액      {}", w(ep.monthly));
+    println!("     총 이자        {}", w(ep.total_interest));
+    println!("     총 상환액      {}", w(ep.total_payment));
+    println!();
+    println!("  [원금균등] 매달 원금 동일, 이자 감소");
+    println!("     첫 달          {}", w(pp.first_month));
+    println!("     마지막 달      {}", w(pp.last_month));
+    println!("     총 이자        {}", w(pp.total_interest));
+    println!("     총 상환액      {}", w(pp.total_payment));
     println!();
     Ok(())
 }
