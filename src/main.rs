@@ -71,6 +71,7 @@ mod sheet;
 mod skill;
 mod subway;
 mod timecalc;
+mod timestamp;
 mod todos;
 mod tools;
 mod ui;
@@ -521,6 +522,12 @@ enum Commands {
         /// 숫자(접두사 0x/0o/0b로 진법 자동 인식)
         value: String,
     },
+    /// 유닉스 타임스탬프 변환. 예: wonjang 타임스탬프 1700000000 (없으면 현재)
+    #[command(alias = "타임스탬프")]
+    Timestamp {
+        /// 유닉스 초/밀리초 또는 날짜(YYYY-MM-DD). 생략 시 현재 시각
+        value: Option<String>,
+    },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
     #[command(alias = "시급")]
     Wage {
@@ -925,6 +932,7 @@ async fn run() -> Result<()> {
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Radix { value }) => return cmd_radix(value),
+        Some(Commands::Timestamp { value }) => return cmd_timestamp(value.as_deref()),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1714,6 +1722,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 계산 \"<식>\"", "사칙연산 계산기"),
                 ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
                 ("wonjang 진법 255", "2/8/10/16진수 변환"),
+                ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
             ],
         ),
         (
@@ -3001,6 +3010,36 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         println!("     올해 {day_of_year}번째 날");
         if from.is_none() {
             println!("     (오늘)");
+        }
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_timestamp(value: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    println!();
+    match value {
+        None => {
+            let c = timestamp::now();
+            println!("  ⏰ 현재 시각");
+            println!(
+                "     유닉스(초):   {}",
+                c.unix_sec.to_string().bright_cyan()
+            );
+            println!("     유닉스(밀리): {}", (c.unix_sec * 1000));
+            println!("     로컬:         {}", c.local);
+            println!("     UTC:          {}", c.utc.dimmed());
+        }
+        Some(v) => {
+            let c = timestamp::convert(v)?;
+            println!("  ⏰ 타임스탬프 변환");
+            println!(
+                "     유닉스(초):   {}",
+                c.unix_sec.to_string().bright_cyan()
+            );
+            println!("     로컬:         {}", c.local);
+            println!("     UTC:          {}", c.utc.dimmed());
         }
     }
     println!();
