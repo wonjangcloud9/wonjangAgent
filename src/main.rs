@@ -7,6 +7,7 @@ mod age;
 mod agent;
 mod airquality;
 mod backup;
+mod bike;
 mod bmi;
 mod bookmarks;
 mod briefing;
@@ -478,6 +479,12 @@ enum Commands {
         /// 보여줄 개수(기본 10)
         count: Option<usize>,
     },
+    /// 서울 따릉이 실시간(남은 자전거·거치대). 예: wonjang 따릉이 강남역
+    #[command(alias = "따릉이")]
+    Bike {
+        /// 대여소 이름 검색어(예: 강남역, 망원역)
+        query: Option<String>,
+    },
     /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
     #[command(alias = "날짜")]
     Date {
@@ -820,6 +827,7 @@ async fn run() -> Result<()> {
         Some(Commands::Holiday { year }) => return cmd_holiday(*year),
         Some(Commands::Congestion { area }) => return cmd_congestion(&cfg, area),
         Some(Commands::Geeknews { count }) => return cmd_geeknews(*count),
+        Some(Commands::Bike { query }) => return cmd_bike(&cfg, query.as_deref()),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
@@ -1515,6 +1523,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 미세먼지 [지역]", "PM10·PM2.5 + 등급"),
                 ("wonjang 지하철 <역>", "서울 지하철 실시간 도착"),
                 ("wonjang 혼잡도 <지역>", "서울 실시간 혼잡도"),
+                ("wonjang 따릉이 <대여소>", "서울 따릉이 실시간"),
                 ("wonjang 환율 [금액 통화]", "실시간 환율·환산"),
                 ("wonjang 코인 [심볼]", "업비트 코인 시세"),
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
@@ -2283,6 +2292,38 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_bike(cfg: &Config, query: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let key = cfg.seoul_api_key.clone();
+    let q = query.unwrap_or("").to_string();
+    let (stations, is_sample) = util::run_async(async move { bike::fetch(&key, &q).await })?;
+    println!();
+    match query {
+        Some(q) => println!("  🚲 따릉이 — '{q}' ({}곳)", stations.len()),
+        None => println!("  🚲 따릉이 대여소 ({}곳)", stations.len()),
+    }
+    if stations.is_empty() {
+        println!("     해당 대여소를 못 찾았어요. 이름 일부로 다시 검색해 보세요.");
+    }
+    for s in &stations {
+        let mark = if s.bikes == 0 {
+            "🈳".to_string()
+        } else {
+            format!("🚲 {}", s.bikes)
+        };
+        println!("     {}  {} / 거치대 {}", mark, s.name.bold(), s.racks);
+    }
+    if is_sample {
+        println!();
+        println!(
+            "  {} 'sample' 키라 고정 예시(망원역 일대)만 나와요. 서울 무료 키를 넣으면 전체 조회.",
+            "ⓘ".dimmed()
+        );
+    }
     println!();
     Ok(())
 }
