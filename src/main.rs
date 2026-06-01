@@ -10,6 +10,7 @@ mod archive;
 mod backup;
 mod bike;
 mod bmi;
+mod bmr;
 mod bookmarks;
 mod briefing;
 mod calc;
@@ -461,6 +462,18 @@ enum Commands {
     },
     /// BMI 계산(아시아 기준 판정). 예: wonjang bmi 175 68
     Bmi {
+        /// 키(cm)
+        height: f64,
+        /// 몸무게(kg)
+        weight: f64,
+    },
+    /// 기초대사량·하루 권장 칼로리. 예: wonjang 칼로리 남 30 175 70
+    #[command(alias = "칼로리")]
+    Calorie {
+        /// 성별(남/여)
+        sex: String,
+        /// 나이
+        age: u32,
         /// 키(cm)
         height: f64,
         /// 몸무게(kg)
@@ -985,6 +998,12 @@ async fn run() -> Result<()> {
         }) => return cmd_dutch(*total, *people, *unit),
         Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
+        Some(Commands::Calorie {
+            sex,
+            age,
+            height,
+            weight,
+        }) => return cmd_calorie(sex, *age, *height, *weight),
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
         Some(Commands::Chars { text }) => return cmd_chars(text),
@@ -3443,6 +3462,33 @@ fn cmd_discount(price: f64, rates: &[f64]) -> Result<()> {
     println!("     절약액         {}", w(d.saved));
     if rates.len() > 1 {
         println!("     실질 할인율    {:.1}%", d.effective_rate);
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_calorie(sex: &str, age: u32, height: f64, weight: f64) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let sex = bmr::Sex::parse(sex)?;
+    if !(1..=120).contains(&age) || height <= 0.0 || weight <= 0.0 {
+        return Err(anyhow::anyhow!("나이·키·몸무게를 올바르게 입력하세요"));
+    }
+    let b = bmr::bmr(sex, age, height, weight);
+    println!();
+    println!("  🍚 칼로리 계산 ({age}세 · {height:.0}cm · {weight:.0}kg)");
+    println!(
+        "     기초대사량(BMR)  {} kcal/일",
+        format!("{b:.0}").bright_cyan().bold()
+    );
+    println!();
+    println!("  활동 수준별 하루 권장 칼로리(TDEE):");
+    for (name, mult, desc) in bmr::ACTIVITY {
+        println!(
+            "     {:<8} {} kcal  ({})",
+            name,
+            format!("{:.0}", b * mult).bold(),
+            desc.dimmed()
+        );
     }
     println!();
     Ok(())
