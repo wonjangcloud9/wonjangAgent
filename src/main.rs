@@ -274,6 +274,9 @@ enum Commands {
         /// 미리볼 행 수(기본 5)
         #[arg(long = "행", default_value_t = 5)]
         rows: usize,
+        /// 표 전체를 JSON 배열로 출력(헤더를 키로)
+        #[arg(long = "json")]
+        json: bool,
     },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
@@ -823,9 +826,12 @@ async fn run() -> Result<()> {
         Some(Commands::Todo { action }) => return cmd_todo(action),
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Dday { action }) => return cmd_dday(action),
-        Some(Commands::Excel { file, column, rows }) => {
-            return cmd_excel(file, column.as_deref(), *rows)
-        }
+        Some(Commands::Excel {
+            file,
+            column,
+            rows,
+            json,
+        }) => return cmd_excel(file, column.as_deref(), *rows, *json),
         Some(Commands::Ddoganjip {
             query,
             add,
@@ -2247,9 +2253,31 @@ fn cmd_ddoganjip(
     Ok(())
 }
 
-fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize) -> Result<()> {
+fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize, json: bool) -> Result<()> {
     use owo_colors::OwoColorize;
     let table = sheet::Table::load(file)?;
+
+    // JSON 변환 모드: 표를 [{헤더: 값}] 배열로 출력.
+    if json {
+        let arr: Vec<serde_json::Value> = table
+            .rows
+            .iter()
+            .map(|row| {
+                let mut obj = serde_json::Map::new();
+                for (i, header) in table.headers.iter().enumerate() {
+                    let cell = row.get(i).cloned().unwrap_or_default();
+                    obj.insert(header.clone(), serde_json::Value::String(cell));
+                }
+                serde_json::Value::Object(obj)
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Array(arr))?
+        );
+        return Ok(());
+    }
+
     println!();
     println!(
         "  📊 {} — {}행 × {}열",
