@@ -5,6 +5,7 @@
 
 mod agent;
 mod airquality;
+mod backup;
 mod bookmarks;
 mod briefing;
 mod cli_backend;
@@ -119,6 +120,12 @@ enum Commands {
     /// 원장이 할 수 있는 일을 카테고리별로 안내합니다.
     #[command(alias = "도움")]
     Guide,
+    /// 모든 데이터를 백업합니다(약속·할일·가계부·메모리 등).
+    #[command(alias = "백업")]
+    Backup {
+        /// 백업을 저장할 폴더(기본: 홈 디렉터리)
+        dest: Option<String>,
+    },
     /// 가계부: 지출을 기록하거나 합계를 봅니다.
     #[command(alias = "지출")]
     Expense {
@@ -443,6 +450,7 @@ async fn run() -> Result<()> {
         Some(Commands::Dday { action }) => return cmd_dday(action),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
+        Some(Commands::Backup { dest }) => return cmd_backup(dest),
         Some(Commands::Expense { action }) => return cmd_expense(action),
         Some(Commands::Habit { action }) => return cmd_habit(action),
         Some(Commands::Focus { minutes, label }) => return cmd_focus(*minutes, label),
@@ -1083,7 +1091,21 @@ fn greeting() -> &'static str {
     }
 }
 
-/// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
+/// 모든 데이터를 타임스탬프 폴더로 백업한다 — LLM 없이 즉시.
+fn cmd_backup(dest: &Option<String>) -> Result<()> {
+    let dest_dir = match dest {
+        Some(d) => std::path::PathBuf::from(d),
+        None => {
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("홈 디렉터리를 찾을 수 없습니다"))?
+        }
+    };
+    let ts = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let (path, count) = backup::backup(&dest_dir, &ts)?;
+    ui::note(&format!("✅ {count}개 파일을 백업했습니다."));
+    ui::info(&format!("   위치: {}", path.display()));
+    Ok(())
+}
+
 /// 원장의 기능을 카테고리별로 안내한다.
 fn cmd_guide() -> Result<()> {
     use owo_colors::OwoColorize;
@@ -1172,6 +1194,7 @@ fn cmd_guide() -> Result<()> {
     Ok(())
 }
 
+/// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
 fn cmd_status() -> Result<()> {
     use owo_colors::OwoColorize;
     let now_unix = reminders::now_unix();
