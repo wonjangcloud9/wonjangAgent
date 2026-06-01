@@ -29,6 +29,19 @@ pub fn backup(dest_dir: &Path, timestamp: &str) -> Result<(PathBuf, usize)> {
     Ok((dest, count))
 }
 
+/// 백업 폴더의 내용을 데이터 디렉터리로 복원한다(덮어씀). 복사한 파일 수 반환.
+/// 호출자는 복원 전에 현재 데이터를 백업해 두는 것이 안전하다.
+pub fn restore(backup_src: &Path, data_dest: &Path) -> Result<usize> {
+    if !backup_src.exists() {
+        bail!("백업 폴더를 찾을 수 없습니다: {}", backup_src.display());
+    }
+    std::fs::create_dir_all(data_dest)
+        .with_context(|| format!("데이터 폴더를 만들 수 없습니다: {}", data_dest.display()))?;
+    let mut count = 0;
+    copy_dir(backup_src, data_dest, &mut count)?;
+    Ok(count)
+}
+
 /// 디렉터리를 재귀적으로 복사한다.
 fn copy_dir(src: &Path, dst: &Path, count: &mut usize) -> Result<()> {
     for entry in std::fs::read_dir(src)? {
@@ -67,6 +80,23 @@ mod tests {
         assert_eq!(count, 2);
         assert!(dst.join("a.json").exists());
         assert!(dst.join("sub/b.md").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn restore_copies_into_dest() {
+        let mut base = std::env::temp_dir();
+        base.push("wonjang_restore_test");
+        let _ = std::fs::remove_dir_all(&base);
+        let bk = base.join("bk");
+        let data = base.join("data");
+        std::fs::create_dir_all(&bk).unwrap();
+        std::fs::write(bk.join("reminders.json"), "[]").unwrap();
+
+        let n = restore(&bk, &data).unwrap();
+        assert_eq!(n, 1);
+        assert!(data.join("reminders.json").exists());
+        assert!(restore(&base.join("nope"), &data).is_err());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

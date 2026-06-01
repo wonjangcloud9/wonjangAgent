@@ -126,6 +126,12 @@ enum Commands {
         /// 백업을 저장할 폴더(기본: 홈 디렉터리)
         dest: Option<String>,
     },
+    /// 백업 폴더에서 데이터를 복원합니다(복원 전 현재 데이터 자동 백업).
+    #[command(alias = "복원")]
+    Restore {
+        /// 복원할 백업 폴더 경로
+        source: String,
+    },
     /// 가계부: 지출을 기록하거나 합계를 봅니다.
     #[command(alias = "지출")]
     Expense {
@@ -451,6 +457,7 @@ async fn run() -> Result<()> {
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
+        Some(Commands::Restore { source }) => return cmd_restore(source),
         Some(Commands::Expense { action }) => return cmd_expense(action),
         Some(Commands::Habit { action }) => return cmd_habit(action),
         Some(Commands::Focus { minutes, label }) => return cmd_focus(*minutes, label),
@@ -1103,6 +1110,31 @@ fn cmd_backup(dest: &Option<String>) -> Result<()> {
     let (path, count) = backup::backup(&dest_dir, &ts)?;
     ui::note(&format!("✅ {count}개 파일을 백업했습니다."));
     ui::info(&format!("   위치: {}", path.display()));
+    Ok(())
+}
+
+fn cmd_restore(source: &str) -> Result<()> {
+    let src = std::path::PathBuf::from(source);
+    if !src.exists() {
+        ui::error(&format!("백업 폴더를 찾을 수 없습니다: {source}"));
+        std::process::exit(1);
+    }
+    let data = backup::data_dir()?;
+    // 안전: 복원 전 현재 데이터를 자동 백업(되돌릴 수 있게).
+    if data.exists() {
+        if let Some(home) = dirs::home_dir() {
+            let ts = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            if let Ok((path, n)) = backup::backup(&home, &format!("{ts}-prerestore")) {
+                ui::info(&format!(
+                    "복원 전 현재 데이터를 백업했어요({n}개): {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    let n = backup::restore(&src, &data)?;
+    ui::note(&format!("✅ {n}개 파일을 복원했습니다."));
+    ui::info("기존 데이터는 위 'prerestore' 백업으로 되돌릴 수 있어요.");
     Ok(())
 }
 
