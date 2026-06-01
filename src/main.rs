@@ -60,6 +60,7 @@ mod reminders;
 mod rename;
 mod safety;
 mod salary;
+mod search;
 mod session;
 mod sheet;
 mod skill;
@@ -173,6 +174,17 @@ enum Commands {
         /// 실제로 이동(미지정 시 미리보기만)
         #[arg(long = "실행")]
         run: bool,
+    },
+    /// 파일 내용 검색(폴더 안 텍스트에서 단어 찾기). 예: wonjang 찾기 ~/메모 계약
+    #[command(alias = "찾기")]
+    Search {
+        /// 검색할 폴더
+        path: String,
+        /// 찾을 단어/문구
+        query: String,
+        /// 결과 상한(기본 50)
+        #[arg(long = "개수", default_value_t = 50)]
+        max: usize,
     },
     /// 폴더·파일을 zip으로 압축합니다. 예: wonjang 압축 ~/문서
     #[command(alias = "압축")]
@@ -792,6 +804,7 @@ async fn run() -> Result<()> {
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
+        Some(Commands::Search { path, query, max }) => return cmd_search(path, query, *max),
         Some(Commands::Zip { sources, output }) => return cmd_zip(sources, output.as_deref()),
         Some(Commands::Unzip { file, dest }) => return cmd_unzip(file, dest.as_deref()),
         Some(Commands::Rename {
@@ -1646,6 +1659,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 정리 <폴더>", "종류별 자동 분류(미리보기→--실행)"),
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
+                ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang qr <URL>", "QR 코드 생성(와이파이 --wifi)"),
             ],
         ),
@@ -1689,6 +1703,70 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_search(path: &str, query: &str, max: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let dir = expand_path(path);
+    if !dir.exists() {
+        return Err(anyhow::anyhow!("경로가 없어요: {}", dir.display()));
+    }
+    let max = max.clamp(1, 1000);
+    let result = search::search(&dir, query, max);
+    println!();
+    println!(
+        "  🔎 '{}' 검색 — {}건 (파일 {}개 훑음)",
+        query.bright_cyan(),
+        result.matches.len(),
+        result.files_scanned
+    );
+    if result.matches.is_empty() {
+        println!("     찾지 못했어요.");
+        println!();
+        return Ok(());
+    }
+    // 파일별로 묶어 보여준다.
+    let mut last_file: Option<&std::path::Path> = None;
+    for m in &result.matches {
+        if last_file != Some(m.file.as_path()) {
+            println!();
+            println!("  {}", m.file.display().to_string().bold());
+            last_file = Some(m.file.as_path());
+        }
+        // 검색어를 강조.
+        println!(
+            "     {}: {}",
+            m.line_no.to_string().dimmed(),
+            highlight(&m.line, query)
+        );
+    }
+    if result.truncated {
+        println!();
+        println!("  …상한({max})에 도달했어요. --개수 로 더 보세요.");
+    }
+    println!();
+    Ok(())
+}
+
+/// 줄에서 검색어(대소문자 무시)를 굵게 표시.
+fn highlight(line: &str, query: &str) -> String {
+    use owo_colors::OwoColorize;
+    let lower = line.to_lowercase();
+    let q = query.to_lowercase();
+    let Some(pos) = lower.find(&q) else {
+        return line.to_string();
+    };
+    // 바이트 위치를 문자 경계로 맞춰 안전하게 자른다.
+    let end = pos + q.len();
+    if !line.is_char_boundary(pos) || !line.is_char_boundary(end) {
+        return line.to_string();
+    }
+    format!(
+        "{}{}{}",
+        &line[..pos],
+        (&line[pos..end]).bright_yellow().bold(),
+        &line[end..]
+    )
 }
 
 fn cmd_zip(sources: &[String], output: Option<&str>) -> Result<()> {
