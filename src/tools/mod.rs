@@ -13,6 +13,7 @@ pub mod fs;
 pub mod habit;
 pub mod mcp;
 pub mod memory;
+pub mod news;
 pub mod notes;
 pub mod notion;
 pub mod reminder;
@@ -90,6 +91,7 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(airquality::AirQualityTool),
         Box::new(exchange::ExchangeTool),
         Box::new(coin::CoinTool),
+        Box::new(news::NewsTool),
     ]
 }
 

@@ -22,6 +22,7 @@ mod habits;
 mod llm;
 mod mcp;
 mod memory;
+mod news;
 mod notes;
 mod notion;
 mod preset;
@@ -178,6 +179,13 @@ enum Commands {
     Coin {
         /// 코인 심볼(선택, 예: BTC)
         symbol: Option<String>,
+    },
+    /// 뉴스 헤드라인. 예: wonjang 뉴스 (주요) / wonjang 뉴스 경제
+    #[command(alias = "뉴스")]
+    News {
+        /// 검색어(선택)
+        #[arg(trailing_var_arg = true)]
+        query: Vec<String>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -408,6 +416,7 @@ async fn run() -> Result<()> {
         Some(Commands::Air { location }) => return cmd_air(location),
         Some(Commands::Exchange { amount, currency }) => return cmd_exchange(*amount, currency),
         Some(Commands::Coin { symbol }) => return cmd_coin(symbol),
+        Some(Commands::News { query }) => return cmd_news(query),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1095,6 +1104,31 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_news(query: &[String]) -> Result<()> {
+    let q = query.join(" ");
+    let qo = if q.trim().is_empty() {
+        None
+    } else {
+        Some(q.clone())
+    };
+    let list = util::run_async(async move { news::headlines(qo.as_deref(), 8).await })?;
+    if list.is_empty() {
+        ui::info("뉴스를 가져오지 못했어요.");
+        return Ok(());
+    }
+    println!();
+    if q.trim().is_empty() {
+        println!("  📰 주요 뉴스");
+    } else {
+        println!("  📰 '{q}' 뉴스");
+    }
+    for h in &list {
+        println!("     · {h}");
+    }
+    println!();
     Ok(())
 }
 

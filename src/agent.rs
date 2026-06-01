@@ -59,6 +59,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 미세먼지: `{exe} 미세먼지 [지역]`(또는 air_quality 도구) — 환경부 등급 포함\n\
          - 환율: `{exe} 환율`(주요통화) 또는 `{exe} 환율 <금액> <통화>`(환산), exchange_rate 도구\n\
          - 코인 시세(업비트): `{exe} 코인 [심볼]`(또는 coin_price 도구)\n\
+         - 뉴스 헤드라인: `{exe} 뉴스 [검색어]`(또는 news_headlines 도구)\n\
          - 노션 검색/기록(설정된 경우): `{exe} notion search \"<검색어>\"`, `{exe} notion append <page_id> \"<내용>\"`\n"
     );
 
