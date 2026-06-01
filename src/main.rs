@@ -345,6 +345,12 @@ enum Commands {
         /// 변환할 한글 텍스트
         text: Vec<String>,
     },
+    /// 영문 → 한글 복원(잘못 친 한글). 예: wonjang 한타 dkssud
+    #[command(alias = "한타")]
+    Hanstroke {
+        /// 복원할 영문 텍스트(예: dkssud)
+        text: Vec<String>,
+    },
     /// 숫자 → 한글 금액(계약서·수표). 예: wonjang 금액 1234567
     #[command(alias = "금액")]
     Amount {
@@ -689,6 +695,7 @@ async fn run() -> Result<()> {
         Some(Commands::Chars { text }) => return cmd_chars(text),
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
         Some(Commands::Keystroke { text }) => return cmd_keystroke(text),
+        Some(Commands::Hanstroke { text }) => return cmd_hanstroke(text),
         Some(Commands::Amount { value }) => return cmd_amount(*value),
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Time { items }) => return cmd_time(items),
@@ -1445,6 +1452,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 글자수 \"<텍스트>\"", "자소서·SNS 글자수"),
                 ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
                 ("wonjang 영타 \"<한글>\"", "한글→영문 타자(dkssud)"),
+                ("wonjang 한타 <영문>", "영문→한글 복원(잘못 친 글자)"),
                 ("wonjang 금액 <숫자>", "한글 금액(계약서·수표)"),
                 ("wonjang 계산 \"<식>\"", "사칙연산 계산기"),
                 ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
@@ -1925,6 +1933,21 @@ fn cmd_keystroke(text: &[String]) -> Result<()> {
     println!("  ⌨️  한글 → 영문 타자");
     println!("     {joined}");
     println!("     👉 {}", keyboard::han_to_eng(&joined));
+    println!();
+    Ok(())
+}
+
+fn cmd_hanstroke(text: &[String]) -> Result<()> {
+    println!();
+    if text.is_empty() {
+        println!("  복원할 영문을 입력하세요. 예: wonjang 한타 dkssud");
+        println!();
+        return Ok(());
+    }
+    let joined = text.join(" ");
+    println!("  ⌨️  영문 → 한글 복원");
+    println!("     {joined}");
+    println!("     👉 {}", keyboard::eng_to_han(&joined));
     println!();
     Ok(())
 }
