@@ -38,6 +38,7 @@ mod geeknews;
 mod habits;
 mod hangul;
 mod holidays;
+mod jsontool;
 mod keyboard;
 mod koreannum;
 mod llm;
@@ -174,6 +175,14 @@ enum Commands {
         /// 실제로 이동(미지정 시 미리보기만)
         #[arg(long = "실행")]
         run: bool,
+    },
+    /// JSON 파일 검증·정렬·값 추출. 예: wonjang json data.json --키 meta.port
+    Json {
+        /// JSON 파일 경로
+        file: String,
+        /// 점 경로로 값 추출(예: meta.port, tags.0)
+        #[arg(long = "키")]
+        key: Option<String>,
     },
     /// 파일 내용 검색(폴더 안 텍스트에서 단어 찾기). 예: wonjang 찾기 ~/메모 계약
     #[command(alias = "찾기")]
@@ -804,6 +813,7 @@ async fn run() -> Result<()> {
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
+        Some(Commands::Json { file, key }) => return cmd_json(file, key.as_deref()),
         Some(Commands::Search { path, query, max }) => return cmd_search(path, query, *max),
         Some(Commands::Zip { sources, output }) => return cmd_zip(sources, output.as_deref()),
         Some(Commands::Unzip { file, dest }) => return cmd_unzip(file, dest.as_deref()),
@@ -1673,6 +1683,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
+                ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang qr <URL>", "QR 코드 생성(와이파이 --wifi)"),
             ],
         ),
@@ -1716,6 +1727,49 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_json(file: &str, key: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let path = expand_path(file);
+    let value = jsontool::parse_file(&path.to_string_lossy())?;
+    println!();
+    if let Some(k) = key {
+        match jsontool::pick(&value, k) {
+            Some(v) => {
+                println!("  🔑 {} = {}", k.bright_cyan(), jsontool::summary(v));
+                println!();
+                println!("{}", jsontool::pretty(v));
+            }
+            None => println!("  '{k}' 경로를 찾지 못했어요."),
+        }
+        println!();
+        return Ok(());
+    }
+    println!(
+        "  ✅ 올바른 JSON — {} ({})",
+        path.display().to_string().bright_cyan(),
+        jsontool::summary(&value)
+    );
+    // 너무 크면 통째로 쏟지 않는다.
+    let pretty = jsontool::pretty(&value);
+    if pretty.len() <= 4000 {
+        println!();
+        println!("{pretty}");
+    } else {
+        println!(
+            "     ({}바이트 — 일부만; 값 추출은 --키 사용)",
+            pretty.len()
+        );
+        if let serde_json::Value::Object(m) = &value {
+            println!(
+                "     최상위 키: {}",
+                m.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+    }
+    println!();
+    Ok(())
 }
 
 fn cmd_search(path: &str, query: &str, max: usize) -> Result<()> {
