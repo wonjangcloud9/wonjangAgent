@@ -27,6 +27,7 @@ mod loan;
 mod lotto;
 mod mcp;
 mod memory;
+mod menu;
 mod news;
 mod notes;
 mod notion;
@@ -264,6 +265,12 @@ enum Commands {
         rate: f64,
         /// 납입 개월 수. 예: 24
         months: u32,
+    },
+    /// 오늘 뭐 먹지? 메뉴 추천. 예: wonjang 메뉴 / wonjang 메뉴 중식
+    #[command(alias = "메뉴")]
+    Menu {
+        /// 카테고리(한식/중식/일식/양식/분식/야식). 생략 시 전체에서 추천
+        category: Option<String>,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -541,6 +548,7 @@ async fn run() -> Result<()> {
             rate,
             months,
         }) => return cmd_deposit(*manwon, *rate, *months, true),
+        Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1606,6 +1614,30 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_menu(category: Option<&str>) -> Result<()> {
+    if let Some(name) = category {
+        if menu::find_category(name).is_none() {
+            println!();
+            println!(
+                "  '{name}' 카테고리는 없어요. 가능: {}",
+                menu::category_keys().join(" / ")
+            );
+            println!();
+            return Ok(());
+        }
+    }
+    println!();
+    match menu::recommend(category) {
+        Some((cat, m)) => {
+            println!("  🍽️  오늘 뭐 먹지?");
+            println!("     👉 [{cat}] {m}");
+        }
+        None => println!("  추천할 메뉴를 찾지 못했어요."),
+    }
     println!();
     Ok(())
 }
