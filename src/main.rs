@@ -16,6 +16,7 @@ mod cli_backend;
 mod clipboard;
 mod coin;
 mod config;
+mod congestion;
 mod convert;
 mod cron;
 mod datecalc;
@@ -464,6 +465,12 @@ enum Commands {
         /// 연도(생략 시 올해)
         year: Option<i32>,
     },
+    /// 서울 실시간 혼잡도 조회. 예: wonjang 혼잡도 강남역
+    #[command(alias = "혼잡도")]
+    Congestion {
+        /// 지역 이름(명소·상권·역 등). 예: 강남역, 홍대, 여의도
+        area: String,
+    },
     /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
     #[command(alias = "날짜")]
     Date {
@@ -804,6 +811,7 @@ async fn run() -> Result<()> {
             weekly_hours,
         }) => return cmd_wage(*hourly, *weekly_hours),
         Some(Commands::Holiday { year }) => return cmd_holiday(*year),
+        Some(Commands::Congestion { area }) => return cmd_congestion(&cfg, area),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
@@ -1498,6 +1506,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 날씨 [지역]", "실시간 날씨"),
                 ("wonjang 미세먼지 [지역]", "PM10·PM2.5 + 등급"),
                 ("wonjang 지하철 <역>", "서울 지하철 실시간 도착"),
+                ("wonjang 혼잡도 <지역>", "서울 실시간 혼잡도"),
                 ("wonjang 환율 [금액 통화]", "실시간 환율·환산"),
                 ("wonjang 코인 [심볼]", "업비트 코인 시세"),
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
@@ -2265,6 +2274,42 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_congestion(cfg: &Config, area: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let key = cfg.seoul_api_key.clone();
+    let q = area.to_string();
+    let c = util::run_async(async move { congestion::fetch(&key, &q).await })?;
+    println!();
+    println!(
+        "  {} {} — {}",
+        congestion::level_emoji(&c.level),
+        c.area.bold(),
+        c.level.bright_cyan()
+    );
+    if !c.message.is_empty() {
+        println!("     {}", c.message);
+    }
+    if !c.ppltn_min.is_empty() {
+        println!("     실시간 인구: 약 {}~{}명", c.ppltn_min, c.ppltn_max);
+    }
+    if !c.time.is_empty() {
+        println!("     기준: {}", c.time.dimmed());
+    }
+    if c.is_sample {
+        println!();
+        println!(
+            "  {} 지금은 'sample' 키라 고정 예시(광화문)만 나와요.",
+            "ⓘ".dimmed()
+        );
+        println!(
+            "    data.seoul.go.kr 무료 키를 발급해 {} 에 넣으면 원하는 지역이 나옵니다.",
+            "config(seoul_api_key)".dimmed()
+        );
+    }
     println!();
     Ok(())
 }

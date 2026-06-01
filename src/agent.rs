@@ -61,6 +61,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 집중(뽀모도로): `{exe} 집중 <분> [무엇]`(타이머+알림), `{exe} 집중`(오늘 집중 요약)\n\
          - 즐겨찾기/열기: `{exe} 즐겨찾기 add <이름> <URL/경로>`, `{exe} 열기 <이름>`\n\
          - 서울 지하철 실시간 도착: `{exe} 지하철 <역이름>`(또는 subway_arrivals 도구)\n\
+         - 서울 실시간 혼잡도: `{exe} 혼잡도 <지역>` (명소·상권·역의 붐빔 정도·실시간 인구)\n\
          - 실시간 날씨: `{exe} 날씨 [지역]`(또는 weather_now 도구) — web_search보다 정확\n\
          - 미세먼지: `{exe} 미세먼지 [지역]`(또는 air_quality 도구) — 환경부 등급 포함\n\
          - 환율: `{exe} 환율`(주요통화) 또는 `{exe} 환율 <금액> <통화>`(환산), exchange_rate 도구\n\
