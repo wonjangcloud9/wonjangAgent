@@ -1,6 +1,6 @@
 [package]
 name = "wonjang"
-version = "0.76.1"
+version = "0.77.0"
 edition = "2021"
 description = "원장 에이전트 — 로컬 환경을 다루는 한국어 우선 자율 AI 에이전트 (Rust)"
 license = "MIT"
@@ -28,6 +28,7 @@ sha2 = "0.10"
 similar = "2"
 base64 = "0.22"
 getrandom = "0.2"
+chrono-tz = "0.10"
 
 [profile.release]
 strip = true

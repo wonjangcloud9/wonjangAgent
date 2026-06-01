@@ -86,6 +86,7 @@ mod wage;
 mod watch;
 mod weather;
 mod web;
+mod worldtime;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -525,6 +526,12 @@ enum Commands {
     Radix {
         /// 숫자(접두사 0x/0o/0b로 진법 자동 인식)
         value: String,
+    },
+    /// 세계 시간(주요 도시 현재 시각, DST 반영). 예: wonjang 세계시간 [뉴욕]
+    #[command(alias = "세계시간")]
+    Worldtime {
+        /// 도시 검색어(서울/뉴욕/런던…). 생략 시 전체
+        city: Option<String>,
     },
     /// 유닉스 타임스탬프 변환. 예: wonjang 타임스탬프 1700000000 (없으면 현재)
     #[command(alias = "타임스탬프")]
@@ -971,6 +978,7 @@ async fn run() -> Result<()> {
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Radix { value }) => return cmd_radix(value),
+        Some(Commands::Worldtime { city }) => return cmd_worldtime(city.as_deref()),
         Some(Commands::Timestamp { value }) => return cmd_timestamp(value.as_deref()),
         Some(Commands::Encode {
             method,
@@ -1713,6 +1721,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 코인 [심볼]", "업비트 코인 시세"),
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
                 ("wonjang 공휴일 [년도]", "한국 공휴일(설날·추석 포함)"),
+                ("wonjang 세계시간 [도시]", "주요 도시 현재 시각(DST)"),
                 ("wonjang 긱뉴스 [개수]", "개발·기술·스타트업 뉴스"),
                 ("wonjang 깃헙 <owner/repo>", "GitHub 저장소 정보"),
                 ("wonjang 내아이피", "공인 IP·통신사·위치"),
@@ -3102,6 +3111,31 @@ fn cmd_encode(method: &str, text: &[String], decode: bool) -> Result<()> {
     println!();
     println!("  🔠 {} {action}", method.to_lowercase().bright_cyan());
     println!("     {result}");
+    println!();
+    Ok(())
+}
+
+fn cmd_worldtime(city: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let cities = worldtime::lookup(city);
+    println!();
+    if cities.is_empty() {
+        println!(
+            "  '{}' 도시를 못 찾았어요. 서울/뉴욕/런던/도쿄 등으로 검색하세요.",
+            city.unwrap_or("")
+        );
+        println!();
+        return Ok(());
+    }
+    println!("  🌏 세계 시간");
+    for c in &cities {
+        println!(
+            "     {:<8} {}   {}",
+            c.name.bold(),
+            c.time,
+            c.offset.dimmed()
+        );
+    }
     println!();
     Ok(())
 }

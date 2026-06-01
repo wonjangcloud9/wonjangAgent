@@ -72,6 +72,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 미세먼지: `{exe} 미세먼지 [지역]`(또는 air_quality 도구) — 환경부 등급 포함\n\
          - 환율: `{exe} 환율`(주요통화) 또는 `{exe} 환율 <금액> <통화>`(환산), exchange_rate 도구\n\
          - 코인 시세(업비트): `{exe} 코인 [심볼]`(또는 coin_price 도구)\n\
+         - 세계 시간(주요 도시, DST 정확): `{exe} 세계시간 [도시]`\n\
          - 뉴스 헤드라인: `{exe} 뉴스 [검색어]`(또는 news_headlines 도구)\n\
          - 긱뉴스(개발/기술/스타트업): `{exe} 긱뉴스 [개수]` (개발자용 한국 기술 뉴스)\n\
          - GitHub 저장소 정보: `{exe} 깃헙 <owner/repo>` (별·이슈·최신 릴리스)\n\
