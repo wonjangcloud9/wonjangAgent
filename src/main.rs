@@ -49,6 +49,7 @@ mod todos;
 mod tools;
 mod ui;
 mod util;
+mod vat;
 mod watch;
 mod weather;
 mod web;
@@ -310,6 +311,12 @@ enum Commands {
         price: f64,
         /// 할인율(%) 목록. 여러 개면 순차 적용. 예: 20 10
         rates: Vec<f64>,
+    },
+    /// 부가세(VAT 10%) 계산. 예: wonjang 부가세 100000
+    #[command(alias = "부가세")]
+    Vat {
+        /// 금액(원)
+        amount: f64,
     },
     /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
     #[command(alias = "뽑기")]
@@ -608,6 +615,7 @@ async fn run() -> Result<()> {
         Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
+        Some(Commands::Vat { amount }) => return cmd_vat(*amount),
         Some(Commands::Pick {
             count,
             order,
@@ -1678,6 +1686,25 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_vat(amount: f64) -> Result<()> {
+    let w = |v: f64| expenses::won(v.round() as i64);
+    let (s1, v1, t1) = vat::from_supply(amount);
+    let (s2, v2, _t2) = vat::from_total(amount);
+    println!();
+    println!("  🧾 부가세 계산 ({}, VAT 10%)", w(amount));
+    println!();
+    println!("  ▸ 이 금액이 공급가액이면");
+    println!("     세액           {}", w(v1));
+    println!("     합계(VAT 포함) {}", w(t1));
+    println!("     (공급가 {})", w(s1));
+    println!();
+    println!("  ▸ 이 금액이 VAT 포함 합계이면");
+    println!("     공급가액       {}", w(s2));
+    println!("     세액           {}", w(v2));
     println!();
     Ok(())
 }

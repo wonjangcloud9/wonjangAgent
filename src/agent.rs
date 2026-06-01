@@ -68,6 +68,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 단위 변환: `{exe} 변환 <값> <단위>` (c/f, kg/lb, cm/inch, km/mile)\n\
          - BMI 계산: `{exe} bmi <키cm> <몸무게kg>` (아시아 기준 판정·표준체중)\n\
          - 할인가 계산: `{exe} 할인 <원가> <할인율%>...` (여러 개면 중복 할인)\n\
+         - 부가세 계산: `{exe} 부가세 <금액>` (공급가/세액 분리, VAT 10%)\n\
          - 만 나이 계산: `{exe} 나이 <YYYY-MM-DD>` (만 나이·연 나이·다음 생일)\n\
          - 연봉 실수령액: `{exe} 실수령 <연봉(만원)>` (4대 보험+소득세 공제 후)\n\
          - 대출 상환 계산: `{exe} 대출 <원금(만원)> <연이율%> <개월>` (원리금/원금 균등)\n\
