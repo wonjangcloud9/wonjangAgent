@@ -30,6 +30,7 @@ mod focus;
 mod gateway;
 mod habits;
 mod hangul;
+mod keyboard;
 mod koreannum;
 mod llm;
 mod loan;
@@ -336,6 +337,12 @@ enum Commands {
     #[command(alias = "초성")]
     Choseong {
         /// 초성을 뽑을 텍스트
+        text: Vec<String>,
+    },
+    /// 한글 → 영문 타자 변환. 예: wonjang 영타 "안녕"
+    #[command(alias = "영타")]
+    Keystroke {
+        /// 변환할 한글 텍스트
         text: Vec<String>,
     },
     /// 숫자 → 한글 금액(계약서·수표). 예: wonjang 금액 1234567
@@ -681,6 +688,7 @@ async fn run() -> Result<()> {
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
         Some(Commands::Chars { text }) => return cmd_chars(text),
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
+        Some(Commands::Keystroke { text }) => return cmd_keystroke(text),
         Some(Commands::Amount { value }) => return cmd_amount(*value),
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Time { items }) => return cmd_time(items),
@@ -1436,6 +1444,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 메뉴 [카테고리]", "오늘 뭐 먹지?"),
                 ("wonjang 글자수 \"<텍스트>\"", "자소서·SNS 글자수"),
                 ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
+                ("wonjang 영타 \"<한글>\"", "한글→영문 타자(dkssud)"),
                 ("wonjang 금액 <숫자>", "한글 금액(계약서·수표)"),
                 ("wonjang 계산 \"<식>\"", "사칙연산 계산기"),
                 ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
@@ -1901,6 +1910,21 @@ fn cmd_amount(value: u64) -> Result<()> {
     println!("  💴 한글 금액");
     println!("     {}", expenses::won(value as i64));
     println!("     👉 일금 {}원정", koreannum::to_korean(value));
+    println!();
+    Ok(())
+}
+
+fn cmd_keystroke(text: &[String]) -> Result<()> {
+    println!();
+    if text.is_empty() {
+        println!("  변환할 한글을 입력하세요. 예: wonjang 영타 \"안녕\"");
+        println!();
+        return Ok(());
+    }
+    let joined = text.join(" ");
+    println!("  ⌨️  한글 → 영문 타자");
+    println!("     {joined}");
+    println!("     👉 {}", keyboard::han_to_eng(&joined));
     println!();
     Ok(())
 }
