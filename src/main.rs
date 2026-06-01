@@ -1665,9 +1665,15 @@ fn cmd_age(birth: &str) -> Result<()> {
     let yeon = age::year_age(birth, today);
     let dday = age::days_to_birthday(birth, today);
     println!();
+    let animal = age::zodiac_animal(chrono::Datelike::year(&birth));
+    let sign = age::star_sign(
+        chrono::Datelike::month(&birth),
+        chrono::Datelike::day(&birth),
+    );
     println!("  🎂 나이 계산 ({})", birth.format("%Y년 %m월 %d일생"));
     println!("     만 나이: {man}세");
     println!("     연 나이: {yeon}세  (현재 연도 − 출생 연도)");
+    println!("     띠: {animal}띠   별자리: {sign}");
     if dday == 0 {
         println!("     🎉 오늘이 생일이에요!");
     } else {
