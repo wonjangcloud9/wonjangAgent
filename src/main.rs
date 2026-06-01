@@ -54,6 +54,7 @@ mod pick;
 mod preset;
 mod push;
 mod pyeong;
+mod qr;
 mod radix;
 mod reminders;
 mod rename;
@@ -497,6 +498,17 @@ enum Commands {
         /// 보여줄 개수(기본 10)
         count: Option<usize>,
     },
+    /// QR 코드를 터미널에 생성합니다. 예: wonjang qr https://example.com
+    Qr {
+        /// QR로 만들 텍스트/URL
+        text: Vec<String>,
+        /// 와이파이 QR: SSID(비밀번호는 --비번)
+        #[arg(long = "wifi")]
+        wifi: Option<String>,
+        /// 와이파이 비밀번호
+        #[arg(long = "비번", default_value = "")]
+        password: String,
+    },
     /// 서울 따릉이 실시간(남은 자전거·거치대). 예: wonjang 따릉이 강남역
     #[command(alias = "따릉이")]
     Bike {
@@ -847,6 +859,11 @@ async fn run() -> Result<()> {
         Some(Commands::Holiday { year }) => return cmd_holiday(*year),
         Some(Commands::Congestion { area }) => return cmd_congestion(&cfg, area),
         Some(Commands::Geeknews { count }) => return cmd_geeknews(*count),
+        Some(Commands::Qr {
+            text,
+            wifi,
+            password,
+        }) => return cmd_qr(text, wifi.as_deref(), password),
         Some(Commands::Bike { query }) => return cmd_bike(&cfg, query.as_deref()),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
@@ -1629,6 +1646,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 정리 <폴더>", "종류별 자동 분류(미리보기→--실행)"),
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
+                ("wonjang qr <URL>", "QR 코드 생성(와이파이 --wifi)"),
             ],
         ),
         (
@@ -2415,6 +2433,36 @@ fn cmd_bike(cfg: &Config, query: Option<&str>) -> Result<()> {
             "ⓘ".dimmed()
         );
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_qr(text: &[String], wifi: Option<&str>, password: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let (data, label) = match wifi {
+        Some(ssid) => (
+            qr::wifi_payload(ssid, password),
+            format!("와이파이: {ssid}"),
+        ),
+        None => {
+            if text.is_empty() {
+                println!();
+                println!("  QR로 만들 내용을 입력하세요. 예: wonjang qr https://example.com");
+                println!("  와이파이: wonjang qr --wifi <SSID> --비번 <비밀번호>");
+                println!();
+                return Ok(());
+            }
+            let joined = text.join(" ");
+            let label = joined.clone();
+            (joined, label)
+        }
+    };
+    let rendered = qr::render_terminal(&data)?;
+    println!();
+    println!("  📱 {}", label.bright_cyan());
+    println!();
+    println!("{rendered}");
+    println!("  휴대폰 카메라로 스캔하세요.");
     println!();
     Ok(())
 }

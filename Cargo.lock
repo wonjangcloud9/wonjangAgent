@@ -838,6 +838,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
 name = "quick-xml"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1903,7 +1909,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wonjang"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "anyhow",
  "calamine",
@@ -1911,6 +1917,7 @@ dependencies = [
  "clap",
  "dirs",
  "owo-colors",
+ "qrcode",
  "reqwest",
  "serde",
  "serde_json",
