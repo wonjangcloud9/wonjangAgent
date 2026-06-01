@@ -50,6 +50,7 @@ mod salary;
 mod session;
 mod skill;
 mod subway;
+mod timecalc;
 mod todos;
 mod tools;
 mod ui;
@@ -347,6 +348,12 @@ enum Commands {
     Calc {
         /// 계산할 식(괄호·소수·음수 가능)
         expr: Vec<String>,
+    },
+    /// 시간 계산(시·분 더하기/빼기). 예: wonjang 시간 09:00 + 8:30
+    #[command(alias = "시간")]
+    Time {
+        /// 시간(H:MM)과 부호(+/-) 항목들
+        items: Vec<String>,
     },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
     #[command(alias = "시급")]
@@ -669,6 +676,7 @@ async fn run() -> Result<()> {
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
         Some(Commands::Amount { value }) => return cmd_amount(*value),
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
+        Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1422,6 +1430,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
                 ("wonjang 금액 <숫자>", "한글 금액(계약서·수표)"),
                 ("wonjang 계산 \"<식>\"", "사칙연산 계산기"),
+                ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
             ],
         ),
         (
@@ -1811,6 +1820,25 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         if from.is_none() {
             println!("     (오늘)");
         }
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_time(items: &[String]) -> Result<()> {
+    println!();
+    if items.is_empty() {
+        println!("  계산할 시간을 입력하세요. 예: wonjang 시간 09:00 + 8:30");
+        println!();
+        return Ok(());
+    }
+    match timecalc::sum(items) {
+        Ok(total) => {
+            println!("  ⏱️  {}", items.join(" "));
+            println!("     = {}  ({}분)", timecalc::format_hm(total), total);
+            println!("     시계: {}", timecalc::format_clock(total));
+        }
+        Err(e) => println!("  ⚠️ {e}"),
     }
     println!();
     Ok(())
