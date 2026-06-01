@@ -3925,6 +3925,14 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
                 "     이번 달({ym}) 지출: {}",
                 expenses::won(store.total_in_month(&ym))
             );
+            // 이번 달 분류별 상위 항목(한눈에).
+            let by = store.by_category_in_month(&ym);
+            if !by.is_empty() {
+                println!("\n  이번 달 분류별:");
+                for (cat, amt) in by.iter().take(5) {
+                    println!("     {cat:<8} {}", expenses::won(*amt));
+                }
+            }
             let recent = store.recent(5);
             if !recent.is_empty() {
                 println!("\n  최근 지출:");
