@@ -36,6 +36,7 @@ mod expenses;
 mod focus;
 mod gateway;
 mod geeknews;
+mod github;
 mod habits;
 mod hangul;
 mod hash;
@@ -544,6 +545,12 @@ enum Commands {
         /// 보여줄 개수(기본 10)
         count: Option<usize>,
     },
+    /// GitHub 저장소 정보(별·이슈·릴리스). 예: wonjang 깃헙 rust-lang/rust
+    #[command(alias = "깃헙")]
+    Github {
+        /// owner/repo
+        slug: String,
+    },
     /// QR 코드를 터미널에 생성합니다. 예: wonjang qr https://example.com
     Qr {
         /// QR로 만들 텍스트/URL
@@ -919,6 +926,7 @@ async fn run() -> Result<()> {
             wifi,
             password,
         }) => return cmd_qr(text, wifi.as_deref(), password),
+        Some(Commands::Github { slug }) => return cmd_github(slug),
         Some(Commands::Bike { query }) => return cmd_bike(&cfg, query.as_deref()),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
@@ -1634,6 +1642,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
                 ("wonjang 공휴일 [년도]", "한국 공휴일(설날·추석 포함)"),
                 ("wonjang 긱뉴스 [개수]", "개발·기술·스타트업 뉴스"),
+                ("wonjang 깃헙 <owner/repo>", "GitHub 저장소 정보"),
             ],
         ),
         (
@@ -2697,6 +2706,45 @@ fn cmd_bike(cfg: &Config, query: Option<&str>) -> Result<()> {
             "  {} 'sample' 키라 고정 예시(망원역 일대)만 나와요. 서울 무료 키를 넣으면 전체 조회.",
             "ⓘ".dimmed()
         );
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_github(slug: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let (owner, repo) = github::split_slug(slug)?;
+    let owner = owner.to_string();
+    let repo = repo.to_string();
+    let (info, release) = util::run_async(async move {
+        let info = github::fetch_repo(&owner, &repo).await?;
+        let release = github::fetch_latest_release(&owner, &repo).await;
+        Ok::<_, anyhow::Error>((info, release))
+    })?;
+    println!();
+    println!("  🐙 {}", info.full_name.bold());
+    if let Some(desc) = &info.description {
+        if !desc.is_empty() {
+            println!("     {}", desc.dimmed());
+        }
+    }
+    let lang = info.language.as_deref().unwrap_or("?");
+    println!(
+        "     ★ {} · 🍴 {} · 이슈 {} · {}",
+        info.stargazers_count, info.forks_count, info.open_issues_count, lang
+    );
+    if let Some(pushed) = &info.pushed_at {
+        // ISO 8601에서 날짜 부분만.
+        let date = pushed.split('T').next().unwrap_or(pushed);
+        println!("     최근 푸시: {date}");
+    }
+    match release {
+        Some(r) => println!(
+            "     최신 릴리스: {} {}",
+            r.tag_name.bright_cyan(),
+            r.name.unwrap_or_default().dimmed()
+        ),
+        None => println!("     {}", "(릴리스 없음)".dimmed()),
     }
     println!();
     Ok(())
