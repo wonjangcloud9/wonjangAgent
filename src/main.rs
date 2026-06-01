@@ -26,6 +26,7 @@ mod ddays;
 mod ddoganjip;
 mod dedup;
 mod deposit;
+mod diff;
 mod discount;
 mod diskusage;
 mod dutchpay;
@@ -176,6 +177,14 @@ enum Commands {
         /// 실제로 이동(미지정 시 미리보기만)
         #[arg(long = "실행")]
         run: bool,
+    },
+    /// 두 파일 비교(diff). 예: wonjang 비교 old.txt new.txt
+    #[command(alias = "비교")]
+    Diff {
+        /// 원본(이전) 파일
+        a: String,
+        /// 비교할(이후) 파일
+        b: String,
     },
     /// 파일 체크섬(SHA-256/512). 예: wonjang 해시 setup.dmg
     #[command(alias = "해시")]
@@ -826,6 +835,7 @@ async fn run() -> Result<()> {
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
+        Some(Commands::Diff { a, b }) => return cmd_diff(a, b),
         Some(Commands::Hash { file, algo, verify }) => {
             return cmd_hash(file, algo, verify.as_deref())
         }
@@ -1701,6 +1711,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
+                ("wonjang 비교 <파일1> <파일2>", "두 파일 줄 단위 diff"),
                 ("wonjang qr <URL>", "QR 코드 생성(와이파이 --wifi)"),
             ],
         ),
@@ -1744,6 +1755,46 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_diff(a: &str, b: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let pa = expand_path(a);
+    let pb = expand_path(b);
+    let result = diff::diff_files(&pa.to_string_lossy(), &pb.to_string_lossy())?;
+    println!();
+    println!("  📑 비교: {} ↔ {}", a.dimmed(), b.dimmed());
+    if result.added == 0 && result.removed == 0 {
+        println!("     두 파일이 같아요 👍");
+        println!();
+        return Ok(());
+    }
+    println!(
+        "     {} 추가 · {} 삭제",
+        format!("+{}", result.added).green(),
+        format!("-{}", result.removed).red()
+    );
+    println!();
+    let mut shown = 0;
+    for line in &result.lines {
+        // 변경 없는 줄이 너무 많으면 생략(맥락 약간만).
+        match line.tag {
+            '+' => println!("  {}", format!("+ {}", line.text).green()),
+            '-' => println!("  {}", format!("- {}", line.text).red()),
+            _ => {
+                if shown < 400 {
+                    println!("    {}", line.text.dimmed());
+                }
+            }
+        }
+        shown += 1;
+        if shown > 1000 {
+            println!("  … (너무 길어 일부만 표시)");
+            break;
+        }
+    }
+    println!();
+    Ok(())
 }
 
 fn cmd_hash(file: &str, algo: &str, verify: Option<&str>) -> Result<()> {
