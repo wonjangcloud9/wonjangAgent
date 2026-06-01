@@ -74,6 +74,7 @@ mod timecalc;
 mod todos;
 mod tools;
 mod ui;
+mod uptime;
 mod util;
 mod vat;
 mod wage;
@@ -555,6 +556,12 @@ enum Commands {
     /// 내 공인 IP·통신사·위치 확인. 예: wonjang 내아이피
     #[command(alias = "내아이피")]
     Myip,
+    /// 사이트/서버 상태 확인(살아있나·응답속도). 예: wonjang 사이트 example.com
+    #[command(alias = "사이트")]
+    Uptime {
+        /// 점검할 URL(http(s):// 생략 가능)
+        url: String,
+    },
     /// QR 코드를 터미널에 생성합니다. 예: wonjang qr https://example.com
     Qr {
         /// QR로 만들 텍스트/URL
@@ -932,6 +939,7 @@ async fn run() -> Result<()> {
         }) => return cmd_qr(text, wifi.as_deref(), password),
         Some(Commands::Github { slug }) => return cmd_github(slug),
         Some(Commands::Myip) => return cmd_myip(),
+        Some(Commands::Uptime { url }) => return cmd_uptime(url),
         Some(Commands::Bike { query }) => return cmd_bike(&cfg, query.as_deref()),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
@@ -1649,6 +1657,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 긱뉴스 [개수]", "개발·기술·스타트업 뉴스"),
                 ("wonjang 깃헙 <owner/repo>", "GitHub 저장소 정보"),
                 ("wonjang 내아이피", "공인 IP·통신사·위치"),
+                ("wonjang 사이트 <url>", "사이트 상태·응답속도 점검"),
             ],
         ),
         (
@@ -2713,6 +2722,32 @@ fn cmd_bike(cfg: &Config, query: Option<&str>) -> Result<()> {
             "ⓘ".dimmed()
         );
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_uptime(url: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let u = url.to_string();
+    let status = util::run_async(async move { uptime::check(&u).await })?;
+    let code_str = match status.code {
+        200..=299 => format!("{}", status.code).green().to_string(),
+        300..=399 => format!("{}", status.code).yellow().to_string(),
+        _ => format!("{}", status.code).red().to_string(),
+    };
+    let speed = match status.elapsed_ms {
+        0..=300 => "빠름".green().to_string(),
+        301..=1000 => "보통".yellow().to_string(),
+        _ => "느림".red().to_string(),
+    };
+    println!();
+    if status.ok {
+        println!("  ✅ 정상 — {}", status.url.bright_cyan());
+    } else {
+        println!("  ⚠️ 응답함(비정상 코드) — {}", status.url.bright_cyan());
+    }
+    println!("     상태 코드: {code_str}");
+    println!("     응답 시간: {}ms ({speed})", status.elapsed_ms);
     println!();
     Ok(())
 }
