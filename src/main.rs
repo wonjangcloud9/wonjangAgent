@@ -44,6 +44,7 @@ mod menu;
 mod news;
 mod notes;
 mod notion;
+mod organize;
 mod pick;
 mod preset;
 mod push;
@@ -156,6 +157,15 @@ enum Commands {
         /// 보여줄 묶음 수(기본 10)
         #[arg(long = "개수", default_value_t = 10)]
         top: usize,
+    },
+    /// 폴더를 종류별로 자동 분류합니다(기본 미리보기). 예: wonjang 정리 ~/Downloads
+    #[command(alias = "정리")]
+    Organize {
+        /// 정리할 폴더
+        path: String,
+        /// 실제로 이동(미지정 시 미리보기만)
+        #[arg(long = "실행")]
+        run: bool,
     },
     /// 풍자 〈또간집〉 선정 맛집을 지역으로 찾습니다. 예: wonjang 또간집 종로
     #[command(alias = "또간집")]
@@ -708,6 +718,7 @@ async fn run() -> Result<()> {
         }) => return cmd_ddoganjip(query.as_deref(), add.as_deref(), region.as_deref(), note),
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
+        Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1538,6 +1549,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
+                ("wonjang 정리 <폴더>", "종류별 자동 분류(미리보기→--실행)"),
             ],
         ),
         (
@@ -1580,6 +1592,64 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_organize(path: &str, run: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::collections::BTreeMap;
+    let dir = expand_path(path);
+    let plans = organize::plan(&dir)?;
+    println!();
+    if plans.is_empty() {
+        println!(
+            "  🗂️  정리할 파일이 없어요(최상위 파일 기준): {}",
+            dir.display()
+        );
+        println!();
+        return Ok(());
+    }
+    // 카테고리별 개수 집계.
+    let mut by_cat: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for m in &plans {
+        let name = m
+            .from
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string();
+        by_cat.entry(m.category).or_default().push(name);
+    }
+
+    if run {
+        let moved = organize::execute(&dir, &plans)?;
+        println!("  🗂️  정리 완료: {} → {moved}개 파일 이동", dir.display());
+        for (cat, files) in &by_cat {
+            println!("     {}/  {}개", cat.bold(), files.len());
+        }
+    } else {
+        println!(
+            "  🗂️  정리 미리보기: {} ({}개 파일)",
+            dir.display().to_string().bright_cyan(),
+            plans.len()
+        );
+        for (cat, files) in &by_cat {
+            println!("     {}/  {}개", cat.bold(), files.len());
+            for f in files.iter().take(4) {
+                println!("       - {}", f.dimmed());
+            }
+            if files.len() > 4 {
+                println!("       …외 {}개", files.len() - 4);
+            }
+        }
+        println!();
+        println!(
+            "  {} 실제로 옮기려면: {}",
+            "▶".green(),
+            format!("wonjang 정리 {path} --실행").bold()
+        );
+    }
+    println!();
+    Ok(())
 }
 
 fn cmd_dedup(path: Option<&str>, top: usize) -> Result<()> {
