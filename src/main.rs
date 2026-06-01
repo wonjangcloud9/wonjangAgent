@@ -29,6 +29,7 @@ mod notes;
 mod notion;
 mod preset;
 mod push;
+mod pyeong;
 mod reminders;
 mod safety;
 mod session;
@@ -211,6 +212,12 @@ enum Commands {
     Lotto {
         /// 게임 수(기본 5)
         games: Option<usize>,
+    },
+    /// 평수 변환(평 ↔ ㎡). 예: wonjang 평 30
+    #[command(alias = "평")]
+    Pyeong {
+        /// 변환할 숫자
+        value: f64,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -470,6 +477,7 @@ async fn run() -> Result<()> {
         Some(Commands::Coin { symbol }) => return cmd_coin(symbol),
         Some(Commands::News { query }) => return cmd_news(query),
         Some(Commands::Lotto { games }) => return cmd_lotto(*games),
+        Some(Commands::Pyeong { value }) => return cmd_pyeong(*value),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1421,6 +1429,15 @@ fn cmd_watch(action: &Option<WatchAction>) -> Result<()> {
             println!();
         }
     }
+    Ok(())
+}
+
+fn cmd_pyeong(value: f64) -> Result<()> {
+    println!();
+    println!("  📐 평수 변환");
+    println!("     {value:.0}평 = {:.1}㎡", pyeong::pyeong_to_m2(value));
+    println!("     {value:.0}㎡ = {:.1}평", pyeong::m2_to_pyeong(value));
+    println!();
     Ok(())
 }
 
