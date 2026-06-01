@@ -21,6 +21,7 @@ mod cron;
 mod datecalc;
 mod ddays;
 mod ddoganjip;
+mod dedup;
 mod deposit;
 mod discount;
 mod diskusage;
@@ -144,6 +145,15 @@ enum Commands {
         /// 분석할 폴더(생략 시 현재 폴더)
         path: Option<String>,
         /// 보여줄 상위 항목 수(기본 10)
+        #[arg(long = "개수", default_value_t = 10)]
+        top: usize,
+    },
+    /// 중복 파일 찾기(내용이 같은 파일). 예: wonjang 중복 ~/Downloads
+    #[command(alias = "중복")]
+    Dedup {
+        /// 검사할 폴더(생략 시 현재 폴더)
+        path: Option<String>,
+        /// 보여줄 묶음 수(기본 10)
         #[arg(long = "개수", default_value_t = 10)]
         top: usize,
     },
@@ -697,6 +707,7 @@ async fn run() -> Result<()> {
             note,
         }) => return cmd_ddoganjip(query.as_deref(), add.as_deref(), region.as_deref(), note),
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
+        Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1526,6 +1537,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
+                ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
             ],
         ),
         (
@@ -1557,10 +1569,9 @@ fn cmd_guide() -> Result<()> {
 }
 
 /// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
-fn cmd_disk(path: Option<&str>, top: usize) -> Result<()> {
-    use owo_colors::OwoColorize;
-    let root = path.unwrap_or(".");
-    let expanded = if let Some(rest) = root.strip_prefix("~/") {
+/// `~`/`~/...`를 홈 경로로 펼친다.
+fn expand_path(root: &str) -> std::path::PathBuf {
+    if let Some(rest) = root.strip_prefix("~/") {
         dirs::home_dir()
             .map(|h| h.join(rest))
             .unwrap_or_else(|| std::path::PathBuf::from(root))
@@ -1568,7 +1579,64 @@ fn cmd_disk(path: Option<&str>, top: usize) -> Result<()> {
         dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
     } else {
         std::path::PathBuf::from(root)
-    };
+    }
+}
+
+fn cmd_dedup(path: Option<&str>, top: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let expanded = expand_path(path.unwrap_or("."));
+    if !expanded.exists() {
+        return Err(anyhow::anyhow!("경로가 없어요: {}", expanded.display()));
+    }
+    let top = top.clamp(1, 50);
+    println!();
+    println!(
+        "  🔁 중복 파일 검사: {} (해시 비교 중…)",
+        expanded.display().to_string().bright_cyan()
+    );
+    let result = dedup::find_duplicates(&expanded);
+    if result.groups.is_empty() {
+        println!("     중복 파일이 없어요 👍");
+        println!();
+        return Ok(());
+    }
+    println!(
+        "     중복 묶음 {}개 · 낭비 용량 {}",
+        result.groups.len(),
+        diskusage::human(result.total_wasted).bold()
+    );
+    println!();
+    for (i, g) in result.groups.iter().take(top).enumerate() {
+        println!(
+            "  {}. {} × {}벌  (낭비 {})",
+            i + 1,
+            diskusage::human(g.size),
+            g.paths.len(),
+            diskusage::human(g.wasted())
+        );
+        for p in &g.paths {
+            println!("     - {}", p.display().to_string().dimmed());
+        }
+    }
+    if result.groups.len() > top {
+        println!();
+        println!(
+            "  …외 {}개 묶음 더 (--개수 로 더 보기)",
+            result.groups.len() - top
+        );
+    }
+    println!();
+    println!(
+        "  {} 읽기 전용입니다. 지울 파일은 직접 확인 후 삭제하세요.",
+        "ⓘ".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
+fn cmd_disk(path: Option<&str>, top: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let expanded = expand_path(path.unwrap_or("."));
 
     let top = top.clamp(1, 50);
     println!();

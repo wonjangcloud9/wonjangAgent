@@ -49,6 +49,19 @@ fn walk(dir: &Path, files: &mut Vec<(PathBuf, u64)>) -> (u64, u64) {
     (total, count)
 }
 
+/// 폴더 아래 모든 파일을 (경로, 크기)로 모은다(심볼릭 링크 미추적).
+pub fn collect_files(root: &Path) -> Vec<(PathBuf, u64)> {
+    let mut files = Vec::new();
+    if root.is_dir() {
+        walk(root, &mut files);
+    } else if root.is_file() {
+        if let Ok(m) = fs::metadata(root) {
+            files.push((root.to_path_buf(), m.len()));
+        }
+    }
+    files
+}
+
 /// 경로를 분석한다. `top_n`은 보여줄 상위 항목 수.
 pub fn analyze(root: &Path, top_n: usize) -> std::io::Result<Usage> {
     if !root.exists() {
