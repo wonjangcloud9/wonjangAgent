@@ -46,6 +46,33 @@ pub fn convert(value: f64, unit: &str) -> Option<Conversion> {
             let km = value * 1.609_344;
             format!("{value:.2}mile = {km:.2}km")
         }
+        // 속도.
+        "kmh" | "kph" | "시속" => {
+            let mph = value / 1.609_344;
+            format!("{value:.1}km/h = {mph:.1}mph")
+        }
+        "mph" => {
+            let kmh = value * 1.609_344;
+            format!("{value:.1}mph = {kmh:.1}km/h")
+        }
+        // 부피(US 갤런).
+        "l" | "리터" => {
+            let gal = value / 3.785_411_784;
+            format!("{value:.2}L = {gal:.2}gal")
+        }
+        "gal" | "갤런" => {
+            let l = value * 3.785_411_784;
+            format!("{value:.2}gal = {l:.2}L")
+        }
+        // 넓이(제곱미터↔제곱피트).
+        "sqm" | "㎡" | "제곱미터" => {
+            let sqft = value * 10.763_910_4;
+            format!("{value:.2}㎡ = {sqft:.2}ft²")
+        }
+        "sqft" | "ft2" => {
+            let sqm = value / 10.763_910_4;
+            format!("{value:.2}ft² = {sqm:.2}㎡")
+        }
         _ => return None,
     };
     Some(Conversion { label })
@@ -53,7 +80,7 @@ pub fn convert(value: f64, unit: &str) -> Option<Conversion> {
 
 /// 지원하는 입력 단위 안내.
 pub fn supported() -> &'static str {
-    "c/f(온도) · kg/lb(무게) · cm/inch · km/mile(길이)"
+    "c/f(온도) · kg/lb(무게) · cm/inch · km/mile(길이) · kmh/mph(속도) · l/gal(부피) · sqm/sqft(넓이)"
 }
 
 #[cfg(test)]
@@ -81,5 +108,12 @@ mod tests {
     #[test]
     fn unknown_unit() {
         assert!(convert(1.0, "광년").is_none());
+    }
+
+    #[test]
+    fn speed_volume_area() {
+        assert!(convert(100.0, "kmh").unwrap().label.contains("62.1mph"));
+        assert!(convert(1.0, "gal").unwrap().label.contains("3.79L"));
+        assert!(convert(1.0, "sqm").unwrap().label.contains("10.76ft²"));
     }
 }
