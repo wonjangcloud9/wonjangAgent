@@ -20,6 +20,7 @@ mod convert;
 mod cron;
 mod datecalc;
 mod ddays;
+mod ddoganjip;
 mod deposit;
 mod discount;
 mod dutchpay;
@@ -135,6 +136,21 @@ enum Commands {
     Dday {
         #[command(subcommand)]
         action: Option<DdayAction>,
+    },
+    /// 풍자 〈또간집〉 선정 맛집을 지역으로 찾습니다. 예: wonjang 또간집 종로
+    #[command(alias = "또간집")]
+    Ddoganjip {
+        /// 검색할 지역(또는 식당 이름). 생략 시 전체 목록
+        query: Option<String>,
+        /// 식당 추가: 이름. (지역은 --지역 필수)
+        #[arg(long = "추가")]
+        add: Option<String>,
+        /// 추가할 식당의 지역
+        #[arg(long = "지역")]
+        region: Option<String>,
+        /// 추가할 식당의 메모(선택)
+        #[arg(long = "메모", default_value = "")]
+        note: String,
     },
     /// 엑셀·CSV 파일을 읽어 요약/합계/평균을 냅니다. 예: wonjang 엑셀 매출.csv
     #[command(alias = "엑셀")]
@@ -664,6 +680,12 @@ async fn run() -> Result<()> {
         Some(Commands::Excel { file, column, rows }) => {
             return cmd_excel(file, column.as_deref(), *rows)
         }
+        Some(Commands::Ddoganjip {
+            query,
+            add,
+            region,
+            note,
+        }) => return cmd_ddoganjip(query.as_deref(), add.as_deref(), region.as_deref(), note),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1491,6 +1513,7 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --열 금액",
                     "특정 열 합계·평균·최대·최소",
                 ),
+                ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
             ],
         ),
         (
@@ -1522,6 +1545,69 @@ fn cmd_guide() -> Result<()> {
 }
 
 /// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
+fn cmd_ddoganjip(
+    query: Option<&str>,
+    add: Option<&str>,
+    region: Option<&str>,
+    note: &str,
+) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let mut store = ddoganjip::DdoganjipStore::load()?;
+
+    // 추가 모드.
+    if let Some(name) = add {
+        let region = region.ok_or_else(|| {
+            anyhow::anyhow!(
+                "지역도 알려주세요. 예: wonjang 또간집 --추가 \"○○식당\" --지역 \"서울 종로\""
+            )
+        })?;
+        store.add(name, region, note)?;
+        println!();
+        println!("  ✅ 또간집 목록에 추가: {name} ({region})");
+        println!();
+        return Ok(());
+    }
+
+    let hits = match query {
+        Some(q) => store.find(q),
+        None => store.items.iter().collect(),
+    };
+
+    println!();
+    match query {
+        Some(q) => println!("  🍜 또간집 — '{q}' 검색 ({}곳)", hits.len()),
+        None => println!("  🍜 또간집 선정 맛집 (전체 {}곳)", hits.len()),
+    }
+    if hits.is_empty() {
+        println!("     결과가 없어요. `wonjang 또간집`으로 전체를 보거나,");
+        println!("     `wonjang 또간집 --추가 \"식당\" --지역 \"지역\"`으로 추가하세요.");
+        println!();
+        return Ok(());
+    }
+    for s in &hits {
+        let tag = if s.verified {
+            "✔ 확인".green().to_string()
+        } else {
+            "※ 미검증".yellow().to_string()
+        };
+        println!("     • {}  ({})  [{}]", s.name.bold(), s.region, tag);
+        if !s.note.is_empty() {
+            println!("       {}", s.note.dimmed());
+        }
+    }
+    println!();
+    println!(
+        "  {} 〈또간집〉 공식 목록 API가 없어 직접 키우는 목록입니다.",
+        "ⓘ".dimmed()
+    );
+    println!(
+        "    확인한 곳 추가: {}",
+        "wonjang 또간집 --추가 \"식당\" --지역 \"서울 종로\"".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
 fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize) -> Result<()> {
     use owo_colors::OwoColorize;
     let table = sheet::Table::load(file)?;
