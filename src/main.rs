@@ -2451,6 +2451,13 @@ fn cmd_status() -> Result<()> {
         "원장 현황".bright_cyan().bold(),
         greeting().dimmed()
     );
+    // 오늘 날짜·요일(매일 보는 대시보드의 기본).
+    let now_local = chrono::Local::now().date_naive();
+    println!(
+        "  📅 {} ({})",
+        now_local.format("%Y년 %-m월 %-d일"),
+        datecalc::weekday_kr(now_local)
+    );
     println!();
 
     // 다가오는 약속(최대 3).
