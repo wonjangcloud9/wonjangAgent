@@ -33,6 +33,7 @@ mod push;
 mod pyeong;
 mod reminders;
 mod safety;
+mod salary;
 mod session;
 mod skill;
 mod subway;
@@ -225,6 +226,12 @@ enum Commands {
     Age {
         /// 생일 (YYYY-MM-DD)
         birth: String,
+    },
+    /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 실수령 3600
+    #[command(alias = "실수령")]
+    Salary {
+        /// 연봉(만 원 단위). 예: 3600 = 3,600만 원
+        manwon: f64,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -486,6 +493,7 @@ async fn run() -> Result<()> {
         Some(Commands::Lotto { games }) => return cmd_lotto(*games),
         Some(Commands::Pyeong { value }) => return cmd_pyeong(*value),
         Some(Commands::Age { birth }) => return cmd_age(birth),
+        Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1464,6 +1472,28 @@ fn cmd_age(birth: &str) -> Result<()> {
     } else {
         println!("     다음 생일까지 {dday}일 남았어요");
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_salary(manwon: f64) -> Result<()> {
+    let annual = manwon * 10_000.0;
+    let p = salary::from_annual(annual);
+    let w = |v: f64| expenses::won(v.round() as i64);
+    println!();
+    println!("  💰 연봉 실수령액 ({}만 원)", manwon as i64);
+    println!("     월 세전        {}", w(p.gross_monthly));
+    println!("     ─ 국민연금     -{}", w(p.national_pension));
+    println!("     ─ 건강보험     -{}", w(p.health));
+    println!("     ─ 장기요양     -{}", w(p.long_term_care));
+    println!("     ─ 고용보험     -{}", w(p.employment));
+    println!("     ─ 소득세       -{}", w(p.income_tax));
+    println!("     ─ 지방소득세   -{}", w(p.local_tax));
+    println!("     ───────────────");
+    println!("     월 실수령      {}", w(p.net_monthly()));
+    println!("     연 실수령      {}", w(p.net_monthly() * 12.0));
+    println!();
+    println!("  ※ 2025년 요율·1인 가구·비과세 식대 20만 원 기준 추정치");
     println!();
     Ok(())
 }
