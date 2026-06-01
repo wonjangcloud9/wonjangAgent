@@ -51,6 +51,7 @@ mod tools;
 mod ui;
 mod util;
 mod vat;
+mod wage;
 mod watch;
 mod weather;
 mod web;
@@ -318,6 +319,14 @@ enum Commands {
     Vat {
         /// 금액(원)
         amount: f64,
+    },
+    /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
+    #[command(alias = "시급")]
+    Wage {
+        /// 시급(원)
+        hourly: f64,
+        /// 주당 근로시간
+        weekly_hours: f64,
     },
     /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
     #[command(alias = "날짜")]
@@ -628,6 +637,10 @@ async fn run() -> Result<()> {
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
+        Some(Commands::Wage {
+            hourly,
+            weekly_hours,
+        }) => return cmd_wage(*hourly, *weekly_hours),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
@@ -1737,6 +1750,33 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         if from.is_none() {
             println!("     (오늘)");
         }
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_wage(hourly: f64, weekly_hours: f64) -> Result<()> {
+    let w = |v: f64| expenses::won(v.round() as i64);
+    let r = wage::calc(hourly, weekly_hours);
+    println!();
+    println!(
+        "  💵 시급 계산 (시급 {} · 주 {:.0}시간)",
+        w(r.hourly),
+        r.weekly_hours
+    );
+    println!("     주 기본급      {}", w(r.base_weekly));
+    if r.holiday_pay > 0.0 {
+        println!("     주휴수당       {}  (주 15시간↑)", w(r.holiday_pay));
+    } else {
+        println!("     주휴수당       없음  (주 15시간 미만)");
+    }
+    println!("     주급 합계      {}", w(r.weekly_total));
+    println!("     월 환산        {}  (주급×4.345)", w(r.monthly));
+    if r.below_min {
+        println!(
+            "     ⚠️ 2025년 최저시급({}) 미만입니다",
+            w(wage::MIN_WAGE_2025)
+        );
     }
     println!();
     Ok(())
