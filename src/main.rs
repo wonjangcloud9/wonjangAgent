@@ -18,6 +18,7 @@ mod convert;
 mod cron;
 mod ddays;
 mod deposit;
+mod discount;
 mod dutchpay;
 mod engine;
 mod exchange;
@@ -301,6 +302,14 @@ enum Commands {
         height: f64,
         /// 몸무게(kg)
         weight: f64,
+    },
+    /// 할인가 계산(중복 할인 가능). 예: wonjang 할인 30000 20 10
+    #[command(alias = "할인")]
+    Discount {
+        /// 원가(원)
+        price: f64,
+        /// 할인율(%) 목록. 여러 개면 순차 적용. 예: 20 10
+        rates: Vec<f64>,
     },
     /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
     #[command(alias = "뽑기")]
@@ -598,6 +607,7 @@ async fn run() -> Result<()> {
         }) => return cmd_dutch(*total, *people, *unit),
         Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
+        Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Pick {
             count,
             order,
@@ -1668,6 +1678,30 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_discount(price: f64, rates: &[f64]) -> Result<()> {
+    let w = |v: f64| expenses::won(v.round() as i64);
+    println!();
+    if rates.is_empty() {
+        println!("  할인율을 입력하세요. 예: wonjang 할인 30000 20 (또는 20 10 중복)");
+        println!();
+        return Ok(());
+    }
+    let d = discount::apply(price, rates);
+    let rate_str = rates
+        .iter()
+        .map(|r| format!("{r:.0}%"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    println!("  🏷️  할인가 계산 ({} · {rate_str})", w(d.original));
+    println!("     할인가         {}", w(d.final_price));
+    println!("     절약액         {}", w(d.saved));
+    if rates.len() > 1 {
+        println!("     실질 할인율    {:.1}%", d.effective_rate);
+    }
     println!();
     Ok(())
 }
