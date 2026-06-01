@@ -5,6 +5,7 @@
 
 pub mod airquality;
 pub mod clipboard;
+pub mod coin;
 pub mod dday;
 pub mod exchange;
 pub mod expense;
@@ -88,6 +89,7 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(weather::WeatherTool),
         Box::new(airquality::AirQualityTool),
         Box::new(exchange::ExchangeTool),
+        Box::new(coin::CoinTool),
     ]
 }
 

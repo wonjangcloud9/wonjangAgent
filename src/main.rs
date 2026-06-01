@@ -9,6 +9,7 @@ mod bookmarks;
 mod briefing;
 mod cli_backend;
 mod clipboard;
+mod coin;
 mod config;
 mod cron;
 mod ddays;
@@ -171,6 +172,12 @@ enum Commands {
         amount: Option<f64>,
         /// 통화 코드(선택, 예: USD JPY)
         currency: Option<String>,
+    },
+    /// 코인 시세(업비트). 예: wonjang 코인 (인기) / wonjang 코인 BTC
+    #[command(alias = "코인")]
+    Coin {
+        /// 코인 심볼(선택, 예: BTC)
+        symbol: Option<String>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -400,6 +407,7 @@ async fn run() -> Result<()> {
         Some(Commands::Weather { location }) => return cmd_weather(location),
         Some(Commands::Air { location }) => return cmd_air(location),
         Some(Commands::Exchange { amount, currency }) => return cmd_exchange(*amount, currency),
+        Some(Commands::Coin { symbol }) => return cmd_coin(symbol),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1087,6 +1095,39 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_coin(symbol: &Option<String>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let markets = match symbol {
+        Some(s) if !s.trim().is_empty() => vec![format!("KRW-{}", s.trim().to_uppercase())],
+        _ => coin::default_markets(),
+    };
+    let coins = util::run_async(async move { coin::fetch(&markets).await })?;
+    if coins.is_empty() {
+        ui::info("시세를 찾지 못했어요. 심볼을 확인해 주세요(예: BTC).");
+        return Ok(());
+    }
+    println!();
+    println!("  🪙 코인 시세 (업비트)");
+    for c in &coins {
+        let name = coin::coin_name(&c.symbol);
+        let pct = format!("{:+.2}%", c.change_pct);
+        let colored = if c.change_pct >= 0.0 {
+            pct.red().to_string() // 한국 관습: 상승=빨강
+        } else {
+            pct.blue().to_string() // 하락=파랑
+        };
+        println!(
+            "     {} {:<10} {}원  {}",
+            c.symbol,
+            name,
+            exchange::comma(c.price, 0),
+            colored
+        );
+    }
+    println!();
     Ok(())
 }
 
