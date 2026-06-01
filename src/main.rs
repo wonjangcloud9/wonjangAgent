@@ -43,6 +43,7 @@ mod habits;
 mod hangul;
 mod hash;
 mod holidays;
+mod journal;
 mod jsontool;
 mod keyboard;
 mod koreannum;
@@ -574,6 +575,12 @@ enum Commands {
         /// 연도(생략 시 올해)
         year: Option<i32>,
     },
+    /// 간단 일기 기록/보기. 예: wonjang 일기 "오늘 있었던 일" (없으면 이번 달 보기)
+    #[command(alias = "일기")]
+    Journal {
+        /// 기록할 내용(생략 시 이번 달 일기 보기)
+        text: Vec<String>,
+    },
     /// 서울 실시간 혼잡도 조회. 예: wonjang 혼잡도 강남역
     #[command(alias = "혼잡도")]
     Congestion {
@@ -1001,6 +1008,7 @@ async fn run() -> Result<()> {
             weekly_hours,
         }) => return cmd_wage(*hourly, *weekly_hours),
         Some(Commands::Holiday { year }) => return cmd_holiday(*year),
+        Some(Commands::Journal { text }) => return cmd_journal(text),
         Some(Commands::Congestion { area }) => return cmd_congestion(&cfg, area),
         Some(Commands::Geeknews { count }) => return cmd_geeknews(*count),
         Some(Commands::Qr {
@@ -1757,6 +1765,7 @@ fn cmd_guide() -> Result<()> {
             &[
                 ("wonjang 지출 add <금액> <분류>", "가계부"),
                 ("wonjang 습관 done <이름>", "습관 트래커(연속일수)"),
+                ("wonjang 일기 \"<내용>\"", "간단 일기(월별 저장)"),
                 ("wonjang 일지/메모 (프리셋)", "옵시디언 노트"),
                 ("wonjang notion search \"...\"", "노션 검색/기록"),
             ],
@@ -2992,6 +3001,43 @@ fn cmd_congestion(cfg: &Config, area: &str) -> Result<()> {
             "    data.seoul.go.kr 무료 키를 발급해 {} 에 넣으면 원하는 지역이 나옵니다.",
             "config(seoul_api_key)".dimmed()
         );
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_journal(text: &[String]) -> Result<()> {
+    use owo_colors::OwoColorize;
+    // 내용이 있으면 기록.
+    if !text.is_empty() {
+        journal::add(&text.join(" "))?;
+        println!();
+        println!("  📔 일기에 기록했어요.");
+        println!();
+        return Ok(());
+    }
+    // 없으면 이번 달 보기.
+    let entries = journal::this_month()?;
+    println!();
+    println!(
+        "  📔 {} 일기 ({}건)",
+        chrono::Local::now().format("%Y년 %-m월"),
+        entries.len()
+    );
+    if entries.is_empty() {
+        println!(
+            "     아직 기록이 없어요. {}",
+            "wonjang 일기 \"오늘 있었던 일\"".dimmed()
+        );
+        println!();
+        return Ok(());
+    }
+    for e in entries.iter().take(20) {
+        println!();
+        println!("  {}", e.stamp.bright_cyan());
+        for line in e.text.lines() {
+            println!("     {line}");
+        }
     }
     println!();
     Ok(())
