@@ -23,6 +23,7 @@ mod ddays;
 mod ddoganjip;
 mod deposit;
 mod discount;
+mod diskusage;
 mod dutchpay;
 mod engine;
 mod exchange;
@@ -136,6 +137,15 @@ enum Commands {
     Dday {
         #[command(subcommand)]
         action: Option<DdayAction>,
+    },
+    /// 디스크 용량 분석(큰 파일·폴더 찾기). 예: wonjang 용량 ~/Downloads
+    #[command(alias = "용량")]
+    Disk {
+        /// 분석할 폴더(생략 시 현재 폴더)
+        path: Option<String>,
+        /// 보여줄 상위 항목 수(기본 10)
+        #[arg(long = "개수", default_value_t = 10)]
+        top: usize,
     },
     /// 풍자 〈또간집〉 선정 맛집을 지역으로 찾습니다. 예: wonjang 또간집 종로
     #[command(alias = "또간집")]
@@ -686,6 +696,7 @@ async fn run() -> Result<()> {
             region,
             note,
         }) => return cmd_ddoganjip(query.as_deref(), add.as_deref(), region.as_deref(), note),
+        Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1514,6 +1525,7 @@ fn cmd_guide() -> Result<()> {
                     "특정 열 합계·평균·최대·최소",
                 ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
+                ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
             ],
         ),
         (
@@ -1545,6 +1557,53 @@ fn cmd_guide() -> Result<()> {
 }
 
 /// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
+fn cmd_disk(path: Option<&str>, top: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let root = path.unwrap_or(".");
+    let expanded = if let Some(rest) = root.strip_prefix("~/") {
+        dirs::home_dir()
+            .map(|h| h.join(rest))
+            .unwrap_or_else(|| std::path::PathBuf::from(root))
+    } else if root == "~" {
+        dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
+    } else {
+        std::path::PathBuf::from(root)
+    };
+
+    let top = top.clamp(1, 50);
+    println!();
+    println!(
+        "  💾 용량 분석: {} (훑는 중…)",
+        expanded.display().to_string().bright_cyan()
+    );
+    let usage = diskusage::analyze(&expanded, top)
+        .map_err(|e| anyhow::anyhow!("폴더를 읽을 수 없어요: {e}"))?;
+
+    println!(
+        "     총 {} · 파일 {}개",
+        diskusage::human(usage.total).bold(),
+        usage.file_count
+    );
+    if !usage.largest_dirs.is_empty() {
+        println!();
+        println!("  📁 큰 폴더 Top {}", usage.largest_dirs.len());
+        for (p, size) in &usage.largest_dirs {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            println!("     {:>9}  {}/", diskusage::human(*size), name);
+        }
+    }
+    if !usage.largest_files.is_empty() {
+        println!();
+        println!("  📄 큰 파일 Top {}", usage.largest_files.len());
+        for (p, size) in &usage.largest_files {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            println!("     {:>9}  {}", diskusage::human(*size), name);
+        }
+    }
+    println!();
+    Ok(())
+}
+
 fn cmd_ddoganjip(
     query: Option<&str>,
     add: Option<&str>,
