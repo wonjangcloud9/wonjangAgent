@@ -44,6 +44,7 @@ mod pick;
 mod preset;
 mod push;
 mod pyeong;
+mod radix;
 mod reminders;
 mod safety;
 mod salary;
@@ -354,6 +355,12 @@ enum Commands {
     Time {
         /// 시간(H:MM)과 부호(+/-) 항목들
         items: Vec<String>,
+    },
+    /// 진법 변환(2/8/10/16). 예: wonjang 진법 255 / wonjang 진법 0xFF
+    #[command(alias = "진법")]
+    Radix {
+        /// 숫자(접두사 0x/0o/0b로 진법 자동 인식)
+        value: String,
     },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
     #[command(alias = "시급")]
@@ -677,6 +684,7 @@ async fn run() -> Result<()> {
         Some(Commands::Amount { value }) => return cmd_amount(*value),
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Time { items }) => return cmd_time(items),
+        Some(Commands::Radix { value }) => return cmd_radix(value),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1431,6 +1439,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 금액 <숫자>", "한글 금액(계약서·수표)"),
                 ("wonjang 계산 \"<식>\"", "사칙연산 계산기"),
                 ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
+                ("wonjang 진법 255", "2/8/10/16진수 변환"),
             ],
         ),
         (
@@ -1820,6 +1829,23 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         if from.is_none() {
             println!("     (오늘)");
         }
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_radix(value: &str) -> Result<()> {
+    println!();
+    match radix::parse(value) {
+        Ok(n) => {
+            let r = radix::all(n);
+            println!("  🔢 진법 변환 ({value})");
+            println!("     10진수  {}", r.decimal);
+            println!("     2진수   {}", r.binary);
+            println!("     8진수   {}", r.octal);
+            println!("     16진수  {}", r.hex);
+        }
+        Err(e) => println!("  ⚠️ {e}"),
     }
     println!();
     Ok(())
