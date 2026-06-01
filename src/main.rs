@@ -50,6 +50,7 @@ mod reminders;
 mod safety;
 mod salary;
 mod session;
+mod sheet;
 mod skill;
 mod subway;
 mod timecalc;
@@ -134,6 +135,18 @@ enum Commands {
     Dday {
         #[command(subcommand)]
         action: Option<DdayAction>,
+    },
+    /// 엑셀·CSV 파일을 읽어 요약/합계/평균을 냅니다. 예: wonjang 엑셀 매출.csv
+    #[command(alias = "엑셀")]
+    Excel {
+        /// 파일 경로(.csv .tsv .xlsx 등)
+        file: String,
+        /// 특정 열의 통계(합계·평균·최대·최소). 열 이름 또는 번호
+        #[arg(long = "열")]
+        column: Option<String>,
+        /// 미리볼 행 수(기본 5)
+        #[arg(long = "행", default_value_t = 5)]
+        rows: usize,
     },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
@@ -648,6 +661,9 @@ async fn run() -> Result<()> {
         Some(Commands::Todo { action }) => return cmd_todo(action),
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
         Some(Commands::Dday { action }) => return cmd_dday(action),
+        Some(Commands::Excel { file, column, rows }) => {
+            return cmd_excel(file, column.as_deref(), *rows)
+        }
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1468,6 +1484,16 @@ fn cmd_guide() -> Result<()> {
             ],
         ),
         (
+            "📂 내 파일 다루기",
+            &[
+                ("wonjang 엑셀 <파일.csv>", "엑셀·CSV 요약·미리보기"),
+                (
+                    "wonjang 엑셀 <파일> --열 금액",
+                    "특정 열 합계·평균·최대·최소",
+                ),
+            ],
+        ),
+        (
             "📊 한눈에",
             &[
                 ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
@@ -1496,6 +1522,83 @@ fn cmd_guide() -> Result<()> {
 }
 
 /// 비서 현황 대시보드(약속·할일·디데이·예약작업) — LLM 없이 즉시.
+fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let table = sheet::Table::load(file)?;
+    println!();
+    println!(
+        "  📊 {} — {}행 × {}열",
+        file.bright_cyan(),
+        table.rows.len(),
+        table.headers.len()
+    );
+
+    // 특정 열 통계.
+    if let Some(key) = column {
+        let idx = table.col_index(key).ok_or_else(|| {
+            anyhow::anyhow!(
+                "'{key}' 열을 찾을 수 없어요. 열: {}",
+                table.headers.join(", ")
+            )
+        })?;
+        let nums = table.numeric_column(idx);
+        println!();
+        println!("  📈 '{}' 열 통계", table.headers[idx]);
+        if nums.is_empty() {
+            println!("     숫자 값이 없어요(텍스트 열).");
+        } else {
+            let sum: f64 = nums.iter().sum();
+            let avg = sum / nums.len() as f64;
+            let max = nums.iter().cloned().fold(f64::MIN, f64::max);
+            let min = nums.iter().cloned().fold(f64::MAX, f64::min);
+            let fmt = |v: f64| {
+                if v.fract() == 0.0 && v.abs() < 1e15 {
+                    expenses::won(v as i64).trim_end_matches('원').to_string()
+                } else {
+                    format!("{v:.2}")
+                }
+            };
+            println!("     개수   {}개 (숫자 {}개)", table.rows.len(), nums.len());
+            println!("     합계   {}", fmt(sum));
+            println!("     평균   {}", fmt(avg));
+            println!("     최대   {}", fmt(max));
+            println!("     최소   {}", fmt(min));
+        }
+        println!();
+        return Ok(());
+    }
+
+    // 열 목록 + 미리보기.
+    println!("  열: {}", table.headers.join(" · ").dimmed());
+    let n = preview_rows.min(table.rows.len());
+    if n > 0 {
+        println!();
+        println!("  미리보기 (상위 {n}행):");
+        for row in table.rows.iter().take(n) {
+            let cells: Vec<String> = row
+                .iter()
+                .map(|c| {
+                    let c = c.trim();
+                    if c.chars().count() > 16 {
+                        format!("{}…", c.chars().take(15).collect::<String>())
+                    } else {
+                        c.to_string()
+                    }
+                })
+                .collect();
+            println!("     {}", cells.join(" | "));
+        }
+    }
+    println!();
+    println!(
+        "  {} 특정 열 합계·평균: {}",
+        "팁".dimmed(),
+        format!("wonjang 엑셀 {file} --열 <열이름>").dimmed()
+    );
+    println!();
+    Ok(())
+}
+
 fn cmd_status() -> Result<()> {
     use owo_colors::OwoColorize;
     let now_unix = reminders::now_unix();

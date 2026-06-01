@@ -2,6 +2,10 @@
 
 원장 에이전트의 릴리스 기록입니다. 버전 형식은 [Semantic Versioning](https://semver.org/lang/ko/)을 따르며, npm 패키지([`wonjang-agent`](https://www.npmjs.com/package/wonjang-agent))와 GitHub Release가 동일한 태그(`vX.Y.Z`)로 발행됩니다.
 
+## 로컬 파일·비서 작업 (GPT가 못 하는 것)
+
+- **0.51.0** — 엑셀·CSV 분석: 로컬 파일을 직접 읽어 요약·미리보기·열 통계(합계/평균/최대/최소) (`엑셀`)
+
 ## 생활·금융 계산기 (한국 특화)
 
 - **0.50.0** — 영문→한글 복원: 한글 조합 오토마타로 잘못 친 글자 복구 (`한타`)
