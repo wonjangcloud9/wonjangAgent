@@ -10,6 +10,7 @@ mod backup;
 mod bmi;
 mod bookmarks;
 mod briefing;
+mod calc;
 mod charcount;
 mod cli_backend;
 mod clipboard;
@@ -341,6 +342,12 @@ enum Commands {
         /// 금액(원)
         value: u64,
     },
+    /// 사칙연산 계산기. 예: wonjang 계산 "15000 * 1.1 + 3000"
+    #[command(alias = "계산")]
+    Calc {
+        /// 계산할 식(괄호·소수·음수 가능)
+        expr: Vec<String>,
+    },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
     #[command(alias = "시급")]
     Wage {
@@ -661,6 +668,7 @@ async fn run() -> Result<()> {
         Some(Commands::Chars { text }) => return cmd_chars(text),
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
         Some(Commands::Amount { value }) => return cmd_amount(*value),
+        Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1413,6 +1421,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 글자수 \"<텍스트>\"", "자소서·SNS 글자수"),
                 ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
                 ("wonjang 금액 <숫자>", "한글 금액(계약서·수표)"),
+                ("wonjang 계산 \"<식>\"", "사칙연산 계산기"),
             ],
         ),
         (
@@ -1802,6 +1811,32 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         if from.is_none() {
             println!("     (오늘)");
         }
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_calc(expr: &[String]) -> Result<()> {
+    println!();
+    if expr.is_empty() {
+        println!("  계산할 식을 입력하세요. 예: wonjang 계산 \"15000 * 1.1\"");
+        println!();
+        return Ok(());
+    }
+    let joined = expr.join(" ");
+    match calc::eval(&joined) {
+        Ok(v) => {
+            // 정수면 콤마 구분, 아니면 소수 6자리까지(불필요한 0 제거).
+            let pretty = if v.fract() == 0.0 && v.abs() < 1e15 {
+                expenses::won(v as i64).trim_end_matches('원').to_string()
+            } else {
+                let s = format!("{v:.6}");
+                s.trim_end_matches('0').trim_end_matches('.').to_string()
+            };
+            println!("  🧮 {joined}");
+            println!("     = {pretty}");
+        }
+        Err(e) => println!("  ⚠️ {e}"),
     }
     println!();
     Ok(())
