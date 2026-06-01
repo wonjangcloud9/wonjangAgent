@@ -37,6 +37,7 @@ mod gateway;
 mod geeknews;
 mod habits;
 mod hangul;
+mod hash;
 mod holidays;
 mod jsontool;
 mod keyboard;
@@ -175,6 +176,18 @@ enum Commands {
         /// 실제로 이동(미지정 시 미리보기만)
         #[arg(long = "실행")]
         run: bool,
+    },
+    /// 파일 체크섬(SHA-256/512). 예: wonjang 해시 setup.dmg
+    #[command(alias = "해시")]
+    Hash {
+        /// 파일 경로
+        file: String,
+        /// 알고리즘(sha256 기본, sha512)
+        #[arg(long = "알고리즘", default_value = "sha256")]
+        algo: String,
+        /// 이 값과 일치하는지 검증
+        #[arg(long = "확인")]
+        verify: Option<String>,
     },
     /// JSON 파일 검증·정렬·값 추출. 예: wonjang json data.json --키 meta.port
     Json {
@@ -813,6 +826,9 @@ async fn run() -> Result<()> {
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
+        Some(Commands::Hash { file, algo, verify }) => {
+            return cmd_hash(file, algo, verify.as_deref())
+        }
         Some(Commands::Json { file, key }) => return cmd_json(file, key.as_deref()),
         Some(Commands::Search { path, query, max }) => return cmd_search(path, query, *max),
         Some(Commands::Zip { sources, output }) => return cmd_zip(sources, output.as_deref()),
@@ -1684,6 +1700,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
+                ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
                 ("wonjang qr <URL>", "QR 코드 생성(와이파이 --wifi)"),
             ],
         ),
@@ -1727,6 +1744,30 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_hash(file: &str, algo: &str, verify: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let path = expand_path(file);
+    if !path.exists() {
+        return Err(anyhow::anyhow!("파일이 없어요: {}", path.display()));
+    }
+    let algo = hash::Algo::parse(algo)?;
+    let digest = hash::file_digest(&path, algo)?;
+    println!();
+    println!("  🔐 {} 체크섬", algo.name());
+    println!("     {}", digest.bright_cyan());
+    if let Some(expected) = verify {
+        let expected = expected.trim().to_lowercase();
+        if expected == digest {
+            println!("     ✅ 일치 — 파일이 변조되지 않았어요");
+        } else {
+            println!("     ❌ 불일치! 파일이 다르거나 손상됐을 수 있어요");
+            println!("        기대값: {}", expected.dimmed());
+        }
+    }
+    println!();
+    Ok(())
 }
 
 fn cmd_json(file: &str, key: Option<&str>) -> Result<()> {
