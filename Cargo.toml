@@ -1,6 +1,6 @@
 [package]
 name = "wonjang"
-version = "0.72.0"
+version = "0.73.0"
 edition = "2021"
 description = "원장 에이전트 — 로컬 환경을 다루는 한국어 우선 자율 AI 에이전트 (Rust)"
 license = "MIT"
@@ -26,6 +26,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 qrcode = { version = "0.14", default-features = false }
 sha2 = "0.10"
 similar = "2"
+base64 = "0.22"
 
 [profile.release]
 strip = true

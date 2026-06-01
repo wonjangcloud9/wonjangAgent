@@ -30,6 +30,7 @@ mod diff;
 mod discount;
 mod diskusage;
 mod dutchpay;
+mod encode;
 mod engine;
 mod exchange;
 mod expenses;
@@ -528,6 +529,17 @@ enum Commands {
         /// 유닉스 초/밀리초 또는 날짜(YYYY-MM-DD). 생략 시 현재 시각
         value: Option<String>,
     },
+    /// base64/URL 인코딩·디코딩. 예: wonjang 인코딩 base64 "hello"
+    #[command(alias = "인코딩")]
+    Encode {
+        /// 방식: base64 또는 url
+        method: String,
+        /// 대상 텍스트
+        text: Vec<String>,
+        /// 디코딩(미지정 시 인코딩)
+        #[arg(short = 'd', long = "디코드")]
+        decode: bool,
+    },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
     #[command(alias = "시급")]
     Wage {
@@ -933,6 +945,11 @@ async fn run() -> Result<()> {
         Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Radix { value }) => return cmd_radix(value),
         Some(Commands::Timestamp { value }) => return cmd_timestamp(value.as_deref()),
+        Some(Commands::Encode {
+            method,
+            text,
+            decode,
+        }) => return cmd_encode(method, text, *decode),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1723,6 +1740,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
                 ("wonjang 진법 255", "2/8/10/16진수 변환"),
                 ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
+                ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
             ],
         ),
         (
@@ -3012,6 +3030,34 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
             println!("     (오늘)");
         }
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_encode(method: &str, text: &[String], decode: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    if text.is_empty() {
+        println!();
+        println!("  대상 텍스트를 입력하세요. 예: wonjang 인코딩 base64 \"hello\"");
+        println!();
+        return Ok(());
+    }
+    let input = text.join(" ");
+    let result = match (method.trim().to_lowercase().as_str(), decode) {
+        ("base64" | "b64", false) => encode::base64_encode(&input),
+        ("base64" | "b64", true) => encode::base64_decode(&input)?,
+        ("url", false) => encode::url_encode(&input),
+        ("url", true) => encode::url_decode(&input)?,
+        (other, _) => {
+            return Err(anyhow::anyhow!(
+                "방식은 base64 또는 url 이어야 해요 (입력: {other})"
+            ))
+        }
+    };
+    let action = if decode { "디코딩" } else { "인코딩" };
+    println!();
+    println!("  🔠 {} {action}", method.to_lowercase().bright_cyan());
+    println!("     {result}");
     println!();
     Ok(())
 }
