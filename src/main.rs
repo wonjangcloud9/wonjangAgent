@@ -13,6 +13,7 @@ mod cli_backend;
 mod clipboard;
 mod coin;
 mod config;
+mod convert;
 mod cron;
 mod ddays;
 mod deposit;
@@ -284,6 +285,14 @@ enum Commands {
         /// 올림 단위(원, 기본 100)
         #[arg(default_value_t = 100)]
         unit: i64,
+    },
+    /// 단위 변환(온도/무게/길이). 예: wonjang 변환 100 c
+    #[command(alias = "변환")]
+    Convert {
+        /// 값
+        value: f64,
+        /// 단위(c/f, kg/lb, cm/inch, km/mile)
+        unit: String,
     },
     /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
     #[command(alias = "뽑기")]
@@ -579,6 +588,7 @@ async fn run() -> Result<()> {
             people,
             unit,
         }) => return cmd_dutch(*total, *people, *unit),
+        Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
         Some(Commands::Pick {
             count,
             order,
@@ -1649,6 +1659,16 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_convert(value: f64, unit: &str) -> Result<()> {
+    println!();
+    match convert::convert(value, unit) {
+        Some(c) => println!("  📏 {}", c.label),
+        None => println!("  '{unit}' 단위는 몰라요. 가능: {}", convert::supported()),
+    }
     println!();
     Ok(())
 }

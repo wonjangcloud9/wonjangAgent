@@ -65,6 +65,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 더치페이(n빵): `{exe} 더치 <총액> <인원> [올림단위]` (1인당·거스름)\n\
          - 제비뽑기/추첨: `{exe} 뽑기 <후보들...>` (당첨 1명), `-n N`(N명), `--order`(순서 섞기)\n\
          - 평수 변환(평↔㎡): `{exe} 평 <숫자>`\n\
+         - 단위 변환: `{exe} 변환 <값> <단위>` (c/f, kg/lb, cm/inch, km/mile)\n\
          - 만 나이 계산: `{exe} 나이 <YYYY-MM-DD>` (만 나이·연 나이·다음 생일)\n\
          - 연봉 실수령액: `{exe} 실수령 <연봉(만원)>` (4대 보험+소득세 공제 후)\n\
          - 대출 상환 계산: `{exe} 대출 <원금(만원)> <연이율%> <개월>` (원리금/원금 균등)\n\
