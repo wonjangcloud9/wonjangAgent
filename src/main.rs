@@ -29,6 +29,7 @@ mod focus;
 mod gateway;
 mod habits;
 mod hangul;
+mod koreannum;
 mod llm;
 mod loan;
 mod lotto;
@@ -333,6 +334,12 @@ enum Commands {
     Choseong {
         /// 초성을 뽑을 텍스트
         text: Vec<String>,
+    },
+    /// 숫자 → 한글 금액(계약서·수표). 예: wonjang 금액 1234567
+    #[command(alias = "금액")]
+    Amount {
+        /// 금액(원)
+        value: u64,
     },
     /// 시급·주휴수당 계산(주급/월급). 예: wonjang 시급 10030 40
     #[command(alias = "시급")]
@@ -653,6 +660,7 @@ async fn run() -> Result<()> {
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
         Some(Commands::Chars { text }) => return cmd_chars(text),
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
+        Some(Commands::Amount { value }) => return cmd_amount(*value),
         Some(Commands::Wage {
             hourly,
             weekly_hours,
@@ -1404,6 +1412,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 메뉴 [카테고리]", "오늘 뭐 먹지?"),
                 ("wonjang 글자수 \"<텍스트>\"", "자소서·SNS 글자수"),
                 ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
+                ("wonjang 금액 <숫자>", "한글 금액(계약서·수표)"),
             ],
         ),
         (
@@ -1788,6 +1797,15 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
             println!("     (오늘)");
         }
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_amount(value: u64) -> Result<()> {
+    println!();
+    println!("  💴 한글 금액");
+    println!("     {}", expenses::won(value as i64));
+    println!("     👉 일금 {}원정", koreannum::to_korean(value));
     println!();
     Ok(())
 }
