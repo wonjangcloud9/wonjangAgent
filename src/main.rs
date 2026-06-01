@@ -79,6 +79,7 @@ mod tools;
 mod ui;
 mod uptime;
 mod util;
+mod uuidgen;
 mod vat;
 mod wage;
 mod watch;
@@ -610,6 +611,12 @@ enum Commands {
         #[arg(long, allow_hyphen_values = true)]
         plus: Option<i64>,
     },
+    /// UUID v4 생성(무작위). 예: wonjang uuid -n 3
+    Uuid {
+        /// 생성 개수(기본 1)
+        #[arg(short = 'n', long = "개수", default_value_t = 1)]
+        count: usize,
+    },
     /// 안전한 비밀번호 생성(OS 난수). 예: wonjang 비번 16 --기호
     #[command(alias = "비번")]
     Password {
@@ -982,6 +989,7 @@ async fn run() -> Result<()> {
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
+        Some(Commands::Uuid { count }) => return cmd_uuid(*count),
         Some(Commands::Password {
             length,
             symbols,
@@ -1760,6 +1768,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
                 ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
                 ("wonjang 비번 [길이] --기호", "안전한 비밀번호 생성"),
+                ("wonjang uuid [-n N]", "UUID v4 생성"),
             ],
         ),
         (
@@ -3341,6 +3350,17 @@ fn cmd_convert(value: f64, unit: &str) -> Result<()> {
     match convert::convert(value, unit) {
         Some(c) => println!("  📏 {}", c.label),
         None => println!("  '{unit}' 단위는 몰라요. 가능: {}", convert::supported()),
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_uuid(count: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let n = count.clamp(1, 50);
+    println!();
+    for _ in 0..n {
+        println!("  {}", uuidgen::v4()?.bright_cyan());
     }
     println!();
     Ok(())
