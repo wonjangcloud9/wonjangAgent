@@ -51,6 +51,7 @@ mod push;
 mod pyeong;
 mod radix;
 mod reminders;
+mod rename;
 mod safety;
 mod salary;
 mod session;
@@ -164,6 +165,20 @@ enum Commands {
         /// 정리할 폴더
         path: String,
         /// 실제로 이동(미지정 시 미리보기만)
+        #[arg(long = "실행")]
+        run: bool,
+    },
+    /// 파일 이름 일괄 변경(특정 문자 치환). 예: wonjang 이름변경 ~/사진 IMG_ 여행_
+    #[command(alias = "이름변경")]
+    Rename {
+        /// 대상 폴더
+        path: String,
+        /// 찾을 문자열
+        find: String,
+        /// 바꿀 문자열(빈 문자열이면 삭제)
+        #[arg(default_value = "")]
+        replace: String,
+        /// 실제로 변경(미지정 시 미리보기만)
         #[arg(long = "실행")]
         run: bool,
     },
@@ -719,6 +734,12 @@ async fn run() -> Result<()> {
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
+        Some(Commands::Rename {
+            path,
+            find,
+            replace,
+            run,
+        }) => return cmd_rename(path, find, replace, *run),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1550,6 +1571,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
                 ("wonjang 정리 <폴더>", "종류별 자동 분류(미리보기→--실행)"),
+                ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
             ],
         ),
         (
@@ -1592,6 +1614,44 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_rename(path: &str, find: &str, replace: &str, run: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let dir = expand_path(path);
+    let plans = rename::plan(&dir, find, replace)?;
+    println!();
+    if plans.is_empty() {
+        println!("  ✏️  '{find}'가 들어간 파일이 없어요: {}", dir.display());
+        println!();
+        return Ok(());
+    }
+    if run {
+        let n = rename::execute(&dir, &plans)?;
+        println!("  ✏️  이름 변경 완료: {n}개 ('{find}' → '{replace}')");
+    } else {
+        println!(
+            "  ✏️  이름 변경 미리보기: {}개 ('{}' → '{}')",
+            plans.len(),
+            find.bright_cyan(),
+            replace.bright_cyan()
+        );
+        for r in plans.iter().take(20) {
+            let old = r.from.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            println!("     {}  →  {}", old.dimmed(), r.to_name.bold());
+        }
+        if plans.len() > 20 {
+            println!("     …외 {}개", plans.len() - 20);
+        }
+        println!();
+        println!(
+            "  {} 실제로 바꾸려면: {}",
+            "▶".green(),
+            format!("wonjang 이름변경 {path} {find} {replace} --실행").bold()
+        );
+    }
+    println!();
+    Ok(())
 }
 
 fn cmd_organize(path: &str, run: bool) -> Result<()> {

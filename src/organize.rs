@@ -65,7 +65,7 @@ pub fn plan(dir: &Path) -> Result<Vec<Move>> {
 }
 
 /// 이름 충돌 시 " (1)", " (2)"를 붙여 비어 있는 경로를 찾는다.
-fn unique_target(dir: &Path, file_name: &str) -> PathBuf {
+pub fn unique_target(dir: &Path, file_name: &str) -> PathBuf {
     let candidate = dir.join(file_name);
     if !candidate.exists() {
         return candidate;
