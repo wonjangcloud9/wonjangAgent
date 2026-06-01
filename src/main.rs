@@ -32,6 +32,7 @@ mod exchange;
 mod expenses;
 mod focus;
 mod gateway;
+mod geeknews;
 mod habits;
 mod hangul;
 mod holidays;
@@ -471,6 +472,12 @@ enum Commands {
         /// 지역 이름(명소·상권·역 등). 예: 강남역, 홍대, 여의도
         area: String,
     },
+    /// 긱뉴스(개발·기술·스타트업) 최신글. 예: wonjang 긱뉴스
+    #[command(alias = "긱뉴스")]
+    Geeknews {
+        /// 보여줄 개수(기본 10)
+        count: Option<usize>,
+    },
     /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
     #[command(alias = "날짜")]
     Date {
@@ -812,6 +819,7 @@ async fn run() -> Result<()> {
         }) => return cmd_wage(*hourly, *weekly_hours),
         Some(Commands::Holiday { year }) => return cmd_holiday(*year),
         Some(Commands::Congestion { area }) => return cmd_congestion(&cfg, area),
+        Some(Commands::Geeknews { count }) => return cmd_geeknews(*count),
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
@@ -1511,6 +1519,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 코인 [심볼]", "업비트 코인 시세"),
                 ("wonjang 뉴스 [검색어]", "최신 뉴스 헤드라인"),
                 ("wonjang 공휴일 [년도]", "한국 공휴일(설날·추석 포함)"),
+                ("wonjang 긱뉴스 [개수]", "개발·기술·스타트업 뉴스"),
             ],
         ),
         (
@@ -2274,6 +2283,27 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_geeknews(count: Option<usize>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let n = count.unwrap_or(10).clamp(1, 30);
+    let items = util::run_async(async move { geeknews::fetch(n).await })?;
+    println!();
+    println!("  🤓 긱뉴스 — 개발·기술·스타트업 ({}건)", items.len());
+    if items.is_empty() {
+        println!("     불러오지 못했어요. 잠시 후 다시 시도하세요.");
+        println!();
+        return Ok(());
+    }
+    for (i, it) in items.iter().enumerate() {
+        println!("  {:>2}. {}", i + 1, it.title.bold());
+        if !it.link.is_empty() {
+            println!("      {}", it.link.dimmed());
+        }
+    }
     println!();
     Ok(())
 }

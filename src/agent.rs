@@ -67,6 +67,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 환율: `{exe} 환율`(주요통화) 또는 `{exe} 환율 <금액> <통화>`(환산), exchange_rate 도구\n\
          - 코인 시세(업비트): `{exe} 코인 [심볼]`(또는 coin_price 도구)\n\
          - 뉴스 헤드라인: `{exe} 뉴스 [검색어]`(또는 news_headlines 도구)\n\
+         - 긱뉴스(개발/기술/스타트업): `{exe} 긱뉴스 [개수]` (개발자용 한국 기술 뉴스)\n\
          - 로또 자동번호: `{exe} 로또 [게임수]`(또는 lotto_numbers 도구)\n\
          - 메뉴 추천(오늘 뭐 먹지?): `{exe} 메뉴 [한식/중식/일식/양식/분식/야식]`\n\
          - 더치페이(n빵): `{exe} 더치 <총액> <인원> [올림단위]` (1인당·거스름)\n\
