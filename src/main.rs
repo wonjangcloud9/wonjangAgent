@@ -37,6 +37,7 @@ mod todos;
 mod tools;
 mod ui;
 mod util;
+mod watch;
 mod weather;
 mod web;
 
@@ -198,6 +199,12 @@ enum Commands {
         /// 게임 수(기본 5)
         games: Option<usize>,
     },
+    /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
+    #[command(alias = "감시")]
+    Watch {
+        #[command(subcommand)]
+        action: Option<WatchAction>,
+    },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
         #[command(subcommand)]
@@ -230,6 +237,24 @@ enum PresetAction {
         /// 추가 지시(선택)
         #[arg(trailing_var_arg = true)]
         extra: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum WatchAction {
+    /// 등록된 시세 알림 목록(기본).
+    List,
+    /// 알림 추가. 예: wonjang 감시 add BTC 110000000 (목표가 도달 시 알림)
+    Add {
+        /// 코인 심볼(예: BTC)
+        symbol: String,
+        /// 목표가(원)
+        target: f64,
+    },
+    /// id로 알림 삭제.
+    Remove {
+        /// 삭제할 알림 id
+        id: u64,
     },
 }
 
@@ -430,6 +455,7 @@ async fn run() -> Result<()> {
         Some(Commands::Coin { symbol }) => return cmd_coin(symbol),
         Some(Commands::News { query }) => return cmd_news(query),
         Some(Commands::Lotto { games }) => return cmd_lotto(*games),
+        Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -878,7 +904,59 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         // 매일 자동 브리핑(설정된 시각이 지났고 오늘 아직 안 보냈으면).
         maybe_send_briefing(eng, cfg, &ctx, &mut last_briefed).await;
 
+        // 코인 시세 알림: 목표가에 도달한 알림을 푸시한다.
+        check_price_watches(cfg).await;
+
         tokio::time::sleep(tick).await;
+    }
+}
+
+/// 목표가에 도달한 시세 알림을 푸시하고 발동 표시한다.
+async fn check_price_watches(cfg: &Config) {
+    let mut store = match watch::WatchStore::load() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let markets: Vec<String> = {
+        let mut m: Vec<String> = store.active().iter().map(|w| w.market.clone()).collect();
+        m.sort();
+        m.dedup();
+        m
+    };
+    if markets.is_empty() {
+        return;
+    }
+    let coins = match coin::fetch(&markets).await {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut changed = false;
+    let active_ids: Vec<u64> = store.active().iter().map(|w| w.id).collect();
+    for id in active_ids {
+        let w = match store.items.iter().find(|w| w.id == id) {
+            Some(w) => w.clone(),
+            None => continue,
+        };
+        if let Some(c) = coins.iter().find(|c| c.symbol == w.symbol) {
+            if watch::should_trigger(&w, c.price) {
+                let dir = if w.above { "도달" } else { "하락" };
+                ui::note(&format!("🔔 시세 알림: {} {dir}!", w.symbol));
+                push::push_blocking(
+                    cfg,
+                    &format!(
+                        "🔔 {} {}원 {dir}! (목표 {}원)",
+                        w.symbol,
+                        exchange::comma(c.price, 0),
+                        exchange::comma(w.target, 0)
+                    ),
+                );
+                store.mark_triggered(id);
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        store.save().ok();
     }
 }
 
@@ -1203,6 +1281,60 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             }
             println!();
             ui::info("열기: wonjang 열기 <이름>");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_watch(action: &Option<WatchAction>) -> Result<()> {
+    let mut store = watch::WatchStore::load()?;
+    match action {
+        Some(WatchAction::Add { symbol, target }) => {
+            // 현재가로 알림 방향 결정(현재가보다 높으면 '도달=이상', 낮으면 '이하').
+            let sym = symbol.to_uppercase();
+            let market = format!("KRW-{sym}");
+            let m = market.clone();
+            let coins = util::run_async(async move { coin::fetch(&[m]).await })?;
+            let current = coins.first().map(|c| c.price);
+            let above = match current {
+                Some(c) => *target >= c,
+                None => true,
+            };
+            let id = store.add(&sym, *target, above)?;
+            let dir = if above { "이상" } else { "이하" };
+            ui::note(&format!(
+                "시세 알림 #{id}: {sym}이(가) {}원 {dir}이면 푸시",
+                exchange::comma(*target, 0)
+            ));
+            if let Some(c) = current {
+                ui::info(&format!("현재가 {}원", exchange::comma(c, 0)));
+            }
+            ui::info("감시하려면 스케줄러를 켜 두세요: wonjang cron run");
+        }
+        Some(WatchAction::Remove { id }) => {
+            if store.remove(*id)? {
+                ui::note(&format!("시세 알림 #{id}을(를) 삭제했습니다."));
+            } else {
+                ui::error(&format!("시세 알림 #{id}을(를) 찾을 수 없습니다."));
+            }
+        }
+        None | Some(WatchAction::List) => {
+            if store.items.is_empty() {
+                ui::info("등록된 시세 알림이 없어요. 예: wonjang 감시 add BTC 110000000");
+                return Ok(());
+            }
+            println!("시세 알림:\n");
+            for w in &store.items {
+                let dir = if w.above { "≥" } else { "≤" };
+                let state = if w.triggered { " (발동됨)" } else { "" };
+                println!(
+                    "  #{}  {} {dir} {}원{state}",
+                    w.id,
+                    w.symbol,
+                    exchange::comma(w.target, 0)
+                );
+            }
+            println!();
         }
     }
     Ok(())
