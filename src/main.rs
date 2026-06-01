@@ -7,6 +7,7 @@ mod age;
 mod agent;
 mod airquality;
 mod backup;
+mod bmi;
 mod bookmarks;
 mod briefing;
 mod cli_backend;
@@ -293,6 +294,13 @@ enum Commands {
         value: f64,
         /// 단위(c/f, kg/lb, cm/inch, km/mile)
         unit: String,
+    },
+    /// BMI 계산(아시아 기준 판정). 예: wonjang bmi 175 68
+    Bmi {
+        /// 키(cm)
+        height: f64,
+        /// 몸무게(kg)
+        weight: f64,
     },
     /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
     #[command(alias = "뽑기")]
@@ -589,6 +597,7 @@ async fn run() -> Result<()> {
             unit,
         }) => return cmd_dutch(*total, *people, *unit),
         Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
+        Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
         Some(Commands::Pick {
             count,
             order,
@@ -1659,6 +1668,26 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_bmi(height: f64, weight: f64) -> Result<()> {
+    println!();
+    match bmi::calc(height, weight) {
+        Some(b) => {
+            println!("  ⚖️  BMI 계산 ({height:.0}cm · {weight:.0}kg)");
+            println!("     BMI            {:.1}", b.value);
+            println!("     판정           {}  (아시아 기준)", b.grade);
+            println!("     표준체중       {:.1}kg  (BMI 22)", b.standard_kg);
+            let diff = weight - b.standard_kg;
+            if diff.abs() >= 0.5 {
+                let word = if diff > 0.0 { "초과" } else { "부족" };
+                println!("     표준 대비      {:.1}kg {word}", diff.abs());
+            }
+        }
+        None => println!("  키와 몸무게는 0보다 커야 해요."),
+    }
     println!();
     Ok(())
 }
