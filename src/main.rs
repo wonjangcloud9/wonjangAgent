@@ -6,6 +6,7 @@
 mod age;
 mod agent;
 mod airquality;
+mod archive;
 mod backup;
 mod bike;
 mod bmi;
@@ -171,6 +172,23 @@ enum Commands {
         /// 실제로 이동(미지정 시 미리보기만)
         #[arg(long = "실행")]
         run: bool,
+    },
+    /// 폴더·파일을 zip으로 압축합니다. 예: wonjang 압축 ~/문서
+    #[command(alias = "압축")]
+    Zip {
+        /// 압축할 폴더/파일들
+        sources: Vec<String>,
+        /// 결과 파일 이름(생략 시 첫 소스 이름.zip)
+        #[arg(long = "이름")]
+        output: Option<String>,
+    },
+    /// zip 파일을 풉니다. 예: wonjang 압축풀기 자료.zip
+    #[command(alias = "압축풀기")]
+    Unzip {
+        /// 풀 zip 파일
+        file: String,
+        /// 풀 폴더(생략 시 zip 이름의 새 폴더)
+        dest: Option<String>,
     },
     /// 파일 이름 일괄 변경(특정 문자 치환). 예: wonjang 이름변경 ~/사진 IMG_ 여행_
     #[command(alias = "이름변경")]
@@ -762,6 +780,8 @@ async fn run() -> Result<()> {
         Some(Commands::Disk { path, top }) => return cmd_disk(path.as_deref(), *top),
         Some(Commands::Dedup { path, top }) => return cmd_dedup(path.as_deref(), *top),
         Some(Commands::Organize { path, run }) => return cmd_organize(path, *run),
+        Some(Commands::Zip { sources, output }) => return cmd_zip(sources, output.as_deref()),
+        Some(Commands::Unzip { file, dest }) => return cmd_unzip(file, dest.as_deref()),
         Some(Commands::Rename {
             path,
             find,
@@ -1608,6 +1628,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
                 ("wonjang 정리 <폴더>", "종류별 자동 분류(미리보기→--실행)"),
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
+                ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
             ],
         ),
         (
@@ -1650,6 +1671,76 @@ fn expand_path(root: &str) -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(root)
     }
+}
+
+fn cmd_zip(sources: &[String], output: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    if sources.is_empty() {
+        println!();
+        println!("  압축할 폴더/파일을 알려주세요. 예: wonjang 압축 ~/문서");
+        println!();
+        return Ok(());
+    }
+    let srcs: Vec<std::path::PathBuf> = sources.iter().map(|s| expand_path(s)).collect();
+    // 출력 이름: 지정 없으면 첫 소스 이름 기반.
+    let out = match output {
+        Some(o) => expand_path(o),
+        None => {
+            let stem = srcs[0]
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "archive".to_string());
+            srcs[0]
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join(format!("{stem}.zip"))
+        }
+    };
+    println!();
+    println!(
+        "  🗜️  압축 중… → {}",
+        out.display().to_string().bright_cyan()
+    );
+    let n = archive::create_zip(&srcs, &out)?;
+    let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+    println!(
+        "  ✅ 완료: {n}개 파일 → {} ({})",
+        out.display(),
+        diskusage::human(size)
+    );
+    println!();
+    Ok(())
+}
+
+fn cmd_unzip(file: &str, dest: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let zip_path = expand_path(file);
+    if !zip_path.exists() {
+        return Err(anyhow::anyhow!("zip 파일이 없어요: {}", zip_path.display()));
+    }
+    let target = match dest {
+        Some(d) => expand_path(d),
+        None => {
+            // zip 이름(확장자 제거)의 새 폴더로.
+            let stem = zip_path
+                .file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unzipped".to_string());
+            zip_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join(stem)
+        }
+    };
+    println!();
+    println!(
+        "  🗜️  푸는 중… → {}",
+        target.display().to_string().bright_cyan()
+    );
+    let n = archive::extract_zip(&zip_path, &target)?;
+    println!("  ✅ 완료: {n}개 파일 → {}", target.display());
+    println!();
+    Ok(())
 }
 
 fn cmd_rename(path: &str, find: &str, replace: &str, run: bool) -> Result<()> {
