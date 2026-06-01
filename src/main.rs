@@ -16,6 +16,7 @@ mod config;
 mod cron;
 mod ddays;
 mod deposit;
+mod dutchpay;
 mod engine;
 mod exchange;
 mod expenses;
@@ -271,6 +272,17 @@ enum Commands {
     Menu {
         /// 카테고리(한식/중식/일식/양식/분식/야식). 생략 시 전체에서 추천
         category: Option<String>,
+    },
+    /// 더치페이(n빵) 정산. 예: wonjang 더치 50000 3
+    #[command(alias = "더치")]
+    Dutch {
+        /// 총액(원)
+        total: i64,
+        /// 인원수
+        people: i64,
+        /// 올림 단위(원, 기본 100)
+        #[arg(default_value_t = 100)]
+        unit: i64,
     },
     /// 코인 시세 알림(목표가 도달 시 푸시). 스케줄러가 켜져 있어야 동작.
     #[command(alias = "감시")]
@@ -549,6 +561,11 @@ async fn run() -> Result<()> {
             months,
         }) => return cmd_deposit(*manwon, *rate, *months, true),
         Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
+        Some(Commands::Dutch {
+            total,
+            people,
+            unit,
+        }) => return cmd_dutch(*total, *people, *unit),
         Some(Commands::Watch { action }) => return cmd_watch(action),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
@@ -1614,6 +1631,31 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_dutch(total: i64, people: i64, unit: i64) -> Result<()> {
+    let w = expenses::won;
+    println!();
+    match dutchpay::split(total, people, unit) {
+        Some(s) => {
+            println!("  🧾 더치페이 ({} · {}명)", w(s.total), s.people);
+            println!(
+                "     1인당          {}  ({}원 단위 올림)",
+                w(s.per_person),
+                unit
+            );
+            println!("     정확히 나누면  {:.1}원", s.exact);
+            println!("     걷히는 총액    {}", w(s.collected));
+            if s.leftover > 0 {
+                println!("     남는 거스름    {}  (총무 보관)", w(s.leftover));
+            } else {
+                println!("     딱 떨어져요 👍");
+            }
+        }
+        None => println!("  총액은 0 이상, 인원은 1명 이상이어야 해요."),
+    }
     println!();
     Ok(())
 }

@@ -62,6 +62,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 뉴스 헤드라인: `{exe} 뉴스 [검색어]`(또는 news_headlines 도구)\n\
          - 로또 자동번호: `{exe} 로또 [게임수]`(또는 lotto_numbers 도구)\n\
          - 메뉴 추천(오늘 뭐 먹지?): `{exe} 메뉴 [한식/중식/일식/양식/분식/야식]`\n\
+         - 더치페이(n빵): `{exe} 더치 <총액> <인원> [올림단위]` (1인당·거스름)\n\
          - 평수 변환(평↔㎡): `{exe} 평 <숫자>`\n\
          - 만 나이 계산: `{exe} 나이 <YYYY-MM-DD>` (만 나이·연 나이·다음 생일)\n\
          - 연봉 실수령액: `{exe} 실수령 <연봉(만원)>` (4대 보험+소득세 공제 후)\n\
