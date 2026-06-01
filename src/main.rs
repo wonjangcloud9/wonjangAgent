@@ -17,6 +17,7 @@ mod charcount;
 mod cli_backend;
 mod clipboard;
 mod coin;
+mod color;
 mod config;
 mod congestion;
 mod convert;
@@ -611,6 +612,12 @@ enum Commands {
         #[arg(long, allow_hyphen_values = true)]
         plus: Option<i64>,
     },
+    /// 색상 변환(HEX↔RGB↔HSL). 예: wonjang 색 #ff5733 / wonjang 색 255 87 51
+    #[command(alias = "색")]
+    Color {
+        /// 헥스(#ff5733) 또는 R G B(255 87 51)
+        input: Vec<String>,
+    },
     /// UUID v4 생성(무작위). 예: wonjang uuid -n 3
     Uuid {
         /// 생성 개수(기본 1)
@@ -989,6 +996,7 @@ async fn run() -> Result<()> {
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
+        Some(Commands::Color { input }) => return cmd_color(input),
         Some(Commands::Uuid { count }) => return cmd_uuid(*count),
         Some(Commands::Password {
             length,
@@ -1769,6 +1777,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
                 ("wonjang 비번 [길이] --기호", "안전한 비밀번호 생성"),
                 ("wonjang uuid [-n N]", "UUID v4 생성"),
+                ("wonjang 색 #ff5733", "HEX↔RGB↔HSL 색상 변환"),
             ],
         ),
         (
@@ -3351,6 +3360,38 @@ fn cmd_convert(value: f64, unit: &str) -> Result<()> {
         Some(c) => println!("  📏 {}", c.label),
         None => println!("  '{unit}' 단위는 몰라요. 가능: {}", convert::supported()),
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_color(input: &[String]) -> Result<()> {
+    use owo_colors::OwoColorize;
+    if input.is_empty() {
+        println!();
+        println!("  색을 입력하세요. 예: wonjang 색 #ff5733  또는  wonjang 색 255 87 51");
+        println!();
+        return Ok(());
+    }
+    // RGB 3개 숫자인지, 헥스인지 판별.
+    let rgb = if input.len() == 3 && input.iter().all(|s| s.parse::<u16>().is_ok()) {
+        let n: Vec<u16> = input.iter().map(|s| s.parse().unwrap()).collect();
+        if n.iter().any(|&v| v > 255) {
+            return Err(anyhow::anyhow!("RGB 값은 0~255 사이여야 해요"));
+        }
+        color::Rgb {
+            r: n[0] as u8,
+            g: n[1] as u8,
+            b: n[2] as u8,
+        }
+    } else {
+        color::parse_hex(&input.join(""))?
+    };
+    let (h, s, l) = color::to_hsl(rgb);
+    println!();
+    println!("  🎨 색상 변환");
+    println!("     HEX  {}", color::to_hex(rgb).bright_cyan());
+    println!("     RGB  rgb({}, {}, {})", rgb.r, rgb.g, rgb.b);
+    println!("     HSL  hsl({:.0}, {:.0}%, {:.0}%)", h, s, l);
     println!();
     Ok(())
 }
