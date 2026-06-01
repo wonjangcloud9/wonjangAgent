@@ -207,8 +207,9 @@ pub fn builtin() -> Vec<Preset> {
              \n4) 오늘의 할 일('wonjang todo' 또는 list_todos로 확인)\
              \n5) 다가오는 디데이('wonjang dday' 또는 list_ddays로 확인, 가까운 것 위주)\
              \n6) 오늘 아직 안 한 습관('wonjang 습관' 또는 list_habits로 확인)\
-             \n7) 오늘의 주요 뉴스 2~3개(news_headlines 도구 또는 'wonjang 뉴스')\
-             \n8) 짧은 응원 한마디.\
+             \n7) 다음 공휴일까지 며칠 남았는지('wonjang 공휴일'로 확인, 설날·추석 포함)\
+             \n8) 오늘의 주요 뉴스 2~3개(news_headlines 도구 또는 'wonjang 뉴스')\
+             \n9) 짧은 응원 한마디.\
              \n간결한 불릿으로 정리해줘.",
         ),
         Preset::new(
