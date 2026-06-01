@@ -1159,7 +1159,20 @@ fn cmd_config(cfg: &Config) -> Result<()> {
         },
         cfg.telegram_allowed_ids.len()
     );
-    ui::info("\nAPI 키·토큰 등 비밀값은 파일에 저장하지 않습니다. 환경 변수를 사용하세요.");
+    let seoul = if cfg.seoul_api_key == "sample" || cfg.seoul_api_key.is_empty() {
+        "sample (예시 데이터) — 무료 키 권장"
+    } else {
+        "설정됨 ✔"
+    };
+    println!("  서울 K-API: {seoul}");
+
+    println!();
+    println!("  🔑 무료 키로 더 많은 한국 기능 켜기:");
+    println!("     • 서울 열린데이터(data.seoul.go.kr): 지하철(전체)·혼잡도(임의지역)·따릉이");
+    println!("       → config.toml에 seoul_api_key = \"발급키\"");
+    println!("     • 공공데이터포털(data.go.kr): 주유소 최저가·응급실·버스도착·약국 등(예정)");
+    println!("     • 네이버 개발자(developers.naver.com): 쇼핑 최저가·블로그·책 검색(예정)");
+    ui::info("\nAPI 키·토큰 등 비밀값은 파일에 저장하지 않습니다(서울 키처럼 비밀이 아닌 값만 파일 저장).");
     Ok(())
 }
 
