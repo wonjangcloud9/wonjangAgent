@@ -16,6 +16,7 @@ mod coin;
 mod config;
 mod convert;
 mod cron;
+mod datecalc;
 mod ddays;
 mod deposit;
 mod discount;
@@ -318,6 +319,17 @@ enum Commands {
         /// 금액(원)
         amount: f64,
     },
+    /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
+    #[command(alias = "날짜")]
+    Date {
+        /// 기준 날짜(YYYY-MM-DD). 생략 시 오늘
+        from: Option<String>,
+        /// 비교 날짜(YYYY-MM-DD) — 두 날짜 사이 일수
+        to: Option<String>,
+        /// 기준 날짜에 N일 더하기(음수면 빼기)
+        #[arg(long, allow_hyphen_values = true)]
+        plus: Option<i64>,
+    },
     /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
     #[command(alias = "뽑기")]
     Pick {
@@ -616,6 +628,9 @@ async fn run() -> Result<()> {
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
+        Some(Commands::Date { from, to, plus }) => {
+            return cmd_date(from.as_deref(), to.as_deref(), *plus)
+        }
         Some(Commands::Pick {
             count,
             order,
@@ -1686,6 +1701,43 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<()> {
+    let today = chrono::Local::now().date_naive();
+    let base = match from {
+        Some(s) => datecalc::parse(s)?,
+        None => today,
+    };
+    let fmt =
+        |d: chrono::NaiveDate| format!("{} ({})", d.format("%Y-%m-%d"), datecalc::weekday_kr(d));
+    println!();
+    if let Some(to) = to {
+        // 두 날짜 사이 일수.
+        let target = datecalc::parse(to)?;
+        let days = datecalc::days_between(base, target);
+        let weeks = days.abs() / 7;
+        let rest = days.abs() % 7;
+        println!("  📅 날짜 사이");
+        println!("     {}  →  {}", fmt(base), fmt(target));
+        println!("     {days}일 ({weeks}주 {rest}일)");
+    } else if let Some(n) = plus {
+        // N일 후/전 날짜.
+        let result = datecalc::add_days(base, n);
+        let word = if n >= 0 { "후" } else { "전" };
+        println!("  📅 {} 기준 {}일 {word}", fmt(base), n.abs());
+        println!("     👉 {}", fmt(result));
+    } else {
+        // 인자가 today 하나뿐이면 오늘(또는 그 날짜) 정보.
+        let day_of_year = chrono::Datelike::ordinal(&base);
+        println!("  📅 {}", fmt(base));
+        println!("     올해 {day_of_year}번째 날");
+        if from.is_none() {
+            println!("     (오늘)");
+        }
+    }
     println!();
     Ok(())
 }
