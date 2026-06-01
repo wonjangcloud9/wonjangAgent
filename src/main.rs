@@ -56,6 +56,7 @@ mod news;
 mod notes;
 mod notion;
 mod organize;
+mod password;
 mod pick;
 mod preset;
 mod push;
@@ -609,6 +610,18 @@ enum Commands {
         #[arg(long, allow_hyphen_values = true)]
         plus: Option<i64>,
     },
+    /// 안전한 비밀번호 생성(OS 난수). 예: wonjang 비번 16 --기호
+    #[command(alias = "비번")]
+    Password {
+        /// 길이(기본 16, 4~128)
+        length: Option<usize>,
+        /// 특수기호 포함
+        #[arg(long = "기호")]
+        symbols: bool,
+        /// 생성 개수(기본 1)
+        #[arg(short = 'n', long = "개수", default_value_t = 1)]
+        count: usize,
+    },
     /// 제비뽑기/랜덤 추첨. 예: wonjang 뽑기 철수 영희 민수
     #[command(alias = "뽑기")]
     Pick {
@@ -969,6 +982,11 @@ async fn run() -> Result<()> {
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
+        Some(Commands::Password {
+            length,
+            symbols,
+            count,
+        }) => return cmd_password(*length, *symbols, *count),
         Some(Commands::Pick {
             count,
             order,
@@ -1741,6 +1759,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 진법 255", "2/8/10/16진수 변환"),
                 ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
                 ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
+                ("wonjang 비번 [길이] --기호", "안전한 비밀번호 생성"),
             ],
         ),
         (
@@ -3323,6 +3342,26 @@ fn cmd_convert(value: f64, unit: &str) -> Result<()> {
         Some(c) => println!("  📏 {}", c.label),
         None => println!("  '{unit}' 단위는 몰라요. 가능: {}", convert::supported()),
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_password(length: Option<usize>, symbols: bool, count: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let len = length.unwrap_or(16);
+    let n = count.clamp(1, 20);
+    println!();
+    println!(
+        "  🔑 비밀번호 ({}자{})",
+        len.clamp(4, 128),
+        if symbols { ", 기호 포함" } else { "" }
+    );
+    for _ in 0..n {
+        let pw = password::generate(len, symbols)?;
+        println!("     {}", pw.bright_cyan().bold());
+    }
+    println!();
+    println!("  {} OS 난수로 생성(암호학적으로 안전).", "ⓘ".dimmed());
     println!();
     Ok(())
 }
