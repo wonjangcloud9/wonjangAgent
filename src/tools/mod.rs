@@ -11,6 +11,7 @@ pub mod exchange;
 pub mod expense;
 pub mod fs;
 pub mod habit;
+pub mod lotto;
 pub mod mcp;
 pub mod memory;
 pub mod news;
@@ -92,6 +93,7 @@ pub fn subagent_tools() -> Vec<Box<dyn Tool>> {
         Box::new(exchange::ExchangeTool),
         Box::new(coin::CoinTool),
         Box::new(news::NewsTool),
+        Box::new(lotto::LottoTool),
     ]
 }
 

@@ -60,6 +60,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - 환율: `{exe} 환율`(주요통화) 또는 `{exe} 환율 <금액> <통화>`(환산), exchange_rate 도구\n\
          - 코인 시세(업비트): `{exe} 코인 [심볼]`(또는 coin_price 도구)\n\
          - 뉴스 헤드라인: `{exe} 뉴스 [검색어]`(또는 news_headlines 도구)\n\
+         - 로또 자동번호: `{exe} 로또 [게임수]`(또는 lotto_numbers 도구)\n\
          - 노션 검색/기록(설정된 경우): `{exe} notion search \"<검색어>\"`, `{exe} notion append <page_id> \"<내용>\"`\n"
     );
 

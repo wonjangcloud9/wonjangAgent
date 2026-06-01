@@ -20,6 +20,7 @@ mod focus;
 mod gateway;
 mod habits;
 mod llm;
+mod lotto;
 mod mcp;
 mod memory;
 mod news;
@@ -186,6 +187,12 @@ enum Commands {
         /// 검색어(선택)
         #[arg(trailing_var_arg = true)]
         query: Vec<String>,
+    },
+    /// 로또 자동 번호 추첨. 예: wonjang 로또 (5게임) / wonjang 로또 3
+    #[command(alias = "로또")]
+    Lotto {
+        /// 게임 수(기본 5)
+        games: Option<usize>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
     Notion {
@@ -417,6 +424,7 @@ async fn run() -> Result<()> {
         Some(Commands::Exchange { amount, currency }) => return cmd_exchange(*amount, currency),
         Some(Commands::Coin { symbol }) => return cmd_coin(symbol),
         Some(Commands::News { query }) => return cmd_news(query),
+        Some(Commands::Lotto { games }) => return cmd_lotto(*games),
         Some(Commands::Notion { action }) => return cmd_notion(&cfg, action),
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
@@ -1104,6 +1112,20 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
             ui::info("열기: wonjang 열기 <이름>");
         }
     }
+    Ok(())
+}
+
+fn cmd_lotto(games: Option<usize>) -> Result<()> {
+    let n = games.unwrap_or(5).clamp(1, 10);
+    println!();
+    println!("  🎱 로또 자동 번호 ({n}게임)");
+    for (i, g) in lotto::auto(n).iter().enumerate() {
+        let label = (b'A' + i as u8) as char;
+        let nums: Vec<String> = g.iter().map(|x| format!("{x:2}")).collect();
+        println!("     {label}  {}", nums.join("  "));
+    }
+    println!();
+    ui::info("재미로 즐기세요 🍀");
     Ok(())
 }
 
