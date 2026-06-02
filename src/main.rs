@@ -2636,6 +2636,45 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// 현황 상단 "원장 한마디" — 로컬 데이터에서 지금 가장 신경 쓸 하나를 골라 먼저 말해준다.
+/// (GPT가 못 하는 일: 사용자 로컬의 디데이·습관·약속·할일을 읽어 우선순위로 종합)
+/// 우선순위: 임박 디데이(≤3일) > 끊길 위기 습관(streak≥2·오늘 미완) > 임박 약속(≤180분) > 남은 할 일.
+fn status_highlight(
+    nearest_dday: Option<(i64, String)>,
+    at_risk_habit: Option<(i64, String)>,
+    soon_reminder: Option<(i64, String)>,
+    pending_todos: usize,
+) -> Option<String> {
+    if let Some((days, label)) = nearest_dday {
+        if (0..=3).contains(&days) {
+            return Some(match days {
+                0 => format!("오늘은 '{label}' 당일이에요! 잊지 않으셨죠? 🎯"),
+                1 => format!("내일이 '{label}'! 하루 남았어요 — 미리 챙겨둬요."),
+                d => format!("'{label}'까지 D-{d}. 슬슬 준비하면 딱 좋아요."),
+            });
+        }
+    }
+    if let Some((streak, name)) = at_risk_habit {
+        return Some(format!(
+            "'{name}' {streak}일 연속 중인데 오늘 아직이에요 — 여기서 끊기면 아깝잖아요 🔥"
+        ));
+    }
+    if let Some((mins, title)) = soon_reminder {
+        let when = if mins <= 60 {
+            format!("{mins}분 뒤")
+        } else {
+            format!("{}시간 뒤", mins / 60)
+        };
+        return Some(format!("{when} '{title}' 약속이 있어요. 준비됐어요?"));
+    }
+    if pending_todos > 0 {
+        return Some(format!(
+            "오늘 할 일 {pending_todos}개가 기다려요. 하나씩 같이 해봐요 💪"
+        ));
+    }
+    None
+}
+
 fn cmd_status() -> Result<()> {
     use owo_colors::OwoColorize;
     let now_unix = reminders::now_unix();
@@ -2654,11 +2693,50 @@ fn cmd_status() -> Result<()> {
         now_local.format("%Y년 %-m월 %-d일"),
         datecalc::weekday_kr(now_local)
     );
+    // 로컬 데이터를 먼저 읽어 "원장 한마디"로 종합(가장 신경 쓸 하나 먼저).
+    let rem = reminders::ReminderStore::load()?;
+    let upcoming = rem.upcoming(now_unix);
+    let todo = todos::TodoStore::load()?;
+    let dd = ddays::DdayStore::load()?;
+    let habit = habits::HabitStore::load()?;
+
+    let nearest_dday = dd
+        .all()
+        .iter()
+        .filter_map(|d| {
+            ddays::parse_date(&d.date)
+                .ok()
+                .map(|dt| (ddays::days_until(dt, today), d.label.clone()))
+        })
+        .filter(|(days, _)| *days >= 0)
+        .min_by_key(|(days, _)| *days);
+    let today_hs = habits::today_str();
+    let at_risk_habit = habit
+        .items
+        .iter()
+        .filter(|h| !h.done_today(&today_hs))
+        .map(|h| (h.streak(today), h.name.clone()))
+        .filter(|(s, _)| *s >= 2)
+        .max_by_key(|(s, _)| *s);
+    let soon_reminder = upcoming.first().and_then(|r| {
+        let mins = (r.at_unix - now_unix) / 60;
+        if (0..=180).contains(&mins) {
+            Some((mins, r.title.clone()))
+        } else {
+            None
+        }
+    });
+    if let Some(msg) = status_highlight(
+        nearest_dday,
+        at_risk_habit,
+        soon_reminder,
+        todo.pending().len(),
+    ) {
+        println!("  💬 {} {}", "원장".bright_cyan().bold(), msg);
+    }
     println!();
 
     // 다가오는 약속(최대 3).
-    let rem = reminders::ReminderStore::load()?;
-    let upcoming = rem.upcoming(now_unix);
     println!("  ⏰ 약속");
     if upcoming.is_empty() {
         ui::info("     예정된 약속이 없어요.");
@@ -2674,7 +2752,6 @@ fn cmd_status() -> Result<()> {
     }
 
     // 할 일(최대 5).
-    let todo = todos::TodoStore::load()?;
     let pending = todo.pending();
     println!("  ✅ 할 일 ({}개)", pending.len());
     for t in pending.iter().take(5) {
@@ -2685,7 +2762,6 @@ fn cmd_status() -> Result<()> {
     }
 
     // 디데이(가까운 3).
-    let dd = ddays::DdayStore::load()?;
     if !dd.all().is_empty() {
         println!("  📅 디데이");
         for d in dd.all().iter().take(3) {
@@ -2697,7 +2773,6 @@ fn cmd_status() -> Result<()> {
     }
 
     // 습관(오늘 완료/전체).
-    let habit = habits::HabitStore::load()?;
     if !habit.items.is_empty() {
         let today_s = habits::today_str();
         let done = habit
@@ -4434,4 +4509,44 @@ fn cmd_memory() -> Result<()> {
         println!("\n{}", content.trim());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::status_highlight;
+
+    #[test]
+    fn dday_takes_priority_and_only_within_3_days() {
+        // D-2 디데이가 있으면 그것을 먼저.
+        let msg = status_highlight(Some((2, "이사".into())), None, None, 5).unwrap();
+        assert!(msg.contains("이사") && msg.contains("D-2"));
+        // 당일.
+        let msg = status_highlight(Some((0, "발표".into())), None, None, 0).unwrap();
+        assert!(msg.contains("당일"));
+        // 4일 뒤면 디데이는 건너뛰고 다음 우선순위(할 일)로.
+        let msg = status_highlight(Some((4, "이사".into())), None, None, 3).unwrap();
+        assert!(msg.contains("할 일") && !msg.contains("이사"));
+    }
+
+    #[test]
+    fn at_risk_habit_beats_reminder_and_todo() {
+        let msg =
+            status_highlight(None, Some((5, "운동".into())), Some((30, "회의".into())), 9).unwrap();
+        assert!(msg.contains("운동") && msg.contains('5'));
+    }
+
+    #[test]
+    fn reminder_then_todo_fallback() {
+        let msg = status_highlight(None, None, Some((30, "회의".into())), 4).unwrap();
+        assert!(msg.contains("회의") && msg.contains("30분"));
+        let msg = status_highlight(None, None, Some((120, "병원".into())), 4).unwrap();
+        assert!(msg.contains("2시간"));
+        let msg = status_highlight(None, None, None, 4).unwrap();
+        assert!(msg.contains('4') && msg.contains("할 일"));
+    }
+
+    #[test]
+    fn nothing_to_say_returns_none() {
+        assert!(status_highlight(None, None, None, 0).is_none());
+    }
 }
