@@ -68,6 +68,7 @@ mod qr;
 mod radix;
 mod reminders;
 mod rename;
+mod roman;
 mod safety;
 mod salary;
 mod search;
@@ -548,6 +549,12 @@ enum Commands {
         /// 숫자(접두사 0x/0o/0b로 진법 자동 인식)
         value: String,
     },
+    /// 로마 숫자 변환(숫자↔로마자). 예: wonjang 로마 2024 / wonjang 로마 MMXXIV
+    #[command(alias = "로마")]
+    Roman {
+        /// 정수(1~3999) 또는 로마 숫자
+        value: String,
+    },
     /// 세계 시간(주요 도시 현재 시각, DST 반영). 예: wonjang 세계시간 [뉴욕]
     #[command(alias = "세계시간")]
     Worldtime {
@@ -1022,6 +1029,7 @@ async fn run() -> Result<()> {
         Some(Commands::Calc { expr }) => return cmd_calc(expr),
         Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Radix { value }) => return cmd_radix(value),
+        Some(Commands::Roman { value }) => return cmd_roman(value),
         Some(Commands::Worldtime { city }) => return cmd_worldtime(city.as_deref()),
         Some(Commands::Tzconv { time, from, to }) => return cmd_tzconv(time, from, to),
         Some(Commands::Timestamp { value }) => return cmd_timestamp(value.as_deref()),
@@ -1836,6 +1844,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 시간 09:00 + 8:30", "시간 더하기/빼기"),
                 ("wonjang 진법 255", "2/8/10/16진수 변환"),
                 ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
+                ("wonjang 로마 2024", "로마 숫자 ↔ 숫자"),
                 ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
                 ("wonjang 비번 [길이] --기호", "안전한 비밀번호 생성"),
                 ("wonjang uuid [-n N]", "UUID v4 생성"),
@@ -3275,6 +3284,25 @@ fn cmd_timestamp(value: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+fn cmd_roman(value: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let v = value.trim();
+    println!();
+    if v.chars().all(|c| c.is_ascii_digit()) {
+        let n: u32 = v.parse().map_err(|_| anyhow::anyhow!("숫자가 너무 커요"))?;
+        println!("  🏛️  {n} = {}", roman::to_roman(n)?.bright_cyan().bold());
+    } else {
+        let n = roman::from_roman(v)?;
+        println!(
+            "  🏛️  {} = {}",
+            v.to_uppercase(),
+            n.to_string().bright_cyan().bold()
+        );
+    }
+    println!();
+    Ok(())
+}
+
 fn cmd_radix(value: &str) -> Result<()> {
     println!();
     match radix::parse(value) {
@@ -3488,8 +3516,12 @@ fn cmd_sleep(wake: Option<&str>) -> Result<()> {
             let wt = sleepcalc::parse_time(w)?;
             println!("  😴 {} 기상 기준 — 이 시각에 주무세요", w.bright_cyan());
             for (cycles, bed) in sleepcalc::bedtimes_for_wake(wt) {
-                let h = cycles * 90 / 60;
-                println!("     {}  ({}주기 · 약 {h}시간 수면)", bed.bold(), cycles);
+                println!(
+                    "     {}  ({}주기 · 약 {} 수면)",
+                    bed.bold(),
+                    cycles,
+                    sleep_dur(cycles)
+                );
             }
         }
         None => {
@@ -3501,8 +3533,12 @@ fn cmd_sleep(wake: Option<&str>) -> Result<()> {
                 sleepcalc_fmt(nt).dimmed()
             );
             for (cycles, wakeup) in sleepcalc::waketimes_for_bed(nt) {
-                let h = cycles * 90 / 60;
-                println!("     {}  ({}주기 · 약 {h}시간 수면)", wakeup.bold(), cycles);
+                println!(
+                    "     {}  ({}주기 · 약 {} 수면)",
+                    wakeup.bold(),
+                    cycles,
+                    sleep_dur(cycles)
+                );
             }
         }
     }
@@ -3513,6 +3549,17 @@ fn cmd_sleep(wake: Option<&str>) -> Result<()> {
     );
     println!();
     Ok(())
+}
+
+/// 주기 수 → "N시간"/"N시간 30분" (90분 주기라 홀수 주기는 30분이 붙는다).
+fn sleep_dur(cycles: u32) -> String {
+    let total = cycles * 90;
+    let (h, m) = (total / 60, total % 60);
+    if m == 0 {
+        format!("{h}시간")
+    } else {
+        format!("{h}시간 {m}분")
+    }
 }
 
 fn sleepcalc_fmt(t: chrono::NaiveTime) -> String {
