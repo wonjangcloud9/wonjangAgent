@@ -320,6 +320,17 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// PDF에서 원하는 페이지만 새 PDF로 추출합니다. 예: wonjang pdf페이지 보고서.pdf 1-3,5
+    #[command(name = "pdf페이지", alias = "피디에프페이지")]
+    PdfPages {
+        /// PDF 파일 경로
+        file: String,
+        /// 남길 페이지(1부터). 예: 1-3,5,8-10
+        range: String,
+        /// 저장 경로(생략 시 원본 옆에 _페이지 붙여 저장)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// 한글 깨진 파일(EUC-KR/CP949)을 UTF-8로 복구합니다. 예: wonjang 깨짐 가계부.csv
     #[command(alias = "깨짐")]
     Encfix {
@@ -1009,6 +1020,11 @@ async fn run() -> Result<()> {
         Some(Commands::PhotosPdf { files, output }) => {
             return cmd_photos_pdf(files, output.as_deref())
         }
+        Some(Commands::PdfPages {
+            file,
+            range,
+            output,
+        }) => return cmd_pdf_pages(file, range, output.as_deref()),
         Some(Commands::Ddoganjip {
             query,
             add,
@@ -2066,6 +2082,10 @@ fn cmd_guide() -> Result<()> {
                     "여러 사진을 PDF 한 파일로(서류 제출)",
                 ),
                 (
+                    "wonjang pdf페이지 <파일> 1-3,5",
+                    "PDF에서 원하는 페이지만 추출",
+                ),
+                (
                     "wonjang 깨짐 <파일.csv>",
                     "한글 깨진 파일(CP949)→UTF-8 복구",
                 ),
@@ -2752,6 +2772,113 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
             println!();
         }
     }
+    Ok(())
+}
+
+/// "1-3,5,8-10" 같은 범위를 1-based 페이지 번호(정렬·중복제거)로. total 초과·0은 오류. 순수.
+fn parse_page_range(spec: &str, total: u32) -> Result<Vec<u32>> {
+    use std::collections::BTreeSet;
+    let mut set: BTreeSet<u32> = BTreeSet::new();
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let Some((a, b)) = part.split_once('-') {
+            let a: u32 = a
+                .trim()
+                .parse()
+                .map_err(|_| anyhow::anyhow!("범위를 이해 못했어요: '{part}'"))?;
+            let b: u32 = b
+                .trim()
+                .parse()
+                .map_err(|_| anyhow::anyhow!("범위를 이해 못했어요: '{part}'"))?;
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            for p in lo..=hi {
+                set.insert(p);
+            }
+        } else {
+            let p: u32 = part
+                .parse()
+                .map_err(|_| anyhow::anyhow!("페이지 번호를 이해 못했어요: '{part}'"))?;
+            set.insert(p);
+        }
+    }
+    if set.contains(&0) {
+        anyhow::bail!("페이지는 1부터 시작해요(0은 없어요).");
+    }
+    if set.is_empty() {
+        anyhow::bail!("추출할 페이지를 지정해주세요. 예: 1-3,5");
+    }
+    if let Some(&mx) = set.iter().next_back() {
+        if mx > total {
+            anyhow::bail!("이 PDF는 {total}페이지인데 {mx}페이지를 요청했어요.");
+        }
+    }
+    Ok(set.into_iter().collect())
+}
+
+/// PDF에서 지정한 페이지만 남겨 새 PDF로 저장한다(라이브러리 delete_pages 사용·원본 보존).
+fn cmd_pdf_pages(file: &str, range: &str, output: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
+    let path = Path::new(file);
+    if !path.exists() {
+        anyhow::bail!("파일을 찾을 수 없어요: {file}");
+    }
+    if !file.to_lowercase().ends_with(".pdf") {
+        anyhow::bail!("PDF 파일이 아니에요: {file}");
+    }
+    let mut doc = lopdf::Document::load(path).map_err(|e| {
+        anyhow::anyhow!("PDF를 열지 못했어요({e}). 암호가 걸렸거나 손상됐을 수 있어요.")
+    })?;
+    let total = doc.get_pages().len() as u32;
+    if total == 0 {
+        anyhow::bail!("페이지가 없는 PDF예요.");
+    }
+    let keep = parse_page_range(range, total)?;
+    let keep_set: BTreeSet<u32> = keep.iter().copied().collect();
+    let to_delete: Vec<u32> = (1..=total).filter(|p| !keep_set.contains(p)).collect();
+    if to_delete.len() as u32 == total {
+        anyhow::bail!("남길 페이지가 없어요.");
+    }
+    doc.delete_pages(&to_delete);
+    doc.prune_objects();
+
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => {
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("pdf");
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            parent.join(format!("{stem}_페이지.pdf"))
+        }
+    };
+    if out_path == path {
+        anyhow::bail!("출력 경로가 원본과 같아요. 원본 보존을 위해 다른 경로(--출력)를 쓰세요.");
+    }
+    doc.save(&out_path)?;
+    let new_total = doc.get_pages().len();
+    let bytes = std::fs::metadata(&out_path)?.len();
+    println!();
+    println!(
+        "  ✂️  PDF {total}페이지 중 {}페이지 추출",
+        new_total.to_string().bright_white()
+    );
+    println!(
+        "     페이지  {}",
+        keep.iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+            .dimmed()
+    );
+    println!(
+        "     저장    {}  ({})",
+        out_path.display().to_string().bright_yellow(),
+        human_bytes(bytes)
+    );
+    println!();
     Ok(())
 }
 
@@ -5044,6 +5171,28 @@ mod habit_nudge_tests {
             .unwrap();
         // 가장 센 streak를 대표로, 나머지는 개수로.
         assert!(msg.contains("독서") && msg.contains("외 2개"));
+    }
+}
+
+#[cfg(test)]
+mod pdfpages_tests {
+    use super::parse_page_range;
+
+    #[test]
+    fn parses_ranges_and_singles_sorted_unique() {
+        assert_eq!(parse_page_range("1-3,5", 10).unwrap(), vec![1, 2, 3, 5]);
+        // 중복·뒤섞임·공백 정리.
+        assert_eq!(parse_page_range("5, 1-2, 2", 10).unwrap(), vec![1, 2, 5]);
+        // 거꾸로 된 범위도 허용(스왑).
+        assert_eq!(parse_page_range("3-1", 10).unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn rejects_out_of_bounds_and_zero() {
+        assert!(parse_page_range("1-3,8", 5).is_err()); // 8 > total 5
+        assert!(parse_page_range("0", 5).is_err()); // 0 없음
+        assert!(parse_page_range("", 5).is_err()); // 빈 지정
+        assert!(parse_page_range("abc", 5).is_err()); // 숫자 아님
     }
 }
 
