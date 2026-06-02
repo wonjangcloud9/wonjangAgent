@@ -330,6 +330,21 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// 옆으로 스캔된 PDF를 돌립니다(90의 배수). 예: wonjang pdf회전 스캔.pdf 90
+    #[command(name = "pdf회전", alias = "피디에프회전")]
+    PdfRotate {
+        /// PDF 파일 경로
+        file: String,
+        /// 회전 각도(90의 배수, 기본 90 시계방향). 음수는 반시계
+        #[arg(default_value_t = 90)]
+        angle: i64,
+        /// 특정 페이지만(예: 1-3,5). 생략 시 전체
+        #[arg(long = "페이지")]
+        pages: Option<String>,
+        /// 저장 경로(생략 시 원본 옆에 _회전 붙여 저장)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// PDF에서 원하는 페이지만 새 PDF로 추출합니다. 예: wonjang pdf페이지 보고서.pdf 1-3,5
     #[command(name = "pdf페이지", alias = "피디에프페이지")]
     PdfPages {
@@ -1033,6 +1048,12 @@ async fn run() -> Result<()> {
         Some(Commands::PdfMerge { files, output }) => {
             return cmd_pdf_merge(files, output.as_deref())
         }
+        Some(Commands::PdfRotate {
+            file,
+            angle,
+            pages,
+            output,
+        }) => return cmd_pdf_rotate(file, *angle, pages.as_deref(), output.as_deref()),
         Some(Commands::PdfPages {
             file,
             range,
@@ -2103,6 +2124,10 @@ fn cmd_guide() -> Result<()> {
                     "PDF에서 원하는 페이지만 추출",
                 ),
                 (
+                    "wonjang pdf회전 <파일> 90",
+                    "옆으로 스캔된 PDF 돌리기(90의 배수)",
+                ),
+                (
                     "wonjang 깨짐 <파일.csv>",
                     "한글 깨진 파일(CP949)→UTF-8 복구",
                 ),
@@ -2947,6 +2972,81 @@ fn cmd_pdf_merge(files: &[String], output: Option<&str>) -> Result<()> {
         "     저장  {}  ({})",
         out_path.display().to_string().bright_yellow(),
         human_bytes(bytes)
+    );
+    println!();
+    Ok(())
+}
+
+/// 회전 각도를 검증·정규화한다(90의 배수, 0~270 범위). 순수.
+fn normalize_rotation(angle: i64) -> Result<i64> {
+    if angle % 90 != 0 {
+        anyhow::bail!("회전 각도는 90의 배수여야 해요(90, 180, 270, -90).");
+    }
+    Ok(angle.rem_euclid(360))
+}
+
+/// PDF 페이지에 회전(/Rotate)을 적용해 새 PDF로 저장한다(옆으로 스캔된 서류 바로 세우기).
+fn cmd_pdf_rotate(file: &str, angle: i64, pages: Option<&str>, output: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
+    let path = Path::new(file);
+    if !path.exists() {
+        anyhow::bail!("파일을 찾을 수 없어요: {file}");
+    }
+    if !file.to_lowercase().ends_with(".pdf") {
+        anyhow::bail!("PDF 파일이 아니에요: {file}");
+    }
+    let norm = normalize_rotation(angle)?;
+    if norm == 0 {
+        anyhow::bail!("회전 각도가 0이에요(90·180·270을 주세요).");
+    }
+    let mut doc = lopdf::Document::load(path).map_err(|e| {
+        anyhow::anyhow!("PDF를 열지 못했어요({e}). 암호가 걸렸거나 손상됐을 수 있어요.")
+    })?;
+    let page_map = doc.get_pages();
+    let total = page_map.len() as u32;
+    if total == 0 {
+        anyhow::bail!("페이지가 없는 PDF예요.");
+    }
+    let targets: BTreeSet<u32> = match pages {
+        Some(spec) => parse_page_range(spec, total)?.into_iter().collect(),
+        None => (1..=total).collect(),
+    };
+
+    let mut rotated = 0usize;
+    for (num, page_id) in page_map {
+        if !targets.contains(&num) {
+            continue;
+        }
+        if let Ok(dict) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
+            let current = dict.get(b"Rotate").and_then(|o| o.as_i64()).unwrap_or(0);
+            dict.set("Rotate", (current + norm) % 360);
+            rotated += 1;
+        }
+    }
+
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => {
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("pdf");
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            parent.join(format!("{stem}_회전.pdf"))
+        }
+    };
+    if out_path == path {
+        anyhow::bail!("출력 경로가 원본과 같아요. 다른 경로(--출력)를 쓰세요.");
+    }
+    doc.save(&out_path)?;
+    println!();
+    println!(
+        "  🔄 PDF {}페이지 {}도 회전",
+        rotated.to_string().bright_white(),
+        norm
+    );
+    println!(
+        "     저장  {}",
+        out_path.display().to_string().bright_yellow()
     );
     println!();
     Ok(())
@@ -5417,6 +5517,27 @@ mod pdfmerge_tests {
         let (merged, count) = merge_documents(vec![make_doc(4)]).unwrap();
         assert_eq!(count, 4);
         assert_eq!(merged.get_pages().len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod pdfrotate_tests {
+    use super::normalize_rotation;
+
+    #[test]
+    fn normalizes_multiples_of_90() {
+        assert_eq!(normalize_rotation(90).unwrap(), 90);
+        assert_eq!(normalize_rotation(270).unwrap(), 270);
+        assert_eq!(normalize_rotation(360).unwrap(), 0);
+        assert_eq!(normalize_rotation(450).unwrap(), 90);
+        // 음수(반시계) → 양수로.
+        assert_eq!(normalize_rotation(-90).unwrap(), 270);
+    }
+
+    #[test]
+    fn rejects_non_multiples() {
+        assert!(normalize_rotation(45).is_err());
+        assert!(normalize_rotation(100).is_err());
     }
 }
 
