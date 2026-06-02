@@ -3059,6 +3059,24 @@ fn cmd_pdf_pages(file: &str, range: &str, output: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// EXIF 방향을 적용해 이미지를 연다(폰 사진이 옆으로 눕지 않도록). 방향을 못 읽으면 일반 open 폴백.
+fn open_image_oriented(path: &std::path::Path) -> Result<image::DynamicImage> {
+    use image::ImageDecoder;
+    let oriented = (|| -> image::ImageResult<image::DynamicImage> {
+        let mut decoder = image::ImageReader::open(path)?
+            .with_guessed_format()?
+            .into_decoder()?;
+        let orientation = decoder.orientation()?;
+        let mut img = image::DynamicImage::from_decoder(decoder)?;
+        img.apply_orientation(orientation);
+        Ok(img)
+    })();
+    match oriented {
+        Ok(img) => Ok(img),
+        Err(_) => image::open(path).map_err(|e| anyhow::anyhow!("이미지를 열지 못했어요: {e}")),
+    }
+}
+
 /// 확장자가 우리가 다루는 이미지(JPEG/PNG)인지. 순수 함수.
 fn is_supported_image_ext(name: &str) -> bool {
     let lower = name.to_lowercase();
@@ -3093,9 +3111,8 @@ fn cmd_photos_pdf(files: &[String], output: Option<&str>) -> Result<()> {
     let mut kids: Vec<Object> = Vec::new();
 
     for f in files {
-        // lean 디코더로 열어 RGB 베이스라인 JPEG 바이트를 만든다(임베드 안전).
-        let img =
-            image::open(f).map_err(|e| anyhow::anyhow!("이미지를 열지 못했어요({f}): {e}"))?;
+        // EXIF 방향 적용해 열고(폰 사진 정방향), RGB 베이스라인 JPEG로 임베드.
+        let img = open_image_oriented(Path::new(f))?;
         let rgb = img.to_rgb8();
         let (w, h) = (rgb.width(), rgb.height());
         let mut jpeg: Vec<u8> = Vec::new();
@@ -3342,8 +3359,7 @@ fn cmd_image(
         anyhow::bail!("JPEG·PNG만 지원해요(받은 형식: .{ext}). HEIC·WebP는 아직 미지원이에요.");
     }
     let orig_bytes = std::fs::metadata(path)?.len();
-    let img = image::open(path)
-        .map_err(|e| anyhow::anyhow!("이미지를 열지 못했어요({e}). 파일이 손상됐을 수 있어요."))?;
+    let img = open_image_oriented(path)?;
     let (w, h) = (img.width(), img.height());
     let (nw, nh) = plan_resize(w, h, width, scale);
 
