@@ -64,6 +64,12 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - JSON 검증·정렬·값 추출: `{exe} json <파일>` 또는 `{exe} json <파일> --키 <점경로>`\n\
          - 파일 체크섬: `{exe} 해시 <파일>` (SHA-256, `--확인 <값>`으로 무결성 검증)\n\
          - 두 파일 비교: `{exe} 비교 <파일1> <파일2>` (줄 단위 diff, 추가/삭제)\n\
+         - 이미지 축소·압축: `{exe} 이미지 <사진> --폭 1280`(첨부 용량↓, EXIF 방향 자동 보정, 원본 보존). \"사진 용량 줄여줘\"\n\
+         - 여러 사진 → PDF 한 파일: `{exe} 사진묶기 <사진1> <사진2> …`(서류 제출·스캔앱 대용). \"사진들 PDF로 묶어줘\"\n\
+         - PDF 합치기: `{exe} pdf합치기 <pdf1> <pdf2> …`(서류 합본). \"PDF들 하나로 합쳐줘\"\n\
+         - PDF 페이지 추출: `{exe} pdf페이지 <파일> 1-3,5`(원하는 페이지만 새 PDF로). \"이 PDF 1~3쪽만\"\n\
+         - PDF 회전: `{exe} pdf회전 <파일> 90`(옆으로 스캔된 서류 바로 세우기, 90의 배수). \"PDF 돌려줘\"\n\
+         - 한글 깨진 파일 복구: `{exe} 깨짐 <파일.csv>`(EUC-KR/CP949 → UTF-8). \"엑셀/메모장 한글 깨져\"\n\
          - 가계부(지출): `{exe} 지출 add <금액> <분류> [메모]`, `{exe} 지출`(오늘/이번달 합계)\n\
          - 간단 일기: `{exe} 일기 \"<내용>\"`(기록), `{exe} 일기`(이번 달 보기) — 옵시디언 없이도\n\
          - 습관 체크: `{exe} 습관 add \"<이름>\"`, `{exe} 습관 done <이름>`, `{exe} 습관`(연속일수)\n\
@@ -230,5 +236,26 @@ fn first_line(s: &str) -> String {
         format!("{}", "완료".dimmed())
     } else {
         line.to_string()
+    }
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use super::system_prompt;
+
+    #[test]
+    fn advertises_recent_file_and_pdf_commands() {
+        // 대화형 원장이 최근 추가된 로컬 파일/PDF 능력을 알고 있어야 한다.
+        let p = system_prompt(None, None);
+        for cmd in [
+            "이미지",
+            "사진묶기",
+            "pdf합치기",
+            "pdf페이지",
+            "pdf회전",
+            "깨짐",
+        ] {
+            assert!(p.contains(cmd), "시스템 프롬프트에 '{cmd}' 안내가 없습니다");
+        }
     }
 }
