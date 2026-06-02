@@ -1,6 +1,6 @@
 [package]
 name = "wonjang"
-version = "0.99.0"
+version = "1.0.0"
 edition = "2021"
 description = "원장 에이전트 — 로컬 환경을 다루는 한국어 우선 자율 AI 에이전트 (Rust)"
 license = "MIT"
@@ -36,6 +36,7 @@ imap = { version = "2.4.1", default-features = false }
 rustls = { version = "0.23.40", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 webpki-roots = "1.0.7"
 imap-proto = "0.10.2"
+mailparse = "0.16.1"
 
 [profile.release]
 strip = true

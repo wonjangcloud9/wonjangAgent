@@ -380,6 +380,16 @@ enum Commands {
         #[arg(long = "안읽음")]
         unseen: bool,
     },
+    /// 특정 메일의 본문을 읽습니다. 예: wonjang 메일읽기 1 (가장 최근)
+    #[command(name = "메일읽기", alias = "메일내용")]
+    MailRead {
+        /// 몇 번째 최신 메일인지(1=가장 최근, 기본 1)
+        #[arg(default_value_t = 1)]
+        num: usize,
+        /// 안 읽은 메일 중에서 고르기
+        #[arg(long = "안읽음")]
+        unseen: bool,
+    },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
@@ -1050,6 +1060,7 @@ async fn run() -> Result<()> {
             output,
         }) => return cmd_image(files, *width, *scale, *quality, output.as_deref()),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
+        Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
         Some(Commands::Encfix {
             file,
             output,
@@ -2144,7 +2155,8 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 깨짐 <파일.csv>",
                     "한글 깨진 파일(CP949)→UTF-8 복구",
                 ),
-                ("wonjang 메일 --안읽음", "받은편지함 읽기(IMAP·앱비밀번호)"),
+                ("wonjang 메일 --안읽음", "받은편지함 목록(IMAP·앱비밀번호)"),
+                ("wonjang 메일읽기 1", "그 메일 본문 읽기(1=최신)"),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
@@ -3481,7 +3493,7 @@ fn cmd_mail(count: usize, unseen: bool) -> Result<()> {
         return Ok(());
     }
     println!();
-    for h in &view.headers {
+    for (i, h) in view.headers.iter().enumerate() {
         let mark = if h.unseen {
             "●".bright_yellow().to_string()
         } else {
@@ -3497,15 +3509,61 @@ fn cmd_mail(count: usize, unseen: bool) -> Result<()> {
         } else {
             subject.clone()
         };
-        println!("  {mark} {subject}");
+        // 표시 순번(1=최신) — `메일읽기 N`으로 바로 열 수 있게.
+        println!("  {:>2}. {mark} {subject}", (i + 1).to_string().dimmed());
         println!(
-            "      {}  {}",
+            "       {}  {}",
             h.from.dimmed(),
             short_mail_date(&h.date).dimmed()
         );
     }
     println!();
-    ui::info("     (안 읽은 것만: --안읽음 · 더 많이: --개수 30)");
+    ui::info("     (본문 읽기: wonjang 메일읽기 <번호> · 안 읽은 것만: --안읽음)");
+    println!();
+    Ok(())
+}
+
+/// 특정 메일의 본문을 읽어 보여준다.
+fn cmd_mail_read(num: usize, unseen: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let cfg = match email::EmailConfig::from_env() {
+        Some(c) => c,
+        None => {
+            print_mail_setup_help();
+            return Ok(());
+        }
+    };
+    ui::info(&format!("📖 {}번째 메일을 여는 중…", num.max(1)));
+    let mail = match email::fetch_message(&cfg, num, unseen)? {
+        Some(m) => m,
+        None => {
+            ui::note(&format!(
+                "{}번째 메일이 없어요. 먼저 `wonjang 메일`로 목록을 확인해 보세요.",
+                num.max(1)
+            ));
+            return Ok(());
+        }
+    };
+    println!();
+    println!("  ✉️  {}", mail.subject.bright_white().bold());
+    println!("     {} {}", "보낸이".dimmed(), mail.from);
+    println!("     {} {}", "날짜  ".dimmed(), short_mail_date(&mail.date));
+    println!();
+    // 본문(너무 길면 자르기).
+    let body = mail.body.trim();
+    if body.is_empty() {
+        ui::info("     (본문 텍스트가 없어요 — 첨부나 이미지 메일일 수 있어요.)");
+    } else {
+        let limit = 3000;
+        let shown: String = body.chars().take(limit).collect();
+        for line in shown.lines() {
+            println!("  {line}");
+        }
+        if body.chars().count() > limit {
+            println!();
+            ui::info("     … (본문이 길어 앞부분만 보여드렸어요.)");
+        }
+    }
     println!();
     Ok(())
 }

@@ -173,6 +173,137 @@ pub fn fetch_inbox(cfg: &EmailConfig, count: usize, unseen_only: bool) -> Result
     })
 }
 
+/// 본문까지 포함한 한 통.
+pub struct MailFull {
+    pub from: String,
+    pub subject: String,
+    pub date: String,
+    pub body: String,
+}
+
+/// 받은편지함에서 num번째(1=최신) 메일의 본문까지 읽는다. unseen_only면 안 읽은 것 중에서.
+pub fn fetch_message(cfg: &EmailConfig, num: usize, unseen_only: bool) -> Result<Option<MailFull>> {
+    use mailparse::MailHeaderMap;
+    use std::collections::HashSet;
+
+    let tls = tls_stream(&cfg.host, cfg.port)?;
+    let client = imap::Client::new(tls);
+    let mut session = client
+        .login(&cfg.user, &cfg.password)
+        .map_err(|(e, _)| anyhow::anyhow!("로그인 실패: {e}. 아이디/앱 비밀번호를 확인하세요."))?;
+    let mailbox = session.select("INBOX")?;
+    let total = mailbox.exists;
+    let unseen_set: HashSet<u32> = session.search("UNSEEN").unwrap_or_default();
+
+    // 최신(큰 seq) 우선 후보 목록.
+    let ordered: Vec<u32> = if unseen_only {
+        let mut v: Vec<u32> = unseen_set.iter().copied().collect();
+        v.sort_unstable_by(|a, b| b.cmp(a));
+        v
+    } else {
+        (1..=total).rev().collect()
+    };
+    let idx = num.max(1) - 1;
+    let seq = match ordered.get(idx) {
+        Some(s) => *s,
+        None => {
+            let _ = session.logout();
+            return Ok(None);
+        }
+    };
+
+    let fetches = session.fetch(seq.to_string(), "RFC822")?;
+    let raw = fetches
+        .iter()
+        .next()
+        .and_then(|f| f.body())
+        .map(|b| b.to_vec());
+    let _ = session.logout();
+    let raw = match raw {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    let parsed = mailparse::parse_mail(&raw).context("메일을 해석하지 못했어요")?;
+    let subject = parsed
+        .headers
+        .get_first_value("Subject")
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "(제목 없음)".to_string());
+    let from = parsed.headers.get_first_value("From").unwrap_or_default();
+    let date = parsed.headers.get_first_value("Date").unwrap_or_default();
+    let body = extract_readable_body(&parsed);
+    Ok(Some(MailFull {
+        from,
+        subject,
+        date,
+        body,
+    }))
+}
+
+/// 멀티파트 메일에서 사람이 읽을 본문을 고른다(text/plain 우선 → text/html 태그제거 → 첫 본문).
+fn extract_readable_body(parsed: &mailparse::ParsedMail) -> String {
+    fn walk(p: &mailparse::ParsedMail, want_plain: bool) -> Option<String> {
+        if p.subparts.is_empty() {
+            let mt = p.ctype.mimetype.to_lowercase();
+            if want_plain && mt == "text/plain" {
+                return p.get_body().ok();
+            }
+            if !want_plain && mt == "text/html" {
+                return p.get_body().ok().map(|h| strip_html(&h));
+            }
+            return None;
+        }
+        for sp in &p.subparts {
+            if let Some(b) = walk(sp, want_plain) {
+                return Some(b);
+            }
+        }
+        None
+    }
+    let body = walk(parsed, true)
+        .or_else(|| walk(parsed, false))
+        .or_else(|| parsed.get_body().ok())
+        .unwrap_or_default();
+    // 과한 빈 줄 정리.
+    let mut out = String::new();
+    let mut blanks = 0;
+    for line in body.lines() {
+        let t = line.trim_end();
+        if t.is_empty() {
+            blanks += 1;
+            if blanks > 1 {
+                continue;
+            }
+        } else {
+            blanks = 0;
+        }
+        out.push_str(t);
+        out.push('\n');
+    }
+    out.trim().to_string()
+}
+
+/// 아주 단순한 HTML 태그 제거 + 기본 엔티티 복원(본문 미리보기용). 순수.
+fn strip_html(html: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+    out.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+}
+
 /// IMAP Address를 "이름 <메일주소>" 문자열로(이름은 MIME 디코드).
 fn format_address(a: &imap_proto::Address) -> String {
     let name = a
@@ -322,6 +453,27 @@ mod tests {
         let b64 = base64::engine::general_purpose::STANDARD.encode(&euckr);
         let word = format!("=?EUC-KR?B?{b64}?=");
         assert_eq!(decode_mime_words(&word), "한글");
+    }
+
+    #[test]
+    fn strips_html_and_entities() {
+        assert_eq!(strip_html("<p>안녕&nbsp;<b>세상</b></p>"), "안녕 세상");
+        assert_eq!(strip_html("a &lt;b&gt; &amp; c"), "a <b> & c");
+    }
+
+    #[test]
+    fn extracts_plain_part_preferred() {
+        // multipart/alternative: text/plain(한글) 우선 선택.
+        let eml = b"From: a@b.com\r\nSubject: t\r\nContent-Type: multipart/alternative; boundary=\"bb\"\r\n\r\n--bb\r\nContent-Type: text/plain; charset=\"UTF-8\"\r\n\r\n\xec\x95\x88\xeb\x85\x95 \xeb\xb3\xb8\xeb\xac\xb8\r\n--bb\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n<p>html</p>\r\n--bb--\r\n";
+        let parsed = mailparse::parse_mail(eml).unwrap();
+        assert_eq!(super::extract_readable_body(&parsed), "안녕 본문");
+    }
+
+    #[test]
+    fn falls_back_to_html_when_no_plain() {
+        let eml = b"Subject: t\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n<div>\xed\x95\x9c\xea\xb8\x80 <b>html</b></div>\r\n";
+        let parsed = mailparse::parse_mail(eml).unwrap();
+        assert_eq!(super::extract_readable_body(&parsed), "한글 html");
     }
 
     #[test]
