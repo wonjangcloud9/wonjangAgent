@@ -1221,6 +1221,7 @@ async fn repl(
     sess: &session::Session,
 ) -> Result<()> {
     ui::banner(&eng.label(cfg));
+    ui::onboarding_if_first();
 
     loop {
         print!("{}", ui::prompt());

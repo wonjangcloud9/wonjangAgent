@@ -82,3 +82,33 @@ pub fn banner(label: &str) {
     );
     println!();
 }
+
+/// 처음 쓰는 사용자에게 한 번만 보여주는 따뜻한 안내.
+pub fn onboarding_if_first() {
+    let marker = match dirs::data_dir() {
+        Some(d) => d.join("wonjang").join(".welcomed"),
+        None => return,
+    };
+    if marker.exists() {
+        return;
+    }
+    println!(
+        "  {} 처음 오셨네요! 무엇이든 한국어로 시키면 제가 알아서 해드려요.",
+        "👋".bold()
+    );
+    println!(
+        "     {}",
+        "예) \"다운로드 폴더 정리해줘\"  ·  \"오늘 서울 날씨\"  ·  \"강남역 지하철 언제 와?\""
+            .dimmed()
+    );
+    println!(
+        "     {}",
+        "💡 제 말투도 바꿀 수 있어요:  /성격 친구".dimmed()
+    );
+    println!("     {}", "📋 할 수 있는 일 전체는:  wonjang 도움".dimmed());
+    println!();
+    if let Some(parent) = marker.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(&marker, "1").ok();
+}
