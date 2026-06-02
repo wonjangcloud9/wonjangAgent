@@ -310,6 +310,18 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// 한글 깨진 파일(EUC-KR/CP949)을 UTF-8로 복구합니다. 예: wonjang 깨짐 가계부.csv
+    #[command(alias = "깨짐")]
+    Encfix {
+        /// 텍스트 파일 경로(.txt .csv 등)
+        file: String,
+        /// 저장 경로(생략 시 원본 옆에 _utf8 붙여 저장)
+        #[arg(long = "출력")]
+        output: Option<String>,
+        /// 반대로 UTF-8 → CP949(옛 시스템 업로드용)
+        #[arg(long = "되돌리기")]
+        reverse: bool,
+    },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
@@ -979,6 +991,11 @@ async fn run() -> Result<()> {
             quality,
             output,
         }) => return cmd_image(file, *width, *scale, *quality, output.as_deref()),
+        Some(Commands::Encfix {
+            file,
+            output,
+            reverse,
+        }) => return cmd_encfix(file, output.as_deref(), *reverse),
         Some(Commands::Ddoganjip {
             query,
             add,
@@ -2031,6 +2048,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 이미지 <사진> --폭 1280",
                     "이미지 축소·압축(첨부 용량↓, 원본 보존)",
                 ),
+                (
+                    "wonjang 깨짐 <파일.csv>",
+                    "한글 깨진 파일(CP949)→UTF-8 복구",
+                ),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
@@ -2714,6 +2735,108 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
             println!();
         }
     }
+    Ok(())
+}
+
+/// CP949(EUC-KR 슈퍼셋) 바이트를 UTF-8 문자열로 디코드한다(text, 깨진 글자 있었는지). 순수.
+fn cp949_to_utf8(bytes: &[u8]) -> (String, bool) {
+    let (cow, _, had_errors) = encoding_rs::EUC_KR.decode(bytes);
+    (cow.into_owned(), had_errors)
+}
+
+/// UTF-8 문자열을 CP949 바이트로 인코드한다(bytes, 표현 못한 글자 있었는지). 순수.
+fn utf8_to_cp949(text: &str) -> (Vec<u8>, bool) {
+    let (cow, _, had_errors) = encoding_rs::EUC_KR.encode(text);
+    (cow.into_owned(), had_errors)
+}
+
+/// 디코드된 텍스트가 "한글이 정상으로 보이는지" 대략 판정(치환문자·제어문자 비율). 순수.
+fn looks_like_korean_text(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let mut bad = 0usize;
+    let mut total = 0usize;
+    for c in s.chars() {
+        total += 1;
+        // U+FFFD(치환) 또는 흔치 않은 제어문자는 깨짐 신호.
+        if c == '\u{FFFD}' || (c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
+            bad += 1;
+        }
+    }
+    (bad as f64 / total as f64) < 0.02
+}
+
+/// 한글 깨진 파일(CP949/EUC-KR)을 UTF-8로 복구한다(GPT가 못 만지는 내 로컬 파일 바이트).
+fn cmd_encfix(file: &str, output: Option<&str>, reverse: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+    let path = Path::new(file);
+    if !path.exists() {
+        anyhow::bail!("파일을 찾을 수 없어요: {file}");
+    }
+    let bytes = std::fs::read(path)?;
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+
+    if reverse {
+        // UTF-8 → CP949(옛 한국 시스템 업로드용).
+        let text = String::from_utf8(bytes).map_err(|_| {
+            anyhow::anyhow!("이 파일은 UTF-8이 아니에요. 되돌리기는 UTF-8 파일에만 써요.")
+        })?;
+        let (out, lossy) = utf8_to_cp949(&text);
+        let out_path = match output {
+            Some(o) => PathBuf::from(o),
+            None => parent.join(format!("{stem}_cp949.{ext}")),
+        };
+        std::fs::write(&out_path, &out)?;
+        println!();
+        println!("  🔤 {} → CP949(EUC-KR)", file.bright_cyan());
+        if lossy {
+            ui::note("     ⚠ CP949로 표현 못 하는 글자가 있어 일부 손실됐어요(이모지 등).");
+        }
+        println!(
+            "     저장  {}",
+            out_path.display().to_string().bright_yellow()
+        );
+        println!();
+        return Ok(());
+    }
+
+    // 기본: 깨진 한글(CP949) → UTF-8 복구.
+    if std::str::from_utf8(&bytes).is_ok() {
+        ui::note("이미 UTF-8이에요 — 복구할 게 없어요. (옛 시스템용 변환은 --되돌리기)");
+        return Ok(());
+    }
+    let (text, had_errors) = cp949_to_utf8(&bytes);
+    if had_errors && !looks_like_korean_text(&text) {
+        anyhow::bail!(
+            "CP949로도 정상 복구가 안 돼요. 다른 인코딩이거나 텍스트 파일이 아닐 수 있어요."
+        );
+    }
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => parent.join(format!("{stem}_utf8.{ext}")),
+    };
+    std::fs::write(&out_path, text.as_bytes())?;
+    println!();
+    println!("  🔤 {} (CP949/EUC-KR) → UTF-8 복구", file.bright_cyan());
+    // 복구된 앞부분 미리보기(깨짐→정상 확인).
+    let preview: Vec<&str> = text.lines().take(3).collect();
+    if !preview.is_empty() {
+        println!();
+        for l in preview {
+            let shown: String = l.chars().take(60).collect();
+            println!("     {}", shown.dimmed());
+        }
+    }
+    println!();
+    println!(
+        "     저장  {}",
+        out_path.display().to_string().bright_yellow()
+    );
+    println!();
     Ok(())
 }
 
@@ -4780,6 +4903,40 @@ mod habit_nudge_tests {
             .unwrap();
         // 가장 센 streak를 대표로, 나머지는 개수로.
         assert!(msg.contains("독서") && msg.contains("외 2개"));
+    }
+}
+
+#[cfg(test)]
+mod encfix_tests {
+    use super::{cp949_to_utf8, looks_like_korean_text, utf8_to_cp949};
+
+    #[test]
+    fn cp949_roundtrip_recovers_korean() {
+        let original = "안녕하세요 가계부 1월\n월세,500000";
+        // UTF-8 → CP949 바이트 → 다시 UTF-8로 복구하면 동일해야 한다.
+        let (cp949, lossy) = utf8_to_cp949(original);
+        assert!(!lossy);
+        assert_ne!(cp949, original.as_bytes()); // 바이트는 달라야(실제로 인코딩됨)
+        let (recovered, had_errors) = cp949_to_utf8(&cp949);
+        assert!(!had_errors);
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn good_korean_text_passes_sanity() {
+        assert!(looks_like_korean_text("안녕하세요 정상 텍스트입니다"));
+        // 치환문자 가득이면 깨짐으로 판정.
+        assert!(!looks_like_korean_text(
+            "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}내용"
+        ));
+        assert!(!looks_like_korean_text(""));
+    }
+
+    #[test]
+    fn emoji_lossy_to_cp949() {
+        // CP949에 없는 글자(이모지)는 손실 신호.
+        let (_, lossy) = utf8_to_cp949("웃음 😀");
+        assert!(lossy);
     }
 }
 
