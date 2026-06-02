@@ -1531,6 +1531,7 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     };
     let tick = std::time::Duration::from_secs(30);
     let mut last_briefed: Option<String> = None;
+    let mut last_holiday_alert: Option<String> = None;
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
@@ -1579,6 +1580,9 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
 
         // 코인 시세 알림: 목표가에 도달한 알림을 푸시한다.
         check_price_watches(cfg).await;
+
+        // 공휴일 전날이면 "내일 빨간날" 알림(선제성).
+        maybe_alert_holiday_eve(cfg, &mut last_holiday_alert).await;
 
         tokio::time::sleep(tick).await;
     }
@@ -1690,6 +1694,34 @@ async fn maybe_send_briefing(
         }
         Ok(None) => {}
         Err(e) => ui::error(&format!("브리핑 생성 오류: {e:#}")),
+    }
+}
+
+/// 공휴일 전날이면 "내일 빨간날" 알림을 먼저 보낸다(헤르메스식 선제성).
+/// 푸시 채널이 설정돼 있을 때만, 하루 한 번, 아침(9시) 이후에 점검한다.
+async fn maybe_alert_holiday_eve(cfg: &Config, last_alert: &mut Option<String>) {
+    use chrono::{Datelike, Timelike};
+    if push::configured_channels(cfg).is_empty() {
+        return;
+    }
+    let now = chrono::Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    // 하루 한 번, 아침 9시 이후에만.
+    if last_alert.as_deref() == Some(today.as_str()) || now.hour() < 9 {
+        return;
+    }
+    *last_alert = Some(today.clone());
+    let tomorrow = now.date_naive() + chrono::Duration::days(1);
+    if let Ok(list) = holidays::fetch(now.year()).await {
+        if let Some(h) = list.iter().find(|h| h.date == tomorrow) {
+            let msg = format!(
+                "🔴 내일({})은 '{}'이에요! 빨간날 잘 보내세요 🎉",
+                tomorrow.format("%-m월 %-d일"),
+                h.name
+            );
+            let sent = push::push(cfg, &msg).await;
+            ui::note(&format!("공휴일 전날 알림 전송({sent}개 채널)."));
+        }
     }
 }
 
