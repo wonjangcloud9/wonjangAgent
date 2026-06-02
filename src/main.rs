@@ -32,6 +32,7 @@ mod diff;
 mod discount;
 mod diskusage;
 mod dutchpay;
+mod email;
 mod encode;
 mod engine;
 mod exchange;
@@ -368,6 +369,16 @@ enum Commands {
         /// 반대로 UTF-8 → CP949(옛 시스템 업로드용)
         #[arg(long = "되돌리기")]
         reverse: bool,
+    },
+    /// 받은편지함을 읽습니다(IMAP, 앱 비밀번호). 예: wonjang 메일 --안읽음
+    #[command(alias = "메일")]
+    Mail {
+        /// 가져올 최근 메일 수(기본 10)
+        #[arg(long = "개수", default_value_t = 10)]
+        count: usize,
+        /// 안 읽은 메일만 보기
+        #[arg(long = "안읽음")]
+        unseen: bool,
     },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
@@ -1038,6 +1049,7 @@ async fn run() -> Result<()> {
             quality,
             output,
         }) => return cmd_image(files, *width, *scale, *quality, output.as_deref()),
+        Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::Encfix {
             file,
             output,
@@ -2132,6 +2144,7 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 깨짐 <파일.csv>",
                     "한글 깨진 파일(CP949)→UTF-8 복구",
                 ),
+                ("wonjang 메일 --안읽음", "받은편지함 읽기(IMAP·앱비밀번호)"),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
@@ -3436,6 +3449,111 @@ fn human_bytes(n: u64) -> String {
 }
 
 /// 로컬 이미지를 축소·압축한다(GPT가 못 만지는 내 사진 — 첨부 용량 줄이기). 원본은 보존.
+/// 받은편지함을 읽는다(IMAP). 미설정 시 친절한 설정 안내를 보여준다.
+fn cmd_mail(count: usize, unseen: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let cfg = match email::EmailConfig::from_env() {
+        Some(c) => c,
+        None => {
+            print_mail_setup_help();
+            return Ok(());
+        }
+    };
+    ui::info(&format!(
+        "📬 {} 받은편지함을 확인하는 중… ({}:{})",
+        cfg.user, cfg.host, cfg.port
+    ));
+    let view = email::fetch_inbox(&cfg, count.max(1), unseen)?;
+    println!();
+    println!(
+        "  📬 {}  (전체 {}통 · 안읽음 {}통)",
+        cfg.user.bright_cyan(),
+        view.total,
+        view.unseen.to_string().bright_yellow()
+    );
+    if view.headers.is_empty() {
+        ui::info(if unseen {
+            "     안 읽은 메일이 없어요. 깔끔하네요 ✨"
+        } else {
+            "     받은 메일이 없어요."
+        });
+        println!();
+        return Ok(());
+    }
+    println!();
+    for h in &view.headers {
+        let mark = if h.unseen {
+            "●".bright_yellow().to_string()
+        } else {
+            "·".dimmed().to_string()
+        };
+        let subject = if h.subject.chars().count() > 50 {
+            format!("{}…", h.subject.chars().take(50).collect::<String>())
+        } else {
+            h.subject.clone()
+        };
+        let subject = if h.unseen {
+            subject.bright_white().bold().to_string()
+        } else {
+            subject.clone()
+        };
+        println!("  {mark} {subject}");
+        println!(
+            "      {}  {}",
+            h.from.dimmed(),
+            short_mail_date(&h.date).dimmed()
+        );
+    }
+    println!();
+    ui::info("     (안 읽은 것만: --안읽음 · 더 많이: --개수 30)");
+    println!();
+    Ok(())
+}
+
+/// 메일 헤더의 Date를 짧게(앞부분만). 파싱 실패 시 원문 일부.
+fn short_mail_date(raw: &str) -> String {
+    let t = raw.trim();
+    // RFC2822: "Wed, 03 Jun 2026 09:15:00 +0900" → "03 Jun 2026 09:15"
+    let parts: Vec<&str> = t.split_whitespace().collect();
+    if parts.len() >= 5 && parts[0].ends_with(',') {
+        let hm = parts[4].split(':').take(2).collect::<Vec<_>>().join(":");
+        format!("{} {} {} {}", parts[1], parts[2], parts[3], hm)
+    } else {
+        t.chars().take(25).collect()
+    }
+}
+
+/// 이메일 미설정 시 환경변수 설정 안내(앱 비밀번호 강조).
+fn print_mail_setup_help() {
+    use owo_colors::OwoColorize;
+    println!();
+    println!(
+        "  📭 {}",
+        "이메일이 아직 연결되지 않았어요".bright_cyan().bold()
+    );
+    println!();
+    println!("  환경변수 두 개만 설정하면 받은편지함을 읽어드려요:");
+    println!("     {}=you@gmail.com", "WONJANG_EMAIL".bright_white());
+    println!(
+        "     {}=앱비밀번호",
+        "WONJANG_EMAIL_PASSWORD".bright_white()
+    );
+    println!();
+    println!(
+        "  {}",
+        "💡 일반 로그인 비밀번호가 아니라 '앱 비밀번호'가 필요해요(2단계 인증 계정).".yellow()
+    );
+    println!("     · Gmail: 계정 보안 → 2단계 인증 → 앱 비밀번호 발급");
+    println!("     · 네이버: 메일 환경설정 → POP3/IMAP → IMAP 사용 + 앱 비밀번호");
+    println!("     · 호스트는 도메인으로 자동 추정(필요 시 WONJANG_EMAIL_HOST/PORT로 지정)");
+    println!();
+    println!(
+        "  {}",
+        "설정 후: wonjang 메일  ·  안 읽은 것만: wonjang 메일 --안읽음".dimmed()
+    );
+    println!();
+}
+
 /// 이미지 여러 장을 일괄로 줄인다(중고거래·블로그·메일에 사진 여러 장 올리기). 원본 보존.
 fn cmd_image(
     files: &[String],

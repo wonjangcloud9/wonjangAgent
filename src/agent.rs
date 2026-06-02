@@ -70,6 +70,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          - PDF 페이지 추출: `{exe} pdf페이지 <파일> 1-3,5`(원하는 페이지만 새 PDF로). \"이 PDF 1~3쪽만\"\n\
          - PDF 회전: `{exe} pdf회전 <파일> 90`(옆으로 스캔된 서류 바로 세우기, 90의 배수). \"PDF 돌려줘\"\n\
          - 한글 깨진 파일 복구: `{exe} 깨짐 <파일.csv>`(EUC-KR/CP949 → UTF-8). \"엑셀/메모장 한글 깨져\"\n\
+         - 받은편지함 읽기(IMAP): `{exe} 메일`(최근), `{exe} 메일 --안읽음`(안 읽은 것만). 환경변수 WONJANG_EMAIL·WONJANG_EMAIL_PASSWORD(앱 비밀번호) 필요 — 미설정이면 명령이 설정법을 안내함. \"메일 왔어?\"/\"안 읽은 메일 있어?\"\n\
          - 가계부(지출): `{exe} 지출 add <금액> <분류> [메모]`, `{exe} 지출`(오늘/이번달 합계)\n\
          - 간단 일기: `{exe} 일기 \"<내용>\"`(기록), `{exe} 일기`(이번 달 보기) — 옵시디언 없이도\n\
          - 습관 체크: `{exe} 습관 add \"<이름>\"`, `{exe} 습관 done <이름>`, `{exe} 습관`(연속일수)\n\
@@ -254,6 +255,7 @@ mod prompt_tests {
             "pdf페이지",
             "pdf회전",
             "깨짐",
+            "메일",
         ] {
             assert!(p.contains(cmd), "시스템 프롬프트에 '{cmd}' 안내가 없습니다");
         }
