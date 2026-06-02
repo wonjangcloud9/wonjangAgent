@@ -1532,6 +1532,7 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     let tick = std::time::Duration::from_secs(30);
     let mut last_briefed: Option<String> = None;
     let mut last_holiday_alert: Option<String> = None;
+    let mut last_habit_alert: Option<String> = None;
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
@@ -1583,6 +1584,9 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
 
         // 공휴일 전날이면 "내일 빨간날" 알림(선제성).
         maybe_alert_holiday_eve(cfg, &mut last_holiday_alert).await;
+
+        // 저녁이면 끊길 위기 습관을 먼저 챙겨 리마인드(선톡).
+        maybe_alert_habit_evening(cfg, &mut last_habit_alert).await;
 
         tokio::time::sleep(tick).await;
     }
@@ -1722,6 +1726,54 @@ async fn maybe_alert_holiday_eve(cfg: &Config, last_alert: &mut Option<String>) 
             let sent = push::push(cfg, &msg).await;
             ui::note(&format!("공휴일 전날 알림 전송({sent}개 채널)."));
         }
+    }
+}
+
+/// 끊길 위기 습관 목록(streak, 이름; streak 내림차순) → 저녁 리마인드 문구(없으면 None).
+fn habit_evening_nudge(at_risk: &[(i64, String)]) -> Option<String> {
+    match at_risk {
+        [] => None,
+        [(streak, name)] => Some(format!(
+            "🔥 '{name}' {streak}일 연속 중이에요! 자기 전에 오늘치 체크해요."
+        )),
+        [(streak, name), rest @ ..] => Some(format!(
+            "🔥 '{name}'({streak}일 연속) 외 {}개 습관이 오늘 아직이에요. 자기 전에 챙겨봐요!",
+            rest.len()
+        )),
+    }
+}
+
+/// 저녁에 "끊길 위기 습관"(streak≥2·오늘 미완)을 먼저 챙겨 푸시한다(헤르메스식 선톡).
+/// 하루 한 번, 저녁 8시 이후, 푸시 채널이 설정돼 있을 때만.
+async fn maybe_alert_habit_evening(cfg: &Config, last_alert: &mut Option<String>) {
+    use chrono::Timelike;
+    if push::configured_channels(cfg).is_empty() {
+        return;
+    }
+    let now = chrono::Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    if last_alert.as_deref() == Some(today.as_str()) || now.hour() < 20 {
+        return;
+    }
+    let habit = match habits::HabitStore::load() {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+    let today_d = ddays::today();
+    let today_s = habits::today_str();
+    let mut at_risk: Vec<(i64, String)> = habit
+        .items
+        .iter()
+        .filter(|h| !h.done_today(&today_s))
+        .map(|h| (h.streak(today_d), h.name.clone()))
+        .filter(|(s, _)| *s >= 2)
+        .collect();
+    // 보낼 게 없어도 하루 한 번만 시도(스팸 방지).
+    *last_alert = Some(today.clone());
+    at_risk.sort_by_key(|b| std::cmp::Reverse(b.0));
+    if let Some(msg) = habit_evening_nudge(&at_risk) {
+        let sent = push::push(cfg, &msg).await;
+        ui::note(&format!("저녁 습관 리마인드 전송({sent}개 채널)."));
     }
 }
 
@@ -4548,5 +4600,29 @@ mod status_tests {
     #[test]
     fn nothing_to_say_returns_none() {
         assert!(status_highlight(None, None, None, 0).is_none());
+    }
+}
+
+#[cfg(test)]
+mod habit_nudge_tests {
+    use super::habit_evening_nudge;
+
+    #[test]
+    fn none_when_empty() {
+        assert!(habit_evening_nudge(&[]).is_none());
+    }
+
+    #[test]
+    fn single_habit_mentions_name_and_streak() {
+        let msg = habit_evening_nudge(&[(5, "운동".into())]).unwrap();
+        assert!(msg.contains("운동") && msg.contains('5') && !msg.contains("외 "));
+    }
+
+    #[test]
+    fn multiple_habits_summarize_count() {
+        let msg = habit_evening_nudge(&[(7, "독서".into()), (3, "운동".into()), (2, "물".into())])
+            .unwrap();
+        // 가장 센 streak를 대표로, 나머지는 개수로.
+        assert!(msg.contains("독서") && msg.contains("외 2개"));
     }
 }
