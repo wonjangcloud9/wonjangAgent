@@ -33,12 +33,49 @@ pub fn error(msg: &str) {
     eprintln!("{} {}", "오류:".bright_red().bold(), msg.red());
 }
 
+/// 내부 도구 이름을 한국 사용자에게 친근한 (이모지, 라벨)로.
+fn friendly_tool(name: &str) -> (&'static str, &'static str) {
+    match name {
+        "run_shell" => ("💻", "명령 실행"),
+        "read_file" => ("📄", "파일 읽기"),
+        "write_file" => ("✍️", "파일 쓰기"),
+        "list_dir" => ("📁", "폴더 살펴보기"),
+        "web_search" => ("🔍", "웹 검색"),
+        "web_fetch" => ("🌐", "웹페이지 가져오기"),
+        "read_skill" | "list_skills" => ("📖", "스킬 펼치기"),
+        "save_skill" => ("💾", "스킬 저장"),
+        "remember" => ("🧠", "기억하기"),
+        "recall" => ("🧠", "기억 떠올리기"),
+        "weather_now" => ("🌤️", "날씨 확인"),
+        "air_quality" => ("😷", "미세먼지 확인"),
+        "subway_arrivals" => ("🚇", "지하철 도착 조회"),
+        "exchange_rate" => ("💱", "환율 조회"),
+        "coin_price" => ("🪙", "코인 시세 조회"),
+        "news_headlines" => ("📰", "뉴스 확인"),
+        "lotto_numbers" => ("🎱", "로또 번호 뽑기"),
+        "note_search" | "note_read" | "note_list" => ("📒", "노트 찾아보기"),
+        "note_append" => ("📒", "노트 기록"),
+        "notion_search" | "notion_append" => ("🗂️", "노션 작업"),
+        "read_clipboard" | "write_clipboard" => ("📋", "클립보드"),
+        "add_reminder" | "list_reminders" | "remove_reminder" => ("⏰", "약속·알림"),
+        "add_todo" | "list_todos" | "complete_todo" => ("✅", "할 일"),
+        "add_dday" | "list_ddays" => ("📅", "디데이"),
+        "add_expense" | "expense_summary" => ("💰", "가계부"),
+        "add_habit" | "check_habit" | "list_habits" => ("🔥", "습관"),
+        "spawn_subagent" | "spawn_subagents" => ("🤝", "도우미 호출"),
+        _ => ("⚙", ""),
+    }
+}
+
 /// 도구 실행 알림(자주색).
 pub fn tool_call(name: &str, summary: &str) {
+    let (emoji, label) = friendly_tool(name);
+    // 매핑이 있으면 한국어 라벨, 없으면 내부 이름 그대로.
+    let title = if label.is_empty() { name } else { label };
     println!(
         "  {} {} {}",
-        "⚙".bright_magenta(),
-        name.bright_magenta().bold(),
+        emoji,
+        title.bright_magenta().bold(),
         summary.dimmed()
     );
 }
