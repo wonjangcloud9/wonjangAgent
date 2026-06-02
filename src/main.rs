@@ -292,6 +292,24 @@ enum Commands {
         #[arg(long = "json")]
         json: bool,
     },
+    /// 이미지를 줄이거나 압축합니다(첨부 용량↓, 원본 보존). 예: wonjang 이미지 사진.jpg --폭 1280
+    #[command(alias = "이미지")]
+    Image {
+        /// 이미지 파일 경로(JPEG/PNG)
+        file: String,
+        /// 최대 가로 폭(px)으로 축소(비율 유지). 원본보다 크면 그대로
+        #[arg(long = "폭")]
+        width: Option<u32>,
+        /// 배율로 축소(0~1, 예: 0.5는 절반)
+        #[arg(long = "배율")]
+        scale: Option<f64>,
+        /// JPEG 압축 품질(1~100, 기본 80)
+        #[arg(long = "품질", default_value_t = 80)]
+        quality: u8,
+        /// 저장 경로(생략 시 원본 옆에 _작게 붙여 저장)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
@@ -954,6 +972,13 @@ async fn run() -> Result<()> {
             rows,
             json,
         }) => return cmd_excel(file, column.as_deref(), *rows, *json),
+        Some(Commands::Image {
+            file,
+            width,
+            scale,
+            quality,
+            output,
+        }) => return cmd_image(file, *width, *scale, *quality, output.as_deref()),
         Some(Commands::Ddoganjip {
             query,
             add,
@@ -2002,6 +2027,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 정리 <폴더>", "종류별 자동 분류(미리보기→--실행)"),
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
+                (
+                    "wonjang 이미지 <사진> --폭 1280",
+                    "이미지 축소·압축(첨부 용량↓, 원본 보존)",
+                ),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
@@ -2685,6 +2714,133 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
             println!();
         }
     }
+    Ok(())
+}
+
+/// 원본 크기와 옵션(목표 폭/배율)으로 결과 크기를 계산한다(비율 유지·축소 전용). 순수 함수.
+/// 확대는 하지 않는다(첨부 용량 줄이기 목적) — 조건이 맞지 않으면 원본 크기 그대로.
+fn plan_resize(w: u32, h: u32, target_w: Option<u32>, scale: Option<f64>) -> (u32, u32) {
+    if let Some(tw) = target_w {
+        if tw == 0 || w == 0 || tw >= w {
+            return (w, h);
+        }
+        let nh = ((h as f64) * (tw as f64) / (w as f64)).round() as u32;
+        return (tw, nh.max(1));
+    }
+    if let Some(s) = scale {
+        if s <= 0.0 || s >= 1.0 {
+            return (w, h);
+        }
+        let nw = ((w as f64) * s).round() as u32;
+        let nh = ((h as f64) * s).round() as u32;
+        return (nw.max(1), nh.max(1));
+    }
+    (w, h)
+}
+
+/// 사람이 읽기 좋은 바이트 표기.
+fn human_bytes(n: u64) -> String {
+    if n >= 1024 * 1024 {
+        format!("{:.1}MB", n as f64 / (1024.0 * 1024.0))
+    } else if n >= 1024 {
+        format!("{:.0}KB", n as f64 / 1024.0)
+    } else {
+        format!("{n}B")
+    }
+}
+
+/// 로컬 이미지를 축소·압축한다(GPT가 못 만지는 내 사진 — 첨부 용량 줄이기). 원본은 보존.
+fn cmd_image(
+    file: &str,
+    width: Option<u32>,
+    scale: Option<f64>,
+    quality: u8,
+    output: Option<&str>,
+) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+    let path = Path::new(file);
+    if !path.exists() {
+        anyhow::bail!("파일을 찾을 수 없어요: {file}");
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let is_jpeg = matches!(ext.as_str(), "jpg" | "jpeg");
+    let is_png = ext == "png";
+    if !is_jpeg && !is_png {
+        anyhow::bail!("JPEG·PNG만 지원해요(받은 형식: .{ext}). HEIC·WebP는 아직 미지원이에요.");
+    }
+    let orig_bytes = std::fs::metadata(path)?.len();
+    let img = image::open(path)
+        .map_err(|e| anyhow::anyhow!("이미지를 열지 못했어요({e}). 파일이 손상됐을 수 있어요."))?;
+    let (w, h) = (img.width(), img.height());
+    let (nw, nh) = plan_resize(w, h, width, scale);
+
+    let out_img = if (nw, nh) != (w, h) {
+        img.resize(nw, nh, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    // 출력 경로: 기본은 원본 옆에 _작게 접미사(원본 절대 덮어쓰지 않음).
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => {
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            parent.join(format!("{stem}_작게.{ext}"))
+        }
+    };
+    if out_path == path {
+        anyhow::bail!("출력 경로가 원본과 같아요. 원본 보존을 위해 다른 경로(--출력)를 쓰세요.");
+    }
+
+    // 인코딩: JPEG는 품질 적용, PNG는 무손실 재인코딩.
+    if is_jpeg {
+        let rgb = out_img.to_rgb8();
+        let f = std::fs::File::create(&out_path)?;
+        let mut w = std::io::BufWriter::new(f);
+        let q = quality.clamp(1, 100);
+        let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut w, q);
+        enc.encode_image(&rgb)?;
+    } else {
+        out_img.save(&out_path)?;
+    }
+
+    let new_bytes = std::fs::metadata(&out_path)?.len();
+    let pct = if orig_bytes > 0 {
+        100.0 - (new_bytes as f64 / orig_bytes as f64 * 100.0)
+    } else {
+        0.0
+    };
+    println!();
+    println!("  🖼️  {}", file.bright_cyan());
+    if (nw, nh) != (w, h) {
+        println!(
+            "     크기  {w}×{h}  →  {}",
+            format!("{nw}×{nh}").bright_white()
+        );
+    } else {
+        println!("     크기  {w}×{h} (유지)");
+    }
+    println!(
+        "     용량  {}  →  {}  ({})",
+        human_bytes(orig_bytes),
+        human_bytes(new_bytes).bright_white(),
+        if pct >= 0.5 {
+            format!("-{pct:.0}%").bright_green().to_string()
+        } else {
+            "변화 적음".dimmed().to_string()
+        }
+    );
+    println!(
+        "     저장  {}",
+        out_path.display().to_string().bright_yellow()
+    );
+    println!();
     Ok(())
 }
 
@@ -4624,5 +4780,37 @@ mod habit_nudge_tests {
             .unwrap();
         // 가장 센 streak를 대표로, 나머지는 개수로.
         assert!(msg.contains("독서") && msg.contains("외 2개"));
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::plan_resize;
+
+    #[test]
+    fn target_width_keeps_aspect_ratio() {
+        // 4000×3000 → 폭 1280이면 높이는 960.
+        assert_eq!(plan_resize(4000, 3000, Some(1280), None), (1280, 960));
+    }
+
+    #[test]
+    fn never_enlarges() {
+        // 목표 폭이 원본보다 크면 그대로(확대 안 함).
+        assert_eq!(plan_resize(800, 600, Some(2000), None), (800, 600));
+        // 배율 1 이상도 그대로.
+        assert_eq!(plan_resize(800, 600, None, Some(1.5)), (800, 600));
+    }
+
+    #[test]
+    fn scale_halves_dimensions() {
+        assert_eq!(plan_resize(1000, 800, None, Some(0.5)), (500, 400));
+    }
+
+    #[test]
+    fn no_options_returns_original() {
+        assert_eq!(plan_resize(640, 480, None, None), (640, 480));
+        // 잘못된 값은 안전하게 원본.
+        assert_eq!(plan_resize(640, 480, Some(0), None), (640, 480));
+        assert_eq!(plan_resize(640, 480, None, Some(0.0)), (640, 480));
     }
 }
