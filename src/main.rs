@@ -76,6 +76,7 @@ mod session;
 mod sheet;
 mod skill;
 mod sleepcalc;
+mod soul;
 mod subway;
 mod timecalc;
 mod timestamp;
@@ -297,6 +298,12 @@ enum Commands {
     /// 원장이 할 수 있는 일을 카테고리별로 안내합니다.
     #[command(alias = "도움")]
     Guide,
+    /// 원장의 성격(말투·태도)을 고릅니다. 예: wonjang 성격 친구
+    #[command(alias = "성격")]
+    Soul {
+        /// 프리셋 이름(기본/친구/집사/선배/발랄) 또는 '초기화'. 생략 시 현재·목록
+        preset: Option<String>,
+    },
     /// 모든 데이터를 백업합니다(약속·할일·가계부·메모리 등).
     #[command(alias = "백업")]
     Backup {
@@ -970,6 +977,7 @@ async fn run() -> Result<()> {
             replace,
             run,
         }) => return cmd_rename(path, find, replace, *run),
+        Some(Commands::Soul { preset }) => return cmd_soul(preset.as_deref()),
         Some(Commands::Status) => return cmd_status(),
         Some(Commands::Guide) => return cmd_guide(),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
@@ -1247,6 +1255,41 @@ async fn repl(
                 ui::info("대화 기록을 초기화했습니다.");
                 continue;
             }
+            s if s.starts_with("/성격") => {
+                let arg = s["/성격".len()..].trim();
+                if arg.is_empty() {
+                    ui::info(&format!(
+                        "현재 성격: {}",
+                        soul::active_persona().chars().take(34).collect::<String>()
+                    ));
+                    ui::info("바꾸기: /성격 친구|집사|선배|발랄|기본  ('초기화'로 기본 복귀)");
+                } else {
+                    let res = if arg == "초기화" || arg == "기본" {
+                        soul::reset()
+                    } else {
+                        soul::set_preset(arg)
+                    };
+                    match res {
+                        Ok(()) => {
+                            // 새 성격을 즉시 반영하도록 시스템 프롬프트 재구성.
+                            if let (Ok(mem), Ok(skills)) =
+                                (memory::Memory::load(), skill::SkillStore::load())
+                            {
+                                if !messages.is_empty() {
+                                    messages[0] = Message::system(agent::system_prompt(
+                                        mem.prompt_block(),
+                                        skills.prompt_block(),
+                                    ));
+                                    sess.save(messages).ok();
+                                }
+                            }
+                            ui::info(&format!("이제부터 '{arg}' 성격으로 말할게요. 🎭"));
+                        }
+                        Err(e) => ui::error(&format!("{e}")),
+                    }
+                }
+                continue;
+            }
             _ => {}
         }
 
@@ -1265,6 +1308,7 @@ fn print_help() {
     ui::info(
         "사용 가능한 명령:\n  \
          /help     이 도움말\n  \
+         /성격     원장 말투 바꾸기 (친구·집사·선배·발랄·기본)\n  \
          /reset    대화 기록 초기화\n  \
          /exit     종료\n\n\
          대화는 자동 저장됩니다. 다음에 `wonjang --continue`로 이어갈 수 있어요.\n\
@@ -2508,6 +2552,54 @@ fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize, json: bool) 
         format!("wonjang 엑셀 {file} --열 <열이름>").dimmed()
     );
     println!();
+    Ok(())
+}
+
+fn cmd_soul(preset: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    match preset {
+        Some("초기화") | Some("기본값") => {
+            soul::reset()?;
+            println!();
+            println!("  🎭 성격을 기본(다정한 비서)으로 되돌렸어요.");
+            println!();
+        }
+        Some(name) => {
+            soul::set_preset(name)?;
+            println!();
+            println!("  🎭 이제부터 '{}' 성격으로 말할게요.", name.bright_cyan());
+            println!(
+                "     {}",
+                soul::active_persona().lines().next().unwrap_or("").dimmed()
+            );
+            println!();
+        }
+        None => {
+            println!();
+            println!("  🎭 원장 성격 (말투·태도)");
+            println!(
+                "     지금: {}",
+                soul::active_persona()
+                    .chars()
+                    .take(40)
+                    .collect::<String>()
+                    .dimmed()
+            );
+            println!();
+            println!("  고를 수 있는 성격:");
+            for (key, label, _) in soul::PRESETS {
+                println!("     {:<6} {}", key.bright_cyan(), label);
+            }
+            println!();
+            println!("     바꾸기: {}", "wonjang 성격 <이름>".bold());
+            println!(
+                "     직접 편집: {}",
+                soul::soul_path()?.display().to_string().dimmed()
+            );
+            println!("     되돌리기: wonjang 성격 초기화");
+            println!();
+        }
+    }
     Ok(())
 }
 

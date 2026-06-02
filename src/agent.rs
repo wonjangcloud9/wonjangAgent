@@ -25,11 +25,14 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| "wonjang".to_string());
+    // 페르소나(성격)를 맨 앞에 — 사용자가 SOUL.md로 소유한다(헤르메스 방식).
+    let persona = crate::soul::active_persona();
     let mut prompt = format!(
-        "당신은 '원장'이라는 이름의 자율 AI 에이전트입니다. 사용자의 로컬 컴퓨터 환경을 \
-         직접 다루어 작업을 수행합니다.\n\n\
+        "{persona}\n\n\
+         당신은 사용자의 로컬 컴퓨터 환경을 직접 다루어 작업을 수행하는 자율 AI 에이전트입니다.\n\n\
          원칙:\n\
-         - 항상 한국어로, 간결하고 친근하게 답합니다.\n\
+         - 위에 정해진 성격·말투를 모든 답변에서 일관되게 유지하세요.\n\
+         - 항상 한국어로 답합니다.\n\
          - 추측하지 말고 도구로 확인하세요. 파일을 보려면 read_file, 디렉터리는 list_dir, \
          시스템 작업은 run_shell을 사용합니다.\n\
          - 파괴적이거나 되돌리기 어려운 작업(삭제, 덮어쓰기, 외부 전송)은 먼저 사용자에게 \
