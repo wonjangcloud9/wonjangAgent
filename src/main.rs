@@ -320,6 +320,16 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// 여러 PDF를 하나로 합칩니다(서류 합본 제출). 예: wonjang pdf합치기 a.pdf b.pdf
+    #[command(name = "pdf합치기", alias = "피디에프합치기")]
+    PdfMerge {
+        /// 합칠 PDF들(적은 순서대로 이어 붙임)
+        #[arg(required = true)]
+        files: Vec<String>,
+        /// 저장 경로(생략 시 합본.pdf)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// PDF에서 원하는 페이지만 새 PDF로 추출합니다. 예: wonjang pdf페이지 보고서.pdf 1-3,5
     #[command(name = "pdf페이지", alias = "피디에프페이지")]
     PdfPages {
@@ -1019,6 +1029,9 @@ async fn run() -> Result<()> {
         }) => return cmd_encfix(file, output.as_deref(), *reverse),
         Some(Commands::PhotosPdf { files, output }) => {
             return cmd_photos_pdf(files, output.as_deref())
+        }
+        Some(Commands::PdfMerge { files, output }) => {
+            return cmd_pdf_merge(files, output.as_deref())
         }
         Some(Commands::PdfPages {
             file,
@@ -2082,6 +2095,10 @@ fn cmd_guide() -> Result<()> {
                     "여러 사진을 PDF 한 파일로(서류 제출)",
                 ),
                 (
+                    "wonjang pdf합치기 a.pdf b.pdf",
+                    "여러 PDF를 하나로(서류 합본)",
+                ),
+                (
                     "wonjang pdf페이지 <파일> 1-3,5",
                     "PDF에서 원하는 페이지만 추출",
                 ),
@@ -2772,6 +2789,166 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
             println!();
         }
     }
+    Ok(())
+}
+
+/// 여러 lopdf Document를 하나로 병합한다(공식 merge 예제 기반, 북마크/아웃라인 제외).
+/// 반환: (합쳐진 Document, 총 페이지 수). 파일 IO가 없어 단위 테스트로 검증 가능.
+fn merge_documents(docs: Vec<lopdf::Document>) -> Result<(lopdf::Document, usize)> {
+    use lopdf::{Document, Object, ObjectId};
+    use std::collections::BTreeMap;
+
+    let mut max_id = 1;
+    let mut documents_pages: BTreeMap<ObjectId, Object> = BTreeMap::new();
+    let mut documents_objects: BTreeMap<ObjectId, Object> = BTreeMap::new();
+    let mut document = Document::with_version("1.5");
+
+    for mut doc in docs {
+        doc.renumber_objects_with(max_id);
+        max_id = doc.max_id + 1;
+        documents_pages.extend(
+            doc.get_pages()
+                .into_values()
+                .map(|object_id| (object_id, doc.get_object(object_id).unwrap().to_owned())),
+        );
+        documents_objects.extend(doc.objects);
+    }
+
+    let mut catalog_object: Option<(ObjectId, Object)> = None;
+    let mut pages_object: Option<(ObjectId, Object)> = None;
+
+    for (object_id, object) in documents_objects.into_iter() {
+        match object.type_name().unwrap_or(b"") {
+            b"Catalog" => {
+                catalog_object = Some((
+                    if let Some((id, _)) = catalog_object {
+                        id
+                    } else {
+                        object_id
+                    },
+                    object,
+                ));
+            }
+            b"Pages" => {
+                if let Ok(dictionary) = object.as_dict() {
+                    let mut dictionary = dictionary.clone();
+                    if let Some((_, ref object)) = pages_object {
+                        if let Ok(old_dictionary) = object.as_dict() {
+                            dictionary.extend(old_dictionary);
+                        }
+                    }
+                    pages_object = Some((
+                        if let Some((id, _)) = pages_object {
+                            id
+                        } else {
+                            object_id
+                        },
+                        Object::Dictionary(dictionary),
+                    ));
+                }
+            }
+            b"Page" => {}
+            b"Outlines" => {}
+            b"Outline" => {}
+            _ => {
+                document.objects.insert(object_id, object);
+            }
+        }
+    }
+
+    let pages_object =
+        pages_object.ok_or_else(|| anyhow::anyhow!("Pages 루트를 찾지 못했어요(손상된 PDF?)."))?;
+    let catalog_object = catalog_object
+        .ok_or_else(|| anyhow::anyhow!("Catalog 루트를 찾지 못했어요(손상된 PDF?)."))?;
+
+    // 모든 페이지의 부모를 새 Pages로.
+    for (object_id, object) in documents_pages.iter() {
+        if let Ok(dictionary) = object.as_dict() {
+            let mut dictionary = dictionary.clone();
+            dictionary.set("Parent", pages_object.0);
+            document
+                .objects
+                .insert(*object_id, Object::Dictionary(dictionary));
+        }
+    }
+
+    let (catalog_id, catalog_object) = catalog_object;
+    let (page_id, page_object) = pages_object;
+    let page_count = documents_pages.len();
+
+    if let Ok(dictionary) = page_object.as_dict() {
+        let mut dictionary = dictionary.clone();
+        dictionary.set("Count", page_count as u32);
+        dictionary.set(
+            "Kids",
+            documents_pages
+                .into_keys()
+                .map(Object::Reference)
+                .collect::<Vec<_>>(),
+        );
+        document
+            .objects
+            .insert(page_id, Object::Dictionary(dictionary));
+    }
+
+    if let Ok(dictionary) = catalog_object.as_dict() {
+        let mut dictionary = dictionary.clone();
+        dictionary.set("Pages", page_id);
+        dictionary.remove(b"Outlines");
+        document
+            .objects
+            .insert(catalog_id, Object::Dictionary(dictionary));
+    }
+
+    document.trailer.set("Root", catalog_id);
+    document.max_id = document.objects.len() as u32;
+    document.renumber_objects();
+    Ok((document, page_count))
+}
+
+/// 여러 PDF 파일을 하나로 합친다(서류 합본 제출 — GPT가 못 만지는 내 로컬 PDF).
+fn cmd_pdf_merge(files: &[String], output: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+    if files.len() < 2 {
+        anyhow::bail!("합칠 PDF를 2개 이상 주세요. 예: wonjang pdf합치기 1.pdf 2.pdf");
+    }
+    let mut docs = Vec::new();
+    for f in files {
+        if !f.to_lowercase().ends_with(".pdf") {
+            anyhow::bail!("PDF 파일이 아니에요: {f}");
+        }
+        if !Path::new(f).exists() {
+            anyhow::bail!("파일을 찾을 수 없어요: {f}");
+        }
+        let doc = lopdf::Document::load(f).map_err(|e| {
+            anyhow::anyhow!("PDF를 열지 못했어요({f}): {e}. 암호·손상 여부를 확인해 주세요.")
+        })?;
+        docs.push(doc);
+    }
+    let (mut merged, count) = merge_documents(docs)?;
+
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => PathBuf::from("합본.pdf"),
+    };
+    if files.iter().any(|f| Path::new(f) == out_path) {
+        anyhow::bail!("출력 경로가 입력 PDF 중 하나와 같아요. 다른 경로(--출력)를 쓰세요.");
+    }
+    merged.save(&out_path)?;
+    let bytes = std::fs::metadata(&out_path)?.len();
+    println!();
+    println!(
+        "  📎 PDF {}개 → {}페이지로 합침",
+        files.len(),
+        count.to_string().bright_white()
+    );
+    println!(
+        "     저장  {}  ({})",
+        out_path.display().to_string().bright_yellow(),
+        human_bytes(bytes)
+    );
+    println!();
     Ok(())
 }
 
@@ -5171,6 +5348,59 @@ mod habit_nudge_tests {
             .unwrap();
         // 가장 센 streak를 대표로, 나머지는 개수로.
         assert!(msg.contains("독서") && msg.contains("외 2개"));
+    }
+}
+
+#[cfg(test)]
+mod pdfmerge_tests {
+    use super::merge_documents;
+    use lopdf::{dictionary, Document, Object, Stream};
+
+    // n페이지짜리 최소 PDF Document를 메모리에 만든다.
+    fn make_doc(pages: usize) -> Document {
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let mut kids: Vec<Object> = Vec::new();
+        for _ in 0..pages {
+            let content_id = doc.add_object(Stream::new(dictionary! {}, b"".to_vec()));
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+                "Contents" => content_id,
+            });
+            kids.push(page_id.into());
+        }
+        let count = kids.len() as u32;
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => kids,
+                "Count" => count,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+        doc
+    }
+
+    #[test]
+    fn merges_page_counts() {
+        // 3페이지 + 2페이지 → 5페이지.
+        let (merged, count) = merge_documents(vec![make_doc(3), make_doc(2)]).unwrap();
+        assert_eq!(count, 5);
+        assert_eq!(merged.get_pages().len(), 5);
+    }
+
+    #[test]
+    fn single_document_passthrough() {
+        let (merged, count) = merge_documents(vec![make_doc(4)]).unwrap();
+        assert_eq!(count, 4);
+        assert_eq!(merged.get_pages().len(), 4);
     }
 }
 
