@@ -292,11 +292,12 @@ enum Commands {
         #[arg(long = "json")]
         json: bool,
     },
-    /// 이미지를 줄이거나 압축합니다(첨부 용량↓, 원본 보존). 예: wonjang 이미지 사진.jpg --폭 1280
+    /// 이미지를 줄이거나 압축합니다(여러 장 한 번에, 첨부 용량↓, 원본 보존). 예: wonjang 이미지 *.jpg --폭 1280
     #[command(alias = "이미지")]
     Image {
-        /// 이미지 파일 경로(JPEG/PNG)
-        file: String,
+        /// 이미지 파일들(JPEG/PNG, 여러 장 가능)
+        #[arg(required = true)]
+        files: Vec<String>,
         /// 최대 가로 폭(px)으로 축소(비율 유지). 원본보다 크면 그대로
         #[arg(long = "폭")]
         width: Option<u32>,
@@ -1031,12 +1032,12 @@ async fn run() -> Result<()> {
             json,
         }) => return cmd_excel(file, column.as_deref(), *rows, *json),
         Some(Commands::Image {
-            file,
+            files,
             width,
             scale,
             quality,
             output,
-        }) => return cmd_image(file, *width, *scale, *quality, output.as_deref()),
+        }) => return cmd_image(files, *width, *scale, *quality, output.as_deref()),
         Some(Commands::Encfix {
             file,
             output,
@@ -2108,8 +2109,8 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
                 (
-                    "wonjang 이미지 <사진> --폭 1280",
-                    "이미지 축소·압축(첨부 용량↓, 원본 보존)",
+                    "wonjang 이미지 <사진들> --폭 1280",
+                    "이미지 축소·압축(여러 장, 원본 보존)",
                 ),
                 (
                     "wonjang 사진묶기 *.jpg",
@@ -3435,7 +3436,49 @@ fn human_bytes(n: u64) -> String {
 }
 
 /// 로컬 이미지를 축소·압축한다(GPT가 못 만지는 내 사진 — 첨부 용량 줄이기). 원본은 보존.
+/// 이미지 여러 장을 일괄로 줄인다(중고거래·블로그·메일에 사진 여러 장 올리기). 원본 보존.
 fn cmd_image(
+    files: &[String],
+    width: Option<u32>,
+    scale: Option<f64>,
+    quality: u8,
+    output: Option<&str>,
+) -> Result<()> {
+    if output.is_some() && files.len() > 1 {
+        anyhow::bail!(
+            "여러 장엔 --출력을 쓸 수 없어요(각 파일 옆에 _작게로 저장돼요). 한 장만 지정하세요."
+        );
+    }
+    let mut ok = 0usize;
+    let mut failed = 0usize;
+    for f in files {
+        match resize_one_image(f, width, scale, quality, output) {
+            Ok(()) => ok += 1,
+            Err(e) => {
+                failed += 1;
+                ui::error(&format!("{f}: {e}"));
+            }
+        }
+    }
+    if files.len() > 1 {
+        use owo_colors::OwoColorize;
+        println!();
+        println!(
+            "  ✅ {}장 완료{}",
+            ok.to_string().bright_white(),
+            if failed > 0 {
+                format!(", {failed}장 실패").red().to_string()
+            } else {
+                String::new()
+            }
+        );
+        println!();
+    }
+    Ok(())
+}
+
+/// 이미지 한 장을 줄여 _작게(또는 --출력)로 저장한다.
+fn resize_one_image(
     file: &str,
     width: Option<u32>,
     scale: Option<f64>,
