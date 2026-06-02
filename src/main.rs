@@ -74,6 +74,7 @@ mod search;
 mod session;
 mod sheet;
 mod skill;
+mod sleepcalc;
 mod subway;
 mod timecalc;
 mod timestamp;
@@ -466,6 +467,12 @@ enum Commands {
         height: f64,
         /// 몸무게(kg)
         weight: f64,
+    },
+    /// 수면 시간 계산(90분 주기). 예: wonjang 수면 07:00 (없으면 지금 자면)
+    #[command(alias = "수면")]
+    Sleep {
+        /// 기상 시각(HH:MM). 생략 시 지금 자는 기준 기상 시각 추천
+        wake: Option<String>,
     },
     /// 기초대사량·하루 권장 칼로리. 예: wonjang 칼로리 남 30 175 70
     #[command(alias = "칼로리")]
@@ -998,6 +1005,7 @@ async fn run() -> Result<()> {
         }) => return cmd_dutch(*total, *people, *unit),
         Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
+        Some(Commands::Sleep { wake }) => return cmd_sleep(wake.as_deref()),
         Some(Commands::Calorie {
             sex,
             age,
@@ -1811,6 +1819,11 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 평 <숫자>", "평↔㎡ 변환"),
                 ("wonjang 변환 <값> <단위>", "온도/무게/길이"),
                 ("wonjang bmi <키> <몸무게>", "BMI(아시아 기준)"),
+                (
+                    "wonjang 칼로리 <성별> <나이> <키> <몸무게>",
+                    "기초대사량·권장칼로리",
+                ),
+                ("wonjang 수면 [기상시각]", "수면 시간(90분 주기)"),
                 ("wonjang 더치 <총액> <인원>", "더치페이(n빵)"),
                 ("wonjang 뽑기 <후보들>", "제비뽑기/추첨"),
                 ("wonjang 메뉴 [카테고리]", "오늘 뭐 먹지?"),
@@ -3465,6 +3478,46 @@ fn cmd_discount(price: f64, rates: &[f64]) -> Result<()> {
     }
     println!();
     Ok(())
+}
+
+fn cmd_sleep(wake: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    println!();
+    match wake {
+        Some(w) => {
+            let wt = sleepcalc::parse_time(w)?;
+            println!("  😴 {} 기상 기준 — 이 시각에 주무세요", w.bright_cyan());
+            for (cycles, bed) in sleepcalc::bedtimes_for_wake(wt) {
+                let h = cycles * 90 / 60;
+                println!("     {}  ({}주기 · 약 {h}시간 수면)", bed.bold(), cycles);
+            }
+        }
+        None => {
+            use chrono::Timelike;
+            let now = chrono::Local::now().time();
+            let nt = chrono::NaiveTime::from_hms_opt(now.hour(), now.minute(), 0).unwrap();
+            println!(
+                "  😴 지금({}) 자면 — 이 시각에 일어나세요",
+                sleepcalc_fmt(nt).dimmed()
+            );
+            for (cycles, wakeup) in sleepcalc::waketimes_for_bed(nt) {
+                let h = cycles * 90 / 60;
+                println!("     {}  ({}주기 · 약 {h}시간 수면)", wakeup.bold(), cycles);
+            }
+        }
+    }
+    println!();
+    println!(
+        "  {} 90분 수면 주기 끝에 깨면 개운해요(참고용).",
+        "ⓘ".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
+fn sleepcalc_fmt(t: chrono::NaiveTime) -> String {
+    use chrono::Timelike;
+    format!("{:02}:{:02}", t.hour(), t.minute())
 }
 
 fn cmd_calorie(sex: &str, age: u32, height: f64, weight: f64) -> Result<()> {
