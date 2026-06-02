@@ -48,19 +48,37 @@ pub fn tool_result(summary: &str) {
     println!("    {} {}", "↳".dimmed(), summary.dimmed());
 }
 
-/// 환영 배너.
-pub fn banner(model: &str) {
+/// 환영 배너. `label`은 백엔드 표기("Claude Code"/"Codex"/"API (...)").
+pub fn banner(label: &str) {
+    let version = env!("CARGO_PKG_VERSION");
+    let keyless = !label.starts_with("API");
+    use chrono::Datelike;
+    let today = chrono::Local::now().date_naive();
+    let weekday = crate::datecalc::weekday_kr(today);
+
     println!();
     println!(
         "  {}  {}",
         "원장 에이전트".bright_cyan().bold(),
-        "v0.1.0".dimmed()
+        format!("v{version}").dimmed()
+    );
+    if keyless {
+        println!(
+            "  🔑 키 없이 {}에 연결됐어요 — 바로 쓸 수 있어요",
+            label.bright_white()
+        );
+    } else {
+        println!("  {} {}", "엔진:".dimmed(), label.bright_white());
+    }
+    // 성격 묻은 살아있는 첫 인사 + 오늘 날짜.
+    println!(
+        "  {}  {}",
+        crate::soul::greeting().bold(),
+        format!("오늘은 {}월 {}일 ({weekday}).", today.month(), today.day()).dimmed()
     );
     println!(
         "  {}",
-        "로컬 환경을 다루는 한국어 우선 AI 에이전트".dimmed()
+        "무엇이든 한국어로 시켜보세요.  /help · /성격 · /exit".dimmed()
     );
-    println!("  {} {}", "모델:".dimmed(), model.bright_white());
-    println!("  {}", "도움말은 /help, 종료는 /exit 또는 Ctrl-D".dimmed());
     println!();
 }

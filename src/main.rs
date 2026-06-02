@@ -1104,9 +1104,9 @@ async fn run() -> Result<()> {
     }
 
     // 백엔드 결정: API 키가 있으면 api, 없으면 Claude Code/Codex CLI 자동 연결.
+    // (연결 정보는 REPL 배너 / 단발 위임 시점에 표시되므로 여기선 생략)
     let backend = engine::resolve(&cfg)?;
     let eng = build_engine(backend, &cfg);
-    ui::info(&format!("백엔드: {}", eng.label(&cfg)));
 
     let ctx = ToolContext {
         auto_approve: cli.yes,

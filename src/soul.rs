@@ -79,6 +79,35 @@ pub fn active_persona() -> String {
     }
 }
 
+/// 현재 활성 성격의 프리셋 키(직접 편집해 매칭 안 되면 "나만의").
+pub fn active_preset_key() -> &'static str {
+    let active = active_persona();
+    PRESETS
+        .iter()
+        .find(|(_, _, body)| active == *body)
+        .map(|(k, _, _)| *k)
+        .unwrap_or("나만의")
+}
+
+/// 성격·시간대에 맞춘 짧은 첫 인사(배너용).
+pub fn greeting() -> String {
+    use chrono::Timelike;
+    let hour = chrono::Local::now().hour();
+    let tod = match hour {
+        5..=10 => "좋은 아침이에요",
+        11..=16 => "안녕하세요",
+        17..=20 => "좋은 저녁이에요",
+        _ => "안녕하세요",
+    };
+    match active_preset_key() {
+        "친구" => "안녕! 나 원장이야 🙌".to_string(),
+        "집사" => "주인님, 원장 대령했습니다.".to_string(),
+        "선배" => "왔냐. 원장이다.".to_string(),
+        "발랄" => format!("{tod}! 원장이에요! ✨"),
+        _ => format!("{tod}, 원장입니다 🌙"),
+    }
+}
+
 /// 프리셋을 SOUL.md에 저장한다.
 pub fn set_preset(key: &str) -> Result<()> {
     let body = preset(key).ok_or_else(|| {
