@@ -310,6 +310,16 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// 여러 사진을 PDF 한 파일로 묶습니다(서류 제출·스캔앱 대용). 예: wonjang 사진묶기 *.jpg
+    #[command(alias = "사진묶기")]
+    PhotosPdf {
+        /// 이미지 파일들(JPEG/PNG, 적은 순서대로 페이지)
+        #[arg(required = true)]
+        files: Vec<String>,
+        /// 저장 경로(생략 시 묶음.pdf)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// 한글 깨진 파일(EUC-KR/CP949)을 UTF-8로 복구합니다. 예: wonjang 깨짐 가계부.csv
     #[command(alias = "깨짐")]
     Encfix {
@@ -996,6 +1006,9 @@ async fn run() -> Result<()> {
             output,
             reverse,
         }) => return cmd_encfix(file, output.as_deref(), *reverse),
+        Some(Commands::PhotosPdf { files, output }) => {
+            return cmd_photos_pdf(files, output.as_deref())
+        }
         Some(Commands::Ddoganjip {
             query,
             add,
@@ -2049,6 +2062,10 @@ fn cmd_guide() -> Result<()> {
                     "이미지 축소·압축(첨부 용량↓, 원본 보존)",
                 ),
                 (
+                    "wonjang 사진묶기 *.jpg",
+                    "여러 사진을 PDF 한 파일로(서류 제출)",
+                ),
+                (
                     "wonjang 깨짐 <파일.csv>",
                     "한글 깨진 파일(CP949)→UTF-8 복구",
                 ),
@@ -2735,6 +2752,130 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
             println!();
         }
     }
+    Ok(())
+}
+
+/// 확장자가 우리가 다루는 이미지(JPEG/PNG)인지. 순수 함수.
+fn is_supported_image_ext(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".png")
+}
+
+/// 여러 이미지를 한 PDF로 묶는다(각 이미지가 한 페이지). JPEG는 DCTDecode로 임베드.
+/// 반환: 만든 페이지 수. (GPT가 못 만지는 내 로컬 사진 → 제출용 PDF)
+fn cmd_photos_pdf(files: &[String], output: Option<&str>) -> Result<()> {
+    use lopdf::content::{Content, Operation};
+    use lopdf::{dictionary, Document, Object, Stream};
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+
+    // 입력 검증.
+    for f in files {
+        if !is_supported_image_ext(f) {
+            anyhow::bail!("JPEG·PNG만 묶을 수 있어요(문제 파일: {f}). HEIC는 미지원이에요.");
+        }
+        if !Path::new(f).exists() {
+            anyhow::bail!("파일을 찾을 수 없어요: {f}");
+        }
+    }
+
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => PathBuf::from("묶음.pdf"),
+    };
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let mut kids: Vec<Object> = Vec::new();
+
+    for f in files {
+        // lean 디코더로 열어 RGB 베이스라인 JPEG 바이트를 만든다(임베드 안전).
+        let img =
+            image::open(f).map_err(|e| anyhow::anyhow!("이미지를 열지 못했어요({f}): {e}"))?;
+        let rgb = img.to_rgb8();
+        let (w, h) = (rgb.width(), rgb.height());
+        let mut jpeg: Vec<u8> = Vec::new();
+        {
+            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85);
+            enc.encode_image(&rgb)?;
+        }
+
+        let img_stream = Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => w as i64,
+                "Height" => h as i64,
+                "ColorSpace" => "DeviceRGB",
+                "BitsPerComponent" => 8,
+                "Filter" => "DCTDecode",
+            },
+            jpeg,
+        );
+        let img_id = doc.add_object(img_stream);
+
+        let resources_id = doc.add_object(dictionary! {
+            "XObject" => dictionary! { "Im0" => img_id },
+        });
+
+        // 이미지를 페이지(=이미지 픽셀 크기) 전체에 그린다.
+        let content = Content {
+            operations: vec![
+                Operation::new("q", vec![]),
+                Operation::new(
+                    "cm",
+                    vec![
+                        (w as i64).into(),
+                        0.into(),
+                        0.into(),
+                        (h as i64).into(),
+                        0.into(),
+                        0.into(),
+                    ],
+                ),
+                Operation::new("Do", vec![Object::Name(b"Im0".to_vec())]),
+                Operation::new("Q", vec![]),
+            ],
+        };
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode()?));
+
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), (w as i64).into(), (h as i64).into()],
+            "Contents" => content_id,
+            "Resources" => resources_id,
+        });
+        kids.push(page_id.into());
+    }
+
+    let count = kids.len();
+    let pages = dictionary! {
+        "Type" => "Pages",
+        "Kids" => kids,
+        "Count" => count as i64,
+    };
+    doc.objects.insert(pages_id, Object::Dictionary(pages));
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+    doc.save(&out_path)?;
+
+    let bytes = std::fs::metadata(&out_path)?.len();
+    println!();
+    println!(
+        "  📚 사진 {}장 → PDF {}페이지",
+        files.len(),
+        count.to_string().bright_white()
+    );
+    println!(
+        "     저장  {}  ({})",
+        out_path.display().to_string().bright_yellow(),
+        human_bytes(bytes)
+    );
+    println!();
     Ok(())
 }
 
@@ -4903,6 +5044,21 @@ mod habit_nudge_tests {
             .unwrap();
         // 가장 센 streak를 대표로, 나머지는 개수로.
         assert!(msg.contains("독서") && msg.contains("외 2개"));
+    }
+}
+
+#[cfg(test)]
+mod photospdf_tests {
+    use super::is_supported_image_ext;
+
+    #[test]
+    fn accepts_jpeg_png_case_insensitive() {
+        assert!(is_supported_image_ext("a.jpg"));
+        assert!(is_supported_image_ext("a.JPEG"));
+        assert!(is_supported_image_ext("사진.PNG"));
+        assert!(!is_supported_image_ext("a.heic"));
+        assert!(!is_supported_image_ext("a.pdf"));
+        assert!(!is_supported_image_ext("noext"));
     }
 }
 
