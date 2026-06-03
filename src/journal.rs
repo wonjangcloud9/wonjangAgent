@@ -59,16 +59,47 @@ pub fn this_month() -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// `## ` 줄이 **일기 헤더**(시각 `YYYY-MM-DD HH:MM` 형식)인지 판별. 본문 속 마크다운 제목과 구분.
+fn header_stamp(line: &str) -> Option<&str> {
+    let t = line.strip_prefix("## ")?.trim();
+    let b = t.as_bytes();
+    // "2026-06-02 21:30" 형태: 위치별 구분자 + 앞 4자리 숫자.
+    if t.len() >= 16
+        && b.get(4) == Some(&b'-')
+        && b.get(7) == Some(&b'-')
+        && b.get(10) == Some(&b' ')
+        && b.get(13) == Some(&b':')
+        && t[..4].chars().all(|c| c.is_ascii_digit())
+    {
+        Some(t)
+    } else {
+        None
+    }
+}
+
 /// 마크다운에서 `## 시각` + 본문 블록을 파싱한다.
+/// 줄 단위로 헤더(시각 형식)만 새 항목 시작으로 보아, 본문에 `## 제목` 줄이 있어도 안 깨진다.
 fn parse(md: &str) -> Vec<Entry> {
     let mut out = Vec::new();
-    for block in md.split("## ").skip(1) {
-        let mut lines = block.lines();
-        let stamp = lines.next().unwrap_or("").trim().to_string();
-        let text = lines.collect::<Vec<_>>().join("\n").trim().to_string();
-        if !stamp.is_empty() {
-            out.push(Entry { stamp, text });
+    let mut cur: Option<(String, Vec<&str>)> = None;
+    for line in md.lines() {
+        if let Some(stamp) = header_stamp(line) {
+            if let Some((s, body)) = cur.take() {
+                out.push(Entry {
+                    stamp: s,
+                    text: body.join("\n").trim().to_string(),
+                });
+            }
+            cur = Some((stamp.to_string(), Vec::new()));
+        } else if let Some((_, body)) = cur.as_mut() {
+            body.push(line);
         }
+    }
+    if let Some((s, body)) = cur.take() {
+        out.push(Entry {
+            stamp: s,
+            text: body.join("\n").trim().to_string(),
+        });
     }
     out
 }
@@ -85,6 +116,16 @@ mod tests {
         assert_eq!(e[0].stamp, "2026-06-02 09:00");
         assert_eq!(e[0].text, "첫 기록");
         assert_eq!(e[1].text, "둘째 기록\n여러 줄");
+    }
+
+    #[test]
+    fn body_with_markdown_heading_not_split() {
+        // 본문에 '## ' 줄(마크다운 제목)이 있어도 가짜 항목으로 쪼개지지 않아야 한다.
+        let md = "## 2026-06-02 09:00\n오늘 목표\n## 운동 하기\n끝\n\n## 2026-06-02 21:30\n둘째\n";
+        let e = parse(md);
+        assert_eq!(e.len(), 2, "본문 ## 때문에 잘못 쪼개짐");
+        assert_eq!(e[0].text, "오늘 목표\n## 운동 하기\n끝");
+        assert_eq!(e[1].text, "둘째");
     }
 
     #[test]

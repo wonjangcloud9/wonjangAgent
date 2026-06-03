@@ -95,6 +95,20 @@ pub fn guess_smtp_host(email: &str) -> String {
     }
 }
 
+/// 받는 사람 주소가 보낼 수 있는 형식인지 미리 검증한다(첨부 읽기·전송 박스 출력 전에 호출).
+/// `@`만 보던 기존 검증과 달리 실제 lettre Mailbox 파싱으로 확인해 '뒤늦은 실패'를 막는다.
+pub fn validate_recipient(to: &str) -> Result<()> {
+    use lettre::message::Mailbox;
+    let t = to.trim();
+    if t.is_empty() {
+        anyhow::bail!("받는 사람 이메일 주소를 적어주세요(예: a@b.com).");
+    }
+    t.parse::<Mailbox>().map_err(|_| {
+        anyhow::anyhow!("받는 사람 주소 형식이 올바르지 않아요: '{to}'. a@b.com 형태로 한 명만, 이름 없이 적어주세요.")
+    })?;
+    Ok(())
+}
+
 /// 메일을 보낸다(SMTP over rustls). 465=암묵 TLS(기본), 그 외(587 등)=STARTTLS.
 /// 외부 전송 — 호출자가 사용자 의도를 확인한 뒤 부른다.
 pub fn send_mail(

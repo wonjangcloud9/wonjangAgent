@@ -3805,9 +3805,8 @@ fn cmd_mail_send(to: &str, subject: &str, body: &str, attach: &[String]) -> Resu
             return Ok(());
         }
     };
-    if to.trim().is_empty() || !to.contains('@') {
-        anyhow::bail!("받는 사람 이메일 주소를 정확히 적어주세요(--받는사람 a@b.com).");
-    }
+    // 받는 사람을 실제 파싱으로 미리 검증(첨부 읽기·전송 박스 출력 전에 명확히 거부).
+    email::validate_recipient(to)?;
     // 첨부 파일 읽기(보내기 전에 확인).
     let mut attachments: Vec<(String, Vec<u8>)> = Vec::new();
     for p in attach {
