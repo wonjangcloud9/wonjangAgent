@@ -320,6 +320,18 @@ enum Commands {
         #[arg(long = "json")]
         json: bool,
     },
+    /// 여러 표(CSV·엑셀)를 머리글 기준으로 한 파일로 합칩니다. 예: wonjang 표합치기 1월.csv 2월.csv --저장 합본.csv
+    #[command(name = "표합치기", aliases = ["엑셀합치기", "csv합치기"])]
+    SheetMerge {
+        /// 합칠 파일들(같은·비슷한 머리글, 2개 이상). 열 순서가 달라도 이름으로 맞춤
+        files: Vec<String>,
+        /// 결과 저장 경로(생략 시 미리보기만). 예: --저장 합본.csv
+        #[arg(long = "저장")]
+        save: Option<String>,
+        /// 맨 앞에 '출처'(각 파일 이름) 열 추가 — 합친 뒤 어느 파일에서 왔는지
+        #[arg(long = "출처")]
+        source: bool,
+    },
     /// 이미지를 줄이거나 압축합니다(여러 장 한 번에, 첨부 용량↓, 원본 보존). 예: wonjang 이미지 *.jpg --폭 1280
     #[command(alias = "이미지")]
     Image {
@@ -1170,6 +1182,11 @@ async fn run() -> Result<()> {
                 *json,
             )
         }
+        Some(Commands::SheetMerge {
+            files,
+            save,
+            source,
+        }) => return cmd_merge_tables(files, save.as_deref(), *source),
         Some(Commands::Image {
             files,
             width,
@@ -2394,6 +2411,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --필터 … --저장 결과.csv",
                     "분석 결과를 새 CSV로 저장",
                 ),
+                (
+                    "wonjang 표합치기 1월.csv 2월.csv --저장 합본.csv",
+                    "월별·지점별 표 여러 개를 하나로",
+                ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
@@ -3355,6 +3376,81 @@ fn cmd_excel(
         "팁".dimmed(),
         format!("wonjang 엑셀 {file} --필터 지역=서울 --저장 서울만.csv").dimmed()
     );
+    println!();
+    Ok(())
+}
+
+/// 여러 표(CSV·엑셀)를 머리글 기준으로 합쳐 미리보기하거나 새 CSV로 저장한다.
+/// GPT가 못 하는 일: 내 컴퓨터의 월별·지점별 파일들을 실제로 읽어 한 장으로.
+fn cmd_merge_tables(files: &[String], save: Option<&str>, source: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::path::Path;
+    if files.len() < 2 {
+        anyhow::bail!(
+            "합칠 파일을 2개 이상 적어주세요. 예: wonjang 표합치기 1월.csv 2월.csv --저장 합본.csv"
+        );
+    }
+    // 각 파일을 읽고 라벨(파일 이름, 확장자 제외)을 붙인다.
+    let mut loaded: Vec<(String, sheet::Table)> = Vec::new();
+    for f in files {
+        let t = sheet::Table::load(f).map_err(|e| anyhow::anyhow!("{f}: {e}"))?;
+        let label = Path::new(f)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(f)
+            .to_string();
+        loaded.push((label, t));
+    }
+    let refs: Vec<(String, &sheet::Table)> =
+        loaded.iter().map(|(l, t)| (l.clone(), t)).collect();
+    let (headers, rows) = sheet::merge_tables(&refs, source);
+
+    println!();
+    println!(
+        "  🧩 표 {}개 합치기 → {}행 × {}열",
+        files.len(),
+        rows.len(),
+        headers.len()
+    );
+    println!("  열: {}", headers.join(" · ").dimmed());
+
+    if let Some(out) = save {
+        if files.iter().any(|f| Path::new(f) == Path::new(out)) {
+            anyhow::bail!("입력 파일을 덮어쓸 수 없어요. 다른 경로로 저장하세요.");
+        }
+        let csv = sheet::to_csv(&headers, &rows);
+        util::atomic_write(Path::new(out), csv.as_bytes())
+            .map_err(|e| anyhow::anyhow!("저장 실패: {out} ({e})"))?;
+        println!();
+        println!("  💾 저장: {} ({}행)", out.bright_yellow(), rows.len());
+        ui::note("     이제 wonjang 엑셀로 분석할 수 있어요(--그룹·--필터·--정렬).");
+    } else {
+        let n = 5.min(rows.len());
+        if n > 0 {
+            println!();
+            println!("  미리보기 (상위 {n}행):");
+            for row in rows.iter().take(n) {
+                let cells: Vec<String> = row
+                    .iter()
+                    .map(|c| {
+                        let c = c.trim();
+                        if c.chars().count() > 16 {
+                            format!("{}…", c.chars().take(15).collect::<String>())
+                        } else {
+                            c.to_string()
+                        }
+                    })
+                    .collect();
+                println!("     {}", cells.join(" | "));
+            }
+        }
+        println!();
+        println!(
+            "  {} 파일로 저장: {}",
+            "팁".dimmed(),
+            "wonjang 표합치기 <파일들> --저장 합본.csv  (--출처로 출처 열 추가)".dimmed()
+        );
+    }
     println!();
     Ok(())
 }

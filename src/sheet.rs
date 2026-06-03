@@ -114,6 +114,39 @@ pub struct GroupStat {
     pub row_count: usize,
 }
 
+/// 여러 표를 머리글 기준으로 합친다(열 순서가 달라도 이름으로 맞춤).
+/// 합친 머리글 = 첫 표 머리글 + 뒤 표에만 있는 새 열. 없는 칸은 빈값.
+/// `with_source`면 맨 앞에 '출처'(각 표의 라벨) 열을 붙인다. (월별·지점별 파일 합본)
+pub fn merge_tables(named: &[(String, &Table)], with_source: bool) -> (Vec<String>, Vec<Vec<String>>) {
+    let mut headers: Vec<String> = Vec::new();
+    for (_, t) in named {
+        for h in &t.headers {
+            let ht = h.trim();
+            if !headers.iter().any(|x| x.trim().eq_ignore_ascii_case(ht)) {
+                headers.push(h.clone());
+            }
+        }
+    }
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for (src, t) in named {
+        let map: Vec<Option<usize>> = headers.iter().map(|h| t.col_index(h)).collect();
+        for row in &t.rows {
+            let mut out: Vec<String> = map
+                .iter()
+                .map(|m| m.and_then(|i| row.get(i)).cloned().unwrap_or_default())
+                .collect();
+            if with_source {
+                out.insert(0, src.clone());
+            }
+            rows.push(out);
+        }
+    }
+    if with_source {
+        headers.insert(0, "출처".to_string());
+    }
+    (headers, rows)
+}
+
 /// 한 셀을 CSV 필드로(콤마·따옴표·줄바꿈 있으면 따옴표로 감싸고 내부 따옴표는 두 번).
 fn csv_field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) {
@@ -524,6 +557,27 @@ mod tests {
         assert_eq!(g[1].row_count, 2);
         assert_eq!(g[2].key, "(빈값)"); // 빈 그룹값
         assert_eq!(g[2].sum, 300.0);
+    }
+
+    #[test]
+    fn merge_tables_aligns_headers_and_source() {
+        let jan = Table {
+            headers: vec!["지점".into(), "매출".into()],
+            rows: vec![vec!["강남".into(), "100".into()]],
+        };
+        // 2월은 열 순서가 다르고 '비고'가 추가됨.
+        let feb = Table {
+            headers: vec!["매출".into(), "지점".into(), "비고".into()],
+            rows: vec![vec!["200".into(), "홍대".into(), "신규".into()]],
+        };
+        let (headers, rows) =
+            merge_tables(&[("1월".into(), &jan), ("2월".into(), &feb)], true);
+        // 출처 + 합집합 헤더(첫 표 순서 유지, 새 열 뒤에).
+        assert_eq!(headers, vec!["출처", "지점", "매출", "비고"]);
+        // 1월 행: 비고 없음 → 빈값, 이름으로 정렬됨.
+        assert_eq!(rows[0], vec!["1월", "강남", "100", ""]);
+        // 2월 행: 열 순서 달라도 이름으로 맞춰짐.
+        assert_eq!(rows[1], vec!["2월", "홍대", "200", "신규"]);
     }
 
     #[test]
