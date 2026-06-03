@@ -114,6 +114,34 @@ pub struct GroupStat {
     pub row_count: usize,
 }
 
+/// 한 셀을 CSV 필드로(콤마·따옴표·줄바꿈 있으면 따옴표로 감싸고 내부 따옴표는 두 번).
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// 머리글 + 행들을 UTF-8 CSV 텍스트로 직렬화한다(엑셀 분석 결과 내보내기).
+pub fn to_csv(headers: &[String], rows: &[Vec<String>]) -> String {
+    let line = |cells: &[String]| {
+        cells
+            .iter()
+            .map(|c| csv_field(c))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let mut out = String::new();
+    out.push_str(&line(headers));
+    out.push('\n');
+    for row in rows {
+        out.push_str(&line(row));
+        out.push('\n');
+    }
+    out
+}
+
 /// 필터 비교 연산자.
 #[derive(Clone, Copy, PartialEq)]
 enum FilterOp {
@@ -496,6 +524,23 @@ mod tests {
         assert_eq!(g[1].row_count, 2);
         assert_eq!(g[2].key, "(빈값)"); // 빈 그룹값
         assert_eq!(g[2].sum, 300.0);
+    }
+
+    #[test]
+    fn to_csv_quotes_and_roundtrips() {
+        let headers = vec!["이름".to_string(), "메모".to_string()];
+        let rows = vec![
+            vec!["철수".to_string(), "서울, 강남".to_string()], // 콤마 → 따옴표
+            vec!["영희".to_string(), "말하길 \"안녕\"".to_string()], // 따옴표 → 두 번
+        ];
+        let csv = to_csv(&headers, &rows);
+        assert!(csv.contains("\"서울, 강남\""));
+        assert!(csv.contains("\"말하길 \"\"안녕\"\"\""));
+        // 다시 파싱하면 원래 값 복구(라운드트립).
+        let recs = split_records(&csv);
+        assert_eq!(parse_csv_line(&recs[0], ','), vec!["이름", "메모"]);
+        assert_eq!(parse_csv_line(&recs[1], ','), vec!["철수", "서울, 강남"]);
+        assert_eq!(parse_csv_line(&recs[2], ','), vec!["영희", "말하길 \"안녕\""]);
     }
 
     #[test]

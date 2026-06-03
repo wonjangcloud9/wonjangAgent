@@ -310,6 +310,9 @@ enum Commands {
         /// 정렬을 오름차순(작은 값/가나다부터)으로
         #[arg(long = "오름차순")]
         ascending: bool,
+        /// 결과(필터·정렬 행 또는 --그룹 집계)를 새 CSV로 저장. 예: --저장 서울매출.csv
+        #[arg(long = "저장")]
+        save: Option<String>,
         /// 미리볼 행 수(기본 5)
         #[arg(long = "행", default_value_t = 5)]
         rows: usize,
@@ -1150,6 +1153,7 @@ async fn run() -> Result<()> {
             filter,
             sort,
             ascending,
+            save,
             rows,
             json,
         }) => {
@@ -1161,6 +1165,7 @@ async fn run() -> Result<()> {
                 filter.as_deref(),
                 sort.as_deref(),
                 *ascending,
+                save.as_deref(),
                 *rows,
                 *json,
             )
@@ -2385,6 +2390,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일.xlsx> --시트 재고",
                     "엑셀 다중 시트에서 선택",
                 ),
+                (
+                    "wonjang 엑셀 <파일> --필터 … --저장 결과.csv",
+                    "분석 결과를 새 CSV로 저장",
+                ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
@@ -3050,6 +3059,7 @@ fn cmd_excel(
     filter: Option<&str>,
     sort: Option<&str>,
     ascending: bool,
+    save: Option<&str>,
     preview_rows: usize,
     json: bool,
 ) -> Result<()> {
@@ -3118,6 +3128,83 @@ fn cmd_excel(
             println!();
             return Ok(());
         }
+    }
+
+    // 결과 저장: --그룹이면 집계표를, 아니면 필터+정렬된 행을 새 CSV로.
+    if let Some(out) = save {
+        use std::path::Path;
+        if Path::new(out) == Path::new(file) {
+            anyhow::bail!("원본을 덮어쓸 수 없어요. 다른 경로로 저장하세요(--저장 다른이름.csv).");
+        }
+        let (out_headers, out_rows) = if let Some(gkey) = group {
+            let gidx = table.col_index(gkey).ok_or_else(|| {
+                anyhow::anyhow!("'{gkey}' 열을 찾을 수 없어요. 열: {}", table.headers.join(", "))
+            })?;
+            let vkey = column.ok_or_else(|| {
+                anyhow::anyhow!("--그룹 저장은 집계할 --열과 함께 쓰세요.")
+            })?;
+            let vidx = table.col_index(vkey).ok_or_else(|| {
+                anyhow::anyhow!("'{vkey}' 열을 찾을 수 없어요. 열: {}", table.headers.join(", "))
+            })?;
+            let headers = vec![
+                table.headers[gidx].clone(),
+                "합계".into(),
+                "평균".into(),
+                "건수".into(),
+            ];
+            // 저장값은 콤마 없는 원시 숫자로(엑셀에서 숫자로 다시 인식되게).
+            let raw = |v: f64| {
+                if v.fract() == 0.0 {
+                    format!("{}", v as i64)
+                } else {
+                    format!("{v:.2}")
+                }
+            };
+            let rows: Vec<Vec<String>> = table
+                .group_by(gidx, vidx)
+                .into_iter()
+                .map(|g| {
+                    let avg = if g.numeric_count > 0 {
+                        g.sum / g.numeric_count as f64
+                    } else {
+                        0.0
+                    };
+                    vec![
+                        g.key,
+                        raw(g.sum),
+                        raw(avg),
+                        g.row_count.to_string(),
+                    ]
+                })
+                .collect();
+            (headers, rows)
+        } else {
+            let order = match sort {
+                Some(skey) => {
+                    let sidx = table.col_index(skey).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "'{skey}' 열을 찾을 수 없어요. 열: {}",
+                            table.headers.join(", ")
+                        )
+                    })?;
+                    table.sorted_rows(sidx, ascending)
+                }
+                None => (0..table.rows.len()).collect(),
+            };
+            let rows: Vec<Vec<String>> = order.iter().map(|&i| table.rows[i].clone()).collect();
+            (table.headers.clone(), rows)
+        };
+        let csv = sheet::to_csv(&out_headers, &out_rows);
+        util::atomic_write(Path::new(out), csv.as_bytes())
+            .map_err(|e| anyhow::anyhow!("저장 실패: {out} ({e})"))?;
+        println!();
+        println!(
+            "  💾 저장: {} ({}행)",
+            out.bright_yellow(),
+            out_rows.len()
+        );
+        println!();
+        return Ok(());
     }
 
     // 그룹별 집계(피벗): --그룹 지점 --열 매출액 → 지점별 매출 합계·평균.
@@ -3262,6 +3349,11 @@ fn cmd_excel(
         "  {} 조건 행만(조합 가능): {}",
         "팁".dimmed(),
         format!("wonjang 엑셀 {file} --필터 지역=서울").dimmed()
+    );
+    println!(
+        "  {} 결과를 새 CSV로: {}",
+        "팁".dimmed(),
+        format!("wonjang 엑셀 {file} --필터 지역=서울 --저장 서울만.csv").dimmed()
     );
     println!();
     Ok(())
