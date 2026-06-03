@@ -402,6 +402,15 @@ enum Commands {
         #[arg(long = "첨부")]
         attach: Vec<String>,
     },
+    /// 받은편지함에서 보낸이·제목으로 메일을 찾습니다. 예: wonjang 메일검색 영수증
+    #[command(name = "메일검색", alias = "메일찾기")]
+    MailSearch {
+        /// 검색어(보낸이 또는 제목에 포함)
+        query: String,
+        /// 검색할 최근 메일 범위(기본 100통)
+        #[arg(long = "최근", default_value_t = 100)]
+        scan: usize,
+    },
     /// 메일의 첨부파일을 저장합니다. 예: wonjang 메일첨부 1 --저장폴더 ~/Downloads
     #[command(name = "메일첨부", alias = "메일첨부저장")]
     MailAttach {
@@ -1099,6 +1108,7 @@ async fn run() -> Result<()> {
         Some(Commands::MailAttach { num, dir, unseen }) => {
             return cmd_mail_attach(*num, dir.as_deref(), *unseen)
         }
+        Some(Commands::MailSearch { query, scan }) => return cmd_mail_search(query, *scan),
         Some(Commands::MailSend {
             to,
             subject,
@@ -2206,6 +2216,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 메일 --안읽음", "받은편지함 목록(IMAP·앱비밀번호)"),
                 ("wonjang 메일읽기 1", "그 메일 본문 읽기(1=최신)"),
+                ("wonjang 메일검색 <키워드>", "보낸이·제목으로 메일 찾기"),
                 ("wonjang 메일첨부 1 --저장폴더 …", "메일 첨부파일 저장"),
                 (
                     "wonjang 메일보내기 --받는사람 … --첨부 파일",
@@ -3704,6 +3715,70 @@ fn cmd_mail_send(to: &str, subject: &str, body: &str, attach: &[String]) -> Resu
             format!(" (첨부 {}개)", attachments.len())
         }
     );
+    println!();
+    Ok(())
+}
+
+/// 받은편지함에서 보낸이·제목으로 메일을 찾는다(최근 N통을 받아 클라이언트 측 필터 — 한글 안전).
+fn cmd_mail_search(query: &str, scan: usize) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let cfg = match email::EmailConfig::from_env() {
+        Some(c) => c,
+        None => {
+            print_mail_setup_help();
+            return Ok(());
+        }
+    };
+    if query.trim().is_empty() {
+        anyhow::bail!("검색어를 입력해 주세요. 예: wonjang 메일검색 영수증");
+    }
+    ui::info(&format!(
+        "🔎 최근 {}통에서 '{}' 찾는 중…",
+        scan.max(1),
+        query
+    ));
+    let view = email::fetch_inbox(&cfg, scan.max(1), false)?;
+    // 원래 목록상 위치(1=최신)를 함께 보존 — 그래야 `메일읽기 <번호>`가 정확히 그 메일을 연다.
+    let hits: Vec<(usize, &email::MailHeader)> = view
+        .headers
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| email::matches_query(&h.from, &h.subject, query))
+        .collect();
+    println!();
+    println!(
+        "  🔎 '{}' — {}통 찾음 (최근 {}통 중)",
+        query.bright_white(),
+        hits.len().to_string().bright_yellow(),
+        view.headers.len()
+    );
+    if hits.is_empty() {
+        ui::info("     일치하는 메일이 없어요. 검색 범위를 넓혀보세요(--최근 300).");
+        println!();
+        return Ok(());
+    }
+    println!();
+    for (idx, h) in &hits {
+        let mark = if h.unseen {
+            "●".bright_yellow().to_string()
+        } else {
+            "·".dimmed().to_string()
+        };
+        let subject = if h.subject.chars().count() > 50 {
+            format!("{}…", h.subject.chars().take(50).collect::<String>())
+        } else {
+            h.subject.clone()
+        };
+        // 번호 = 받은편지함 최신순 위치(메일읽기와 동일).
+        println!("  {:>2}. {mark} {subject}", (idx + 1).to_string().dimmed());
+        println!(
+            "       {}  {}",
+            h.from.dimmed(),
+            short_mail_date(&h.date).dimmed()
+        );
+    }
+    println!();
+    ui::info("     (본문 읽기: wonjang 메일읽기 <번호> — 위 번호 그대로)");
     println!();
     Ok(())
 }

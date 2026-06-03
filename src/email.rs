@@ -170,6 +170,15 @@ fn guess_mime(filename: &str) -> lettre::message::header::ContentType {
         .unwrap_or_else(|_| ContentType::parse("application/octet-stream").unwrap())
 }
 
+/// 보낸이 또는 제목에 검색어가 들어 있는지(대소문자 무시, 한글 안전). 순수.
+pub fn matches_query(from: &str, subject: &str, query: &str) -> bool {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return false;
+    }
+    from.to_lowercase().contains(&q) || subject.to_lowercase().contains(&q)
+}
+
 /// 받은편지함 헤더 한 줄.
 pub struct MailHeader {
     pub seq: u32,
@@ -647,6 +656,24 @@ mod tests {
         let raw = String::from_utf8_lossy(&msg.formatted()).to_string();
         // 첨부 없으면 multipart가 아니어야 한다.
         assert!(!raw.contains("multipart/mixed"));
+    }
+
+    #[test]
+    fn query_matches_from_or_subject() {
+        assert!(super::matches_query(
+            "김부장 <kim@co.com>",
+            "회의록",
+            "김부장"
+        ));
+        assert!(super::matches_query(
+            "a@b.com",
+            "[영수증] 결제 완료",
+            "영수증"
+        ));
+        // 대소문자 무시.
+        assert!(super::matches_query("Boss@Co.com", "Report", "report"));
+        assert!(!super::matches_query("a@b.com", "안녕", "없는단어"));
+        assert!(!super::matches_query("a@b.com", "안녕", "   "));
     }
 
     #[test]
