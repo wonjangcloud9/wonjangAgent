@@ -465,6 +465,9 @@ enum Commands {
         /// 색 없이 출력(파이프·복붙용)
         #[arg(long = "no-color")]
         no_color: bool,
+        /// 카드를 클립보드에 복사(카톡·메모에 바로 붙여넣기)
+        #[arg(long = "복사")]
+        copy: bool,
     },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
@@ -1150,7 +1153,8 @@ async fn run() -> Result<()> {
             week,
             width,
             no_color,
-        }) => return cmd_brag(month.as_deref(), *week, *width, *no_color),
+            copy,
+        }) => return cmd_brag(month.as_deref(), *week, *width, *no_color, *copy),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
         Some(Commands::MailAttach { num, dir, unseen }) => {
@@ -2279,7 +2283,7 @@ fn cmd_guide() -> Result<()> {
             "📊 한눈에",
             &[
                 ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
-                ("wonjang 자랑", "회고 카드(주간 --주, 카톡 --폭 34)"),
+                ("wonjang 자랑 --복사", "회고 카드 → 클립보드(주간 --주)"),
                 ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
                 ("wonjang config", "설정·연동 상태"),
             ],
@@ -4293,11 +4297,17 @@ fn status_highlight(
 }
 
 /// 내 기록을 '자랑 카드' 한 장으로(카톡에 안 깨지는 ANSI 박스). 데이터는 읽기 전용.
-fn cmd_brag(month: Option<&str>, week: bool, width: usize, no_color: bool) -> Result<()> {
+fn cmd_brag(
+    month: Option<&str>,
+    week: bool,
+    width: usize,
+    no_color: bool,
+    copy: bool,
+) -> Result<()> {
     use owo_colors::OwoColorize;
 
     if week {
-        return cmd_brag_weekly(width, no_color);
+        return cmd_brag_weekly(width, no_color, copy);
     }
 
     // 대상 월(YYYY-MM)과 표시 제목.
@@ -4387,12 +4397,12 @@ fn cmd_brag(month: Option<&str>, week: bool, width: usize, no_color: bool) -> Re
         footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
     };
 
-    print_card(&card::render_card(&data, width), persona, no_color);
+    print_card(&card::render_card(&data, width), persona, no_color, copy);
     Ok(())
 }
 
-/// 카드 줄들을 출력한다(테두리만 페르소나 테마색, TTY가 아니거나 --no-color면 플레인).
-fn print_card(lines: &[String], persona: &str, no_color: bool) {
+/// 카드 줄들을 출력한다(테두리만 페르소나 테마색). `copy`면 플레인 텍스트를 클립보드에도.
+fn print_card(lines: &[String], persona: &str, no_color: bool, copy: bool) {
     use owo_colors::{AnsiColors, OwoColorize};
     use std::io::IsTerminal;
     let color = !no_color && std::io::stdout().is_terminal();
@@ -4412,14 +4422,20 @@ fn print_card(lines: &[String], persona: &str, no_color: bool) {
             println!("{line}");
         }
     }
-    if color {
-        ui::info("  카톡엔 --폭 34 가 딱 맞아요(복붙은 --no-color)");
+    if copy {
+        // lines는 색 없는 플레인 문자열 → 그대로 클립보드에(카톡·메모 붙여넣기용).
+        match clipboard::write(&lines.join("\n")) {
+            Ok(_) => ui::note("  📋 클립보드에 복사했어요 — 카톡·메모에 붙여넣으세요!"),
+            Err(e) => ui::error(&format!("클립보드 복사 실패: {e}")),
+        }
+    } else if color {
+        ui::info("  카톡엔 --폭 34, 복사는 --복사 가 편해요");
     }
     println!();
 }
 
 /// 주간 자랑 카드(이번 주 + 지난주 대비 ▲▼). 데이터 읽기 전용.
-fn cmd_brag_weekly(width: usize, no_color: bool) -> Result<()> {
+fn cmd_brag_weekly(width: usize, no_color: bool, copy: bool) -> Result<()> {
     use chrono::Datelike;
     use owo_colors::OwoColorize;
     let today = ddays::today();
@@ -4506,7 +4522,12 @@ fn cmd_brag_weekly(width: usize, no_color: bool) -> Result<()> {
         comment: card::weekly_comment(persona, f_delta),
         footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
     };
-    print_card(&card::render_weekly_card(&data, width), persona, no_color);
+    print_card(
+        &card::render_weekly_card(&data, width),
+        persona,
+        no_color,
+        copy,
+    );
     Ok(())
 }
 
