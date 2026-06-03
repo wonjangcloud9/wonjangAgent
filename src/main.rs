@@ -146,6 +146,7 @@ enum Commands {
     /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
     Skills,
     /// 약속·알림을 보거나 등록/삭제합니다.
+    #[command(aliases = ["약속", "알림"])]
     Remind {
         #[command(subcommand)]
         action: Option<RemindAction>,
@@ -163,6 +164,7 @@ enum Commands {
         message: Vec<String>,
     },
     /// 디데이(중요한 날까지 남은 일수)를 보거나 등록/삭제합니다.
+    #[command(alias = "디데이")]
     Dday {
         #[command(subcommand)]
         action: Option<DdayAction>,
