@@ -162,4 +162,32 @@ mod tests {
         assert_eq!(t, base.join("a (1).txt"));
         let _ = fs::remove_dir_all(&base);
     }
+
+    // 데이터 안전 핵심 불변식: 분류 폴더에 같은 이름 파일이 이미 있어도
+    // execute가 그것을 덮어쓰지 않고(원본 내용 보존) 새 파일은 " (N)"으로 옮긴다.
+    // (execute가 unique_target을 거치지 않게 바뀌면 무성 데이터 손실 → 이 테스트가 막는다)
+    #[test]
+    fn execute_collision_preserves_existing_content() {
+        let base = std::env::temp_dir().join("wonjang_org_collide");
+        let _ = fs::remove_dir_all(&base);
+        // 이미 분류된 문서/계약서.pdf(원본 A)가 있고, 루트에 동명(내용 B) 파일.
+        fs::create_dir_all(base.join("문서")).unwrap();
+        fs::write(base.join("문서/계약서.pdf"), b"AAA-original").unwrap();
+        fs::write(base.join("계약서.pdf"), b"BBB-incoming").unwrap();
+
+        let plans = plan(&base).unwrap();
+        let moved = execute(&base, &plans).unwrap();
+        assert_eq!(moved, 1);
+        // 원본 A는 그대로, 새 파일 B는 " (1)"로 들어와 둘 다 보존.
+        assert_eq!(
+            fs::read(base.join("문서/계약서.pdf")).unwrap(),
+            b"AAA-original",
+            "기존 파일이 덮어써졌다 — 데이터 손실!"
+        );
+        assert_eq!(
+            fs::read(base.join("문서/계약서 (1).pdf")).unwrap(),
+            b"BBB-incoming"
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
 }
