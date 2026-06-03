@@ -59,6 +59,39 @@ pub fn dday_label(days: i64) -> String {
     }
 }
 
+/// iCalendar 텍스트값 이스케이프(RFC 5545: `\` `;` `,` 줄바꿈).
+fn ics_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\n', "\\n")
+}
+
+/// 디데이들을 iCalendar(.ics) 문자열로 — 구글·애플 캘린더에 '가져오기'로 넣는다.
+/// 각 디데이는 해당 날짜의 종일(all-day) 일정이 된다. `dtstamp`는 호출부에서 현재 UTC로.
+pub fn to_ics(items: &[Dday], dtstamp: &str) -> String {
+    let mut out =
+        String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//wonjang//dday//KO\r\nCALSCALE:GREGORIAN\r\n");
+    for d in items {
+        let date = match NaiveDate::parse_from_str(&d.date, "%Y-%m-%d") {
+            Ok(dt) => dt,
+            Err(_) => continue, // 날짜 형식이 깨진 항목은 건너뜀
+        };
+        let start = date.format("%Y%m%d").to_string();
+        // 종일 일정의 DTEND는 다음 날(배타적, RFC 5545).
+        let end = (date + chrono::Duration::days(1)).format("%Y%m%d").to_string();
+        out.push_str("BEGIN:VEVENT\r\n");
+        out.push_str(&format!("UID:dday-{}@wonjang\r\n", d.id));
+        out.push_str(&format!("DTSTAMP:{dtstamp}\r\n"));
+        out.push_str(&format!("DTSTART;VALUE=DATE:{start}\r\n"));
+        out.push_str(&format!("DTEND;VALUE=DATE:{end}\r\n"));
+        out.push_str(&format!("SUMMARY:{}\r\n", ics_escape(&d.label)));
+        out.push_str("END:VEVENT\r\n");
+    }
+    out.push_str("END:VCALENDAR\r\n");
+    out
+}
+
 impl DdayStore {
     pub fn load() -> Result<Self> {
         let path = store_path()?;
@@ -146,6 +179,37 @@ mod tests {
         assert_eq!(dday_label(30), "D-30");
         assert_eq!(dday_label(0), "D-DAY");
         assert_eq!(dday_label(-5), "D+5");
+    }
+
+    #[test]
+    fn to_ics_makes_allday_events_and_escapes() {
+        let items = vec![
+            Dday {
+                id: 1,
+                label: "수능".into(),
+                date: "2026-11-19".into(),
+            },
+            Dday {
+                id: 2,
+                label: "회의, 발표".into(), // 콤마 이스케이프
+                date: "2026-07-15".into(),
+            },
+            Dday {
+                id: 3,
+                label: "깨진날짜".into(),
+                date: "엉망".into(), // 건너뜀
+            },
+        ];
+        let ics = to_ics(&items, "20260604T000000Z");
+        assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
+        assert!(ics.trim_end().ends_with("END:VCALENDAR"));
+        assert!(ics.contains("DTSTART;VALUE=DATE:20261119"));
+        assert!(ics.contains("DTEND;VALUE=DATE:20261120")); // +1일(배타적)
+        assert!(ics.contains("SUMMARY:수능"));
+        assert!(ics.contains("SUMMARY:회의\\, 발표")); // 콤마 이스케이프
+        assert!(ics.contains("UID:dday-1@wonjang"));
+        // 깨진 날짜는 이벤트 생성 안 함 → VEVENT 2개.
+        assert_eq!(ics.matches("BEGIN:VEVENT").count(), 2);
     }
 
     #[test]

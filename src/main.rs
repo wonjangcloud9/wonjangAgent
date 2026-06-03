@@ -1079,6 +1079,13 @@ enum DdayAction {
         /// 삭제할 디데이 id
         id: u64,
     },
+    /// 디데이들을 캘린더(.ics) 파일로 — 구글·애플 캘린더에 '가져오기'로 넣습니다.
+    #[command(name = "내보내기", alias = "ics")]
+    Export {
+        /// 저장 경로(생략 시 디데이.ics)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2334,6 +2341,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 할일 / todo", "할 일 체크리스트"),
                 ("wonjang dday add \"수능\" <날짜>", "디데이"),
+                ("wonjang 디데이 내보내기", "디데이를 캘린더(.ics)로"),
                 ("wonjang 집중 <분> [무엇]", "뽀모도로 타이머"),
             ],
         ),
@@ -6835,6 +6843,30 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             } else {
                 ui::error(&format!("디데이 #{id}을(를) 찾을 수 없습니다."));
             }
+        }
+        Some(DdayAction::Export { output }) => {
+            use owo_colors::OwoColorize;
+            use std::path::{Path, PathBuf};
+            if store.all().is_empty() {
+                ui::info("내보낼 디데이가 없어요. 추가: wonjang 디데이 add \"수능\" 2026-11-19");
+                return Ok(());
+            }
+            let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+            let ics = ddays::to_ics(store.all(), &stamp);
+            let out_path = match output {
+                Some(o) => PathBuf::from(o),
+                None => PathBuf::from("디데이.ics"),
+            };
+            util::atomic_write(Path::new(&out_path), ics.as_bytes())
+                .map_err(|e| anyhow::anyhow!("저장 실패: {} ({e})", out_path.display()))?;
+            println!();
+            println!(
+                "  📅 디데이 {}개를 캘린더 파일로 내보냈어요 → {}",
+                store.all().len(),
+                out_path.display().to_string().bright_yellow()
+            );
+            ui::note("     이 파일을 열면(더블클릭) 구글·애플 캘린더에 종일 일정으로 들어가요.");
+            println!();
         }
         None | Some(DdayAction::List) => {
             if store.all().is_empty() {
