@@ -236,9 +236,8 @@ pub struct MailFull {
     pub body: String,
 }
 
-/// 받은편지함에서 num번째(1=최신) 메일의 본문까지 읽는다. unseen_only면 안 읽은 것 중에서.
-pub fn fetch_message(cfg: &EmailConfig, num: usize, unseen_only: bool) -> Result<Option<MailFull>> {
-    use mailparse::MailHeaderMap;
+/// num번째(1=최신) 메일의 RFC822 원문 바이트를 가져온다(본문·첨부 공용). unseen_only면 안읽음 중에서.
+fn fetch_nth_raw(cfg: &EmailConfig, num: usize, unseen_only: bool) -> Result<Option<Vec<u8>>> {
     use std::collections::HashSet;
 
     let tls = tls_stream(&cfg.host, cfg.port)?;
@@ -274,7 +273,14 @@ pub fn fetch_message(cfg: &EmailConfig, num: usize, unseen_only: bool) -> Result
         .and_then(|f| f.body())
         .map(|b| b.to_vec());
     let _ = session.logout();
-    let raw = match raw {
+    Ok(raw)
+}
+
+/// 받은편지함에서 num번째(1=최신) 메일의 본문까지 읽는다. unseen_only면 안 읽은 것 중에서.
+pub fn fetch_message(cfg: &EmailConfig, num: usize, unseen_only: bool) -> Result<Option<MailFull>> {
+    use mailparse::MailHeaderMap;
+
+    let raw = match fetch_nth_raw(cfg, num, unseen_only)? {
         Some(r) => r,
         None => return Ok(None),
     };
@@ -294,6 +300,80 @@ pub fn fetch_message(cfg: &EmailConfig, num: usize, unseen_only: bool) -> Result
         date,
         body,
     }))
+}
+
+/// 메일 첨부파일 하나.
+pub struct Attachment {
+    pub filename: String,
+    pub bytes: Vec<u8>,
+}
+
+/// num번째 메일의 (제목, 첨부 목록)을 가져온다.
+pub fn fetch_attachments(
+    cfg: &EmailConfig,
+    num: usize,
+    unseen_only: bool,
+) -> Result<Option<(String, Vec<Attachment>)>> {
+    use mailparse::MailHeaderMap;
+    let raw = match fetch_nth_raw(cfg, num, unseen_only)? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let parsed = mailparse::parse_mail(&raw).context("메일을 해석하지 못했어요")?;
+    let subject = parsed
+        .headers
+        .get_first_value("Subject")
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "(제목 없음)".to_string());
+    Ok(Some((subject, extract_attachments(&parsed))))
+}
+
+/// 파싱된 메일에서 첨부파일(이름 있는 파트)을 모은다. 순수(테스트 가능).
+pub fn extract_attachments(parsed: &mailparse::ParsedMail) -> Vec<Attachment> {
+    fn collect(p: &mailparse::ParsedMail, out: &mut Vec<Attachment>) {
+        let disp = p.get_content_disposition();
+        let is_attach = disp.disposition == mailparse::DispositionType::Attachment;
+        let fname = disp
+            .params
+            .get("filename")
+            .cloned()
+            .or_else(|| p.ctype.params.get("name").cloned());
+        if p.subparts.is_empty() {
+            if let Some(name) = fname {
+                // 이름이 있거나 attachment로 표시된 파트만.
+                if is_attach || !name.trim().is_empty() {
+                    if let Ok(bytes) = p.get_body_raw() {
+                        out.push(Attachment {
+                            filename: safe_filename(&decode_mime_words(&name)),
+                            bytes,
+                        });
+                    }
+                }
+            }
+        }
+        for sp in &p.subparts {
+            collect(sp, out);
+        }
+    }
+    let mut out = Vec::new();
+    collect(parsed, &mut out);
+    out
+}
+
+/// 첨부 파일명을 안전하게(경로 요소 제거 — 디렉터리 탈출 방지). 순수.
+pub fn safe_filename(name: &str) -> String {
+    // 경로 구분자 뒤 마지막 요소만(/, \ 모두).
+    let base = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(name)
+        .trim()
+        .trim_matches('\u{0}');
+    if base.is_empty() || base == "." || base == ".." {
+        "attachment.bin".to_string()
+    } else {
+        base.to_string()
+    }
 }
 
 /// 멀티파트 메일에서 사람이 읽을 본문을 고른다(text/plain 우선 → text/html 태그제거 → 첫 본문).
@@ -530,6 +610,28 @@ mod tests {
         let eml = b"From: a@b.com\r\nSubject: t\r\nContent-Type: multipart/alternative; boundary=\"bb\"\r\n\r\n--bb\r\nContent-Type: text/plain; charset=\"UTF-8\"\r\n\r\n\xec\x95\x88\xeb\x85\x95 \xeb\xb3\xb8\xeb\xac\xb8\r\n--bb\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n<p>html</p>\r\n--bb--\r\n";
         let parsed = mailparse::parse_mail(eml).unwrap();
         assert_eq!(super::extract_readable_body(&parsed), "안녕 본문");
+    }
+
+    #[test]
+    fn safe_filename_strips_paths() {
+        assert_eq!(super::safe_filename("../../etc/passwd"), "passwd");
+        assert_eq!(super::safe_filename("a\\b\\보고서.pdf"), "보고서.pdf");
+        assert_eq!(super::safe_filename(".."), "attachment.bin");
+        assert_eq!(super::safe_filename("청구서.pdf"), "청구서.pdf");
+    }
+
+    #[test]
+    fn extracts_attachment_with_filename() {
+        // base64 첨부(text "hello") 파일명 "보고서.txt"(RFC2047 인코딩).
+        let b64 = base64::engine::general_purpose::STANDARD.encode("hello");
+        let eml = format!(
+            "Subject: t\r\nContent-Type: multipart/mixed; boundary=\"bb\"\r\n\r\n--bb\r\nContent-Type: text/plain\r\n\r\n본문\r\n--bb\r\nContent-Type: application/octet-stream; name=\"=?UTF-8?B?67O06rOg7IScLnR4dA==?=\"\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment\r\n\r\n{b64}\r\n--bb--\r\n"
+        );
+        let parsed = mailparse::parse_mail(eml.as_bytes()).unwrap();
+        let atts = super::extract_attachments(&parsed);
+        assert_eq!(atts.len(), 1);
+        assert_eq!(atts[0].filename, "보고서.txt");
+        assert_eq!(atts[0].bytes, b"hello");
     }
 
     #[test]

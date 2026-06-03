@@ -393,6 +393,19 @@ enum Commands {
         #[arg(long = "내용")]
         body: String,
     },
+    /// 메일의 첨부파일을 저장합니다. 예: wonjang 메일첨부 1 --저장폴더 ~/Downloads
+    #[command(name = "메일첨부", alias = "메일첨부저장")]
+    MailAttach {
+        /// 몇 번째 최신 메일인지(1=가장 최근, 기본 1)
+        #[arg(default_value_t = 1)]
+        num: usize,
+        /// 저장할 폴더(생략 시 현재 폴더)
+        #[arg(long = "저장폴더")]
+        dir: Option<String>,
+        /// 안 읽은 메일 중에서 고르기
+        #[arg(long = "안읽음")]
+        unseen: bool,
+    },
     /// 특정 메일의 본문을 읽습니다. 예: wonjang 메일읽기 1 (가장 최근)
     #[command(name = "메일읽기", alias = "메일내용")]
     MailRead {
@@ -1074,6 +1087,9 @@ async fn run() -> Result<()> {
         }) => return cmd_image(files, *width, *scale, *quality, output.as_deref()),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
+        Some(Commands::MailAttach { num, dir, unseen }) => {
+            return cmd_mail_attach(*num, dir.as_deref(), *unseen)
+        }
         Some(Commands::MailSend { to, subject, body }) => return cmd_mail_send(to, subject, body),
         Some(Commands::Encfix {
             file,
@@ -2171,6 +2187,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 메일 --안읽음", "받은편지함 목록(IMAP·앱비밀번호)"),
                 ("wonjang 메일읽기 1", "그 메일 본문 읽기(1=최신)"),
+                ("wonjang 메일첨부 1 --저장폴더 …", "메일 첨부파일 저장"),
                 (
                     "wonjang 메일보내기 --받는사람 …",
                     "메일 보내기(SMTP·제목·내용)",
@@ -3572,6 +3589,79 @@ fn cmd_mail_send(to: &str, subject: &str, body: &str) -> Result<()> {
     email::send_mail(&cfg, to, subject, body)?;
     println!();
     println!("  ✅ {} 에게 보냈어요!", to.bright_white());
+    println!();
+    Ok(())
+}
+
+/// 메일의 첨부파일을 폴더에 저장한다(파일명 충돌 시 (1),(2)… , 경로 탈출 방지).
+fn cmd_mail_attach(num: usize, dir: Option<&str>, unseen: bool) -> Result<()> {
+    use anyhow::Context;
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+    let cfg = match email::EmailConfig::from_env() {
+        Some(c) => c,
+        None => {
+            print_mail_setup_help();
+            return Ok(());
+        }
+    };
+    ui::info(&format!("📎 {}번째 메일의 첨부를 확인하는 중…", num.max(1)));
+    let (subject, atts) = match email::fetch_attachments(&cfg, num, unseen)? {
+        Some(v) => v,
+        None => {
+            ui::note(&format!(
+                "{}번째 메일이 없어요. `wonjang 메일`로 확인해 보세요.",
+                num.max(1)
+            ));
+            return Ok(());
+        }
+    };
+    println!();
+    println!("  📎 {}", subject.bright_white().bold());
+    if atts.is_empty() {
+        ui::info("     첨부파일이 없는 메일이에요.");
+        println!();
+        return Ok(());
+    }
+    let base = PathBuf::from(dir.unwrap_or("."));
+    if !base.exists() {
+        std::fs::create_dir_all(&base)
+            .with_context(|| format!("폴더를 만들지 못했어요: {}", base.display()))?;
+    }
+    let mut saved = 0usize;
+    for att in &atts {
+        // 파일명은 이미 email::safe_filename으로 경로 요소 제거됨.
+        let mut target = base.join(&att.filename);
+        // 충돌 시 이름 뒤에 (n) 붙이기(덮어쓰기 방지).
+        if target.exists() {
+            let stem = Path::new(&att.filename)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file");
+            let ext = Path::new(&att.filename)
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|e| format!(".{e}"))
+                .unwrap_or_default();
+            for n in 1..1000 {
+                let cand = base.join(format!("{stem} ({n}){ext}"));
+                if !cand.exists() {
+                    target = cand;
+                    break;
+                }
+            }
+        }
+        std::fs::write(&target, &att.bytes)
+            .with_context(|| format!("저장 실패: {}", target.display()))?;
+        saved += 1;
+        println!(
+            "     💾 {}  ({})",
+            target.display().to_string().bright_yellow(),
+            human_bytes(att.bytes.len() as u64)
+        );
+    }
+    println!();
+    println!("  ✅ 첨부 {}개 저장 완료", saved.to_string().bright_white());
     println!();
     Ok(())
 }
