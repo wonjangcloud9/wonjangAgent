@@ -133,6 +133,14 @@ impl ReminderStore {
     }
 }
 
+/// 데몬이 알림을 실제로 울릴지(소리/푸시) 판단한다. 처리(handle_fired)는 별개다.
+/// 예정 시각이 grace(1시간)보다 더 오래 지났으면 '밀린 백로그'로 보고 울리지 않는다 —
+/// 데몬을 오래 꺼 뒀다 켰을 때 지난 알림이 한꺼번에 폭주(스팸)하는 것을 막는다.
+pub const ALERT_GRACE_SECS: i64 = 3600;
+pub fn should_alert(at_unix: i64, now: i64) -> bool {
+    now - at_unix <= ALERT_GRACE_SECS
+}
+
 /// epoch 시각을 지금 기준 상대 표현으로(타임존 비의존).
 pub fn relative(at_unix: i64, now: i64) -> String {
     let diff = at_unix - now;
@@ -239,5 +247,15 @@ mod tests {
         assert_eq!(relative(now + 1800, now), "30분 후");
         assert_eq!(relative(now + 3600 + 600, now), "1시간 10분 후");
         assert_eq!(relative(now + 86400 * 2, now), "2일 후");
+    }
+
+    #[test]
+    fn stale_reminders_are_not_alerted() {
+        let now = 1_000_000;
+        assert!(should_alert(now - 10, now)); // 방금 지난 것: 울림
+        assert!(should_alert(now - ALERT_GRACE_SECS, now)); // 경계(정확히 1시간): 울림
+        assert!(!should_alert(now - ALERT_GRACE_SECS - 1, now)); // 1시간 초과: 침묵(백로그)
+        assert!(!should_alert(now - 86400, now)); // 하루 지남: 침묵
+        assert!(should_alert(now + 30, now)); // 막 도래(아직 미래여도): 울림 취급
     }
 }
