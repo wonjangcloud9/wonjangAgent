@@ -341,6 +341,18 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// PDF에 비밀번호를 걸어 보호합니다(민감 서류 제출용). 예: wonjang pdf암호 계약서.pdf --비번 mypw
+    #[command(name = "pdf암호", alias = "피디에프암호")]
+    PdfEncrypt {
+        /// PDF 파일 경로
+        file: String,
+        /// 걸 비밀번호(이 비번 없이는 못 엽니다)
+        #[arg(long = "비번")]
+        password: String,
+        /// 저장 경로(생략 시 원본 옆에 _암호 붙여 저장)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// 옆으로 스캔된 PDF를 돌립니다(90의 배수). 예: wonjang pdf회전 스캔.pdf 90
     #[command(name = "pdf회전", alias = "피디에프회전")]
     PdfRotate {
@@ -1139,6 +1151,11 @@ async fn run() -> Result<()> {
         Some(Commands::PdfMerge { files, output }) => {
             return cmd_pdf_merge(files, output.as_deref())
         }
+        Some(Commands::PdfEncrypt {
+            file,
+            password,
+            output,
+        }) => return cmd_pdf_encrypt(file, password, output.as_deref()),
         Some(Commands::PdfRotate {
             file,
             angle,
@@ -2224,6 +2241,10 @@ fn cmd_guide() -> Result<()> {
                     "옆으로 스캔된 PDF 돌리기(90의 배수)",
                 ),
                 (
+                    "wonjang pdf암호 <파일> --비번 …",
+                    "PDF에 비밀번호 걸기(AES-256)",
+                ),
+                (
                     "wonjang 깨짐 <파일.csv>",
                     "한글 깨진 파일(CP949)→UTF-8 복구",
                 ),
@@ -3150,6 +3171,74 @@ fn normalize_rotation(angle: i64) -> Result<i64> {
         anyhow::bail!("회전 각도는 90의 배수여야 해요(90, 180, 270, -90).");
     }
     Ok(angle.rem_euclid(360))
+}
+
+/// PDF에 비밀번호(AES-256)를 걸어 새 PDF로 저장한다(민감 서류 보호). 원본 보존.
+fn cmd_pdf_encrypt(file: &str, password: &str, output: Option<&str>) -> Result<()> {
+    use lopdf::encryption::crypt_filters::{Aes256CryptFilter, CryptFilter};
+    use lopdf::{EncryptionState, EncryptionVersion, Permissions};
+    use owo_colors::OwoColorize;
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    if password.is_empty() {
+        anyhow::bail!("비밀번호를 입력해 주세요(--비번 <비밀번호>).");
+    }
+    let path = Path::new(file);
+    if !path.exists() {
+        anyhow::bail!("파일을 찾을 수 없어요: {file}");
+    }
+    if !file.to_lowercase().ends_with(".pdf") {
+        anyhow::bail!("PDF 파일이 아니에요: {file}");
+    }
+    let mut doc = lopdf::Document::load(path).map_err(|e| {
+        anyhow::anyhow!("PDF를 열지 못했어요({e}). 손상됐거나 PDF가 아닐 수 있어요.")
+    })?;
+    if doc.is_encrypted() {
+        anyhow::bail!("이미 비밀번호가 걸린 PDF예요.");
+    }
+
+    // AES-256(V5)로 암호화 — 열 때 비밀번호가 필요하도록 user/owner 모두 설정.
+    let mut key = [0u8; 32];
+    getrandom::getrandom(&mut key).map_err(|e| anyhow::anyhow!("난수 생성 실패: {e}"))?;
+    let crypt_filter: Arc<dyn CryptFilter> = Arc::new(Aes256CryptFilter);
+    let version = EncryptionVersion::V5 {
+        encrypt_metadata: true,
+        crypt_filters: BTreeMap::from([(b"StdCF".to_vec(), crypt_filter)]),
+        file_encryption_key: &key,
+        stream_filter: b"StdCF".to_vec(),
+        string_filter: b"StdCF".to_vec(),
+        owner_password: password,
+        user_password: password,
+        permissions: Permissions::all(),
+    };
+    let state =
+        EncryptionState::try_from(version).map_err(|e| anyhow::anyhow!("암호화 설정 실패: {e}"))?;
+    doc.encrypt(&state)
+        .map_err(|e| anyhow::anyhow!("암호화 실패: {e}"))?;
+
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => {
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("pdf");
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            parent.join(format!("{stem}_암호.pdf"))
+        }
+    };
+    if out_path == path {
+        anyhow::bail!("출력 경로가 원본과 같아요. 원본 보존을 위해 다른 경로(--출력)를 쓰세요.");
+    }
+    doc.save(&out_path)?;
+    println!();
+    println!("  🔒 PDF에 비밀번호를 걸었어요 (AES-256)");
+    println!(
+        "     저장  {}",
+        out_path.display().to_string().bright_yellow()
+    );
+    ui::note("     ⚠ 이 비밀번호를 잊으면 파일을 열 수 없어요. 안전하게 보관하세요.");
+    println!();
+    Ok(())
 }
 
 /// PDF 페이지에 회전(/Rotate)을 적용해 새 PDF로 저장한다(옆으로 스캔된 서류 바로 세우기).
