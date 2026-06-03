@@ -61,11 +61,11 @@ pub async fn fetch(url: &str, max_len: usize) -> Result<String> {
         body
     };
     let mut out = format!("[{status}] {url}\n\n");
-    if text.len() > max_len {
-        out.push_str(&text[..max_len]);
-        out.push_str(&format!("\n… (본문이 길어 {max_len}자에서 잘림)"));
-    } else {
-        out.push_str(&text);
+    // 한글 본문 경계에서 패닉하지 않도록 문자 경계로 자른다.
+    let (cut, truncated) = crate::util::truncate_bytes(&text, max_len);
+    out.push_str(cut);
+    if truncated {
+        out.push_str(&format!("\n… (본문이 길어 약 {max_len}바이트에서 잘림)"));
     }
     Ok(out)
 }

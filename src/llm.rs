@@ -137,9 +137,11 @@ impl LlmClient {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n {
-        s.to_string()
+    // 한글·이모지 경계에서 패닉하지 않도록 문자 경계로 안전하게 자른다.
+    let (cut, truncated) = crate::util::truncate_bytes(s, n);
+    if truncated {
+        format!("{cut}…")
     } else {
-        format!("{}…", &s[..n])
+        cut.to_string()
     }
 }

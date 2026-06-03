@@ -39,12 +39,10 @@ impl Tool for ReadFileTool {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("파일을 읽을 수 없습니다: {path}"))?;
         const MAX: usize = 16000;
-        if content.len() > MAX {
-            Ok(format!(
-                "{}\n… (파일이 길어 {}자에서 잘림)",
-                &content[..MAX],
-                MAX
-            ))
+        // 한글 파일 경계에서 패닉하지 않도록 문자 경계로 자른다.
+        let (cut, truncated) = crate::util::truncate_bytes(&content, MAX);
+        if truncated {
+            Ok(format!("{cut}\n… (파일이 길어 약 {MAX}바이트에서 잘림)"))
         } else {
             Ok(content)
         }

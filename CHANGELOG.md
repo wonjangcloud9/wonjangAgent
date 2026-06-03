@@ -2,6 +2,10 @@
 
 원장 에이전트의 릴리스 기록입니다. 버전 형식은 [Semantic Versioning](https://semver.org/lang/ko/)을 따르며, npm 패키지([`wonjang-agent`](https://www.npmjs.com/package/wonjang-agent))와 GitHub Release가 동일한 태그(`vX.Y.Z`)로 발행됩니다.
 
+## 안정성·품질
+
+- **1.8.0** — 안정성 대청소(41개 서브에이전트 종합 감사로 발견·검증): ① **한국어 텍스트 패닉 4곳 수정** — 대화형 LLM 응답·`web_fetch`·`run_shell`·`read_file`가 한글/이모지의 UTF-8 바이트 경계에서 크래시하던 것을 문자 경계 안전 자르기 공용 헬퍼(`util::truncate_bytes`)로 해소(한국어 사용자에게 치명적이던 결함). ② **CP949/EUC-KR CSV 자동 인식** — 한국 엑셀·은행이 저장하는 CP949 CSV를 `엑셀`이 못 읽고 죽던 것 수정 + UTF-8 BOM 제거. ③ **PDF 페이지 범위 OOM 방지** — `pdf페이지 x.pdf 1-999999999`처럼 거대 범위가 펼쳐지며 멈추던 것을 펼치기 전 상한 검증으로 즉시 거부.
+
 ## 로컬 파일·비서 작업 (GPT가 못 하는 것)
 
 - **0.91.0** — 한글 깨짐 복구: EUC-KR/CP949로 저장돼 깨지는 파일(.csv·.txt)을 UTF-8로 복구(관공서·은행·옛 메모장). 원본 보존(`_utf8` 저장), 이미 UTF-8이면 건드리지 않음, `--되돌리기`로 UTF-8→CP949(옛 시스템 업로드용). encoding_rs (`깨짐`)

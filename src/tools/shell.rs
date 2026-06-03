@@ -144,13 +144,14 @@ fn pick_shell() -> (String, &'static str) {
     ("/bin/sh".to_string(), "-c")
 }
 
-/// 너무 긴 출력을 잘라 컨텍스트 폭주를 막는다.
+/// 너무 긴 출력을 잘라 컨텍스트 폭주를 막는다(한글 경계 안전).
 fn truncate(s: &str) -> String {
     const MAX: usize = 8000;
-    if s.len() <= MAX {
-        s.to_string()
+    let (cut, truncated) = crate::util::truncate_bytes(s, MAX);
+    if truncated {
+        format!("{cut}\n… (출력이 길어 {MAX}바이트에서 잘림)")
     } else {
-        format!("{}\n… (출력이 길어 {}자에서 잘림)", &s[..MAX], MAX)
+        cut.to_string()
     }
 }
 

@@ -3327,6 +3327,10 @@ fn parse_page_range(spec: &str, total: u32) -> Result<Vec<u32>> {
                 .parse()
                 .map_err(|_| anyhow::anyhow!("범위를 이해 못했어요: '{part}'"))?;
             let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            // 펼치기 전에 상한 검증(큰 범위로 메모리 폭주/멈춤 방지).
+            if hi > total {
+                anyhow::bail!("이 PDF는 {total}페이지인데 {hi}페이지를 요청했어요.");
+            }
             for p in lo..=hi {
                 set.insert(p);
             }
@@ -3334,6 +3338,9 @@ fn parse_page_range(spec: &str, total: u32) -> Result<Vec<u32>> {
             let p: u32 = part
                 .parse()
                 .map_err(|_| anyhow::anyhow!("페이지 번호를 이해 못했어요: '{part}'"))?;
+            if p > total {
+                anyhow::bail!("이 PDF는 {total}페이지인데 {p}페이지를 요청했어요.");
+            }
             set.insert(p);
         }
     }
@@ -3342,11 +3349,6 @@ fn parse_page_range(spec: &str, total: u32) -> Result<Vec<u32>> {
     }
     if set.is_empty() {
         anyhow::bail!("추출할 페이지를 지정해주세요. 예: 1-3,5");
-    }
-    if let Some(&mx) = set.iter().next_back() {
-        if mx > total {
-            anyhow::bail!("이 PDF는 {total}페이지인데 {mx}페이지를 요청했어요.");
-        }
     }
     Ok(set.into_iter().collect())
 }

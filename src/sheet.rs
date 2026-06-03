@@ -80,9 +80,19 @@ fn parse_num(s: &str) -> Option<f64> {
         .map(|v| if neg { -v } else { v })
 }
 
-/// CSV(또는 TSV) 파일을 읽는다.
+/// CSV(또는 TSV) 파일을 읽는다. UTF-8이 아니면 CP949(한국 엑셀·은행 CSV)로 폴백.
 fn load_csv(path: &str) -> Result<Table> {
-    let text = std::fs::read_to_string(path)?;
+    let bytes = std::fs::read(path)?;
+    let text = match std::str::from_utf8(&bytes) {
+        Ok(s) => s.to_string(),
+        // 윈도우 엑셀·은행 CSV는 CP949(EUC-KR)로 저장되는 경우가 많다.
+        Err(_) => encoding_rs::EUC_KR.decode(&bytes).0.into_owned(),
+    };
+    // 엑셀이 UTF-8로 저장할 때 붙이는 BOM(U+FEFF)을 제거(첫 열 이름 매칭 실패 방지).
+    let text = text
+        .strip_prefix('\u{feff}')
+        .map(str::to_string)
+        .unwrap_or(text);
     let delim = if path.to_lowercase().ends_with(".tsv") {
         '\t'
     } else {
