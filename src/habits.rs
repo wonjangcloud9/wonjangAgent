@@ -96,8 +96,15 @@ impl HabitStore {
     }
 
     pub fn add(&mut self, name: &str) -> Result<u64> {
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Habit {
             id,
             name: name.trim().to_string(),

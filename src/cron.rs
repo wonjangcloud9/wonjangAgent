@@ -73,8 +73,16 @@ impl CronStore {
     /// 새 작업을 추가한다(스케줄 유효성 검증 포함).
     pub fn add(&mut self, schedule: &str, prompt: &str) -> Result<u64> {
         parse_schedule(schedule)?; // 검증
-        self.next_id += 1;
-        let id = self.next_id;
+                                   // 기존 항목 id를 넘어서는 id 보장(백업복원·수기편집 후 ID 충돌 방지).
+        let id = self
+            .tasks
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.tasks.push(CronTask {
             id,
             schedule: schedule.trim().to_string(),

@@ -56,8 +56,15 @@ impl BookmarkStore {
         if name.is_empty() || target.trim().is_empty() {
             bail!("이름과 대상이 모두 필요합니다");
         }
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Bookmark {
             id,
             name: name.to_string(),

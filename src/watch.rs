@@ -65,8 +65,15 @@ impl WatchStore {
     /// 알림을 추가한다. `above`는 현재가 기준으로, `kind`는 "coin"/"fx".
     pub fn add(&mut self, symbol: &str, target: f64, above: bool, kind: &str) -> Result<u64> {
         let sym = symbol.trim().to_uppercase();
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Watch {
             id,
             market: format!("KRW-{sym}"),

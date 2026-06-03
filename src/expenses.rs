@@ -86,8 +86,15 @@ impl ExpenseStore {
         if amount <= 0 {
             bail!("금액은 1원 이상이어야 합니다");
         }
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Expense {
             id,
             amount,

@@ -84,8 +84,15 @@ impl DdayStore {
             bail!("디데이 이름이 필요합니다");
         }
         let parsed = parse_date(date)?;
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Dday {
             id,
             label: label.to_string(),

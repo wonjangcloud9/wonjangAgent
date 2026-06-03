@@ -76,8 +76,15 @@ impl FocusStore {
 
     /// 오늘 날짜로 집중 세션을 기록한다.
     pub fn add(&mut self, minutes: i64, label: &str) -> Result<u64> {
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(FocusSession {
             id,
             date: today_str(),

@@ -67,8 +67,15 @@ impl ReminderStore {
 
     /// 새 알림을 추가하고 id를 반환한다(`repeat_secs`가 있으면 반복).
     pub fn add(&mut self, at_unix: i64, title: &str, repeat_secs: Option<i64>) -> Result<u64> {
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Reminder {
             id,
             at_unix,

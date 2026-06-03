@@ -52,8 +52,15 @@ impl TodoStore {
     }
 
     pub fn add(&mut self, text: &str) -> Result<u64> {
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self
+            .items
+            .iter()
+            .map(|x| x.id)
+            .max()
+            .unwrap_or(0)
+            .max(self.next_id)
+            + 1;
+        self.next_id = id;
         self.items.push(Todo {
             id,
             text: text.trim().to_string(),
