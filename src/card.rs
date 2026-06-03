@@ -63,6 +63,18 @@ fn truncate_width(s: &str, max: usize) -> String {
     out
 }
 
+/// 표시폭 `width`에 맞춰 자르고(넘으면), 모자라면 오른쪽을 공백으로 채운다.
+/// 한글·전각이 섞인 표의 칸 정렬에 쓴다(엑셀 그룹 집계 등).
+pub fn truncate_pad(s: &str, width: usize) -> String {
+    let t = truncate_width(s, width);
+    let w = disp_width(&t);
+    if w < width {
+        format!("{t}{}", " ".repeat(width - w))
+    } else {
+        t
+    }
+}
+
 /// 내용 줄: `│ {body}{...공백} │` — 안쪽 폭 `inner`에 정확히 맞춘다.
 fn content(body: &str, inner: usize) -> String {
     let s = format!(" {body}");

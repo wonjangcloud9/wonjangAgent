@@ -55,6 +55,58 @@ impl Table {
             .filter_map(|s| parse_num(s))
             .collect()
     }
+
+    /// `group_idx` 열 값으로 묶어, `value_idx` 열의 합계·숫자개수·행수를 낸다.
+    /// 입력에서 처음 본 순서를 기억하되, 결과는 합계 내림차순으로 정렬해 돌려준다.
+    /// (피벗/그룹바이 — "지점별 매출 합계" 같은 가장 흔한 표 분석)
+    pub fn group_by(&self, group_idx: usize, value_idx: usize) -> Vec<GroupStat> {
+        use std::collections::HashMap;
+        let mut order: Vec<String> = Vec::new();
+        let mut map: HashMap<String, (f64, usize, usize)> = HashMap::new();
+        for row in &self.rows {
+            let raw = row.get(group_idx).map(|s| s.trim()).unwrap_or("");
+            let key = if raw.is_empty() {
+                "(빈값)".to_string()
+            } else {
+                raw.to_string()
+            };
+            let e = map.entry(key.clone()).or_insert_with(|| {
+                order.push(key.clone());
+                (0.0, 0, 0)
+            });
+            e.2 += 1; // 행 수
+            if let Some(v) = row.get(value_idx).and_then(|s| parse_num(s)) {
+                e.0 += v; // 합계
+                e.1 += 1; // 숫자 개수
+            }
+        }
+        let mut out: Vec<GroupStat> = order
+            .into_iter()
+            .map(|k| {
+                let (sum, nc, rc) = map[&k];
+                GroupStat {
+                    key: k,
+                    sum,
+                    numeric_count: nc,
+                    row_count: rc,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.sum
+                .partial_cmp(&a.sum)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        out
+    }
+}
+
+/// 그룹별 집계 한 줄(group_by 결과).
+pub struct GroupStat {
+    pub key: String,
+    pub sum: f64,
+    pub numeric_count: usize,
+    pub row_count: usize,
 }
 
 /// 통화기호·콤마·% 등을 떼고 숫자로 파싱.
@@ -252,6 +304,33 @@ mod tests {
         assert_eq!(nums, vec![1000.0, 2500.0, 3000.0]);
         // 빈 칸은 건너뛴다.
         assert_eq!(t.numeric_column(2), vec![3.0, 5.0]);
+    }
+
+    #[test]
+    fn group_by_sums_and_sorts() {
+        // 지점별 매출: 강남 1,000+2,000원, 홍대 500(+'미정' 제외), 빈 지점 1건
+        let t = Table {
+            headers: vec!["지점".into(), "매출".into()],
+            rows: vec![
+                vec!["강남".into(), "1,000원".into()],
+                vec!["홍대".into(), "500".into()],
+                vec!["강남".into(), "2,000원".into()],
+                vec!["홍대".into(), "미정".into()],
+                vec!["".into(), "300".into()],
+            ],
+        };
+        let g = t.group_by(0, 1);
+        // 합계 내림차순: 강남(3000) > 홍대(500) > (빈값)(300)
+        assert_eq!(g[0].key, "강남");
+        assert_eq!(g[0].sum, 3000.0);
+        assert_eq!(g[0].numeric_count, 2);
+        assert_eq!(g[0].row_count, 2);
+        assert_eq!(g[1].key, "홍대");
+        assert_eq!(g[1].sum, 500.0);
+        assert_eq!(g[1].numeric_count, 1); // '미정'은 숫자 아님 → 제외
+        assert_eq!(g[1].row_count, 2);
+        assert_eq!(g[2].key, "(빈값)"); // 빈 그룹값
+        assert_eq!(g[2].sum, 300.0);
     }
 
     #[test]

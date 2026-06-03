@@ -295,6 +295,9 @@ enum Commands {
         /// 특정 열의 통계(합계·평균·최대·최소). 열 이름 또는 번호
         #[arg(long = "열")]
         column: Option<String>,
+        /// 이 열로 묶어 집계(--열과 함께). 예: --그룹 지점 --열 매출액 → 지점별 매출 합계
+        #[arg(long = "그룹")]
+        group: Option<String>,
         /// 미리볼 행 수(기본 5)
         #[arg(long = "행", default_value_t = 5)]
         rows: usize,
@@ -1130,9 +1133,10 @@ async fn run() -> Result<()> {
         Some(Commands::Excel {
             file,
             column,
+            group,
             rows,
             json,
-        }) => return cmd_excel(file, column.as_deref(), *rows, *json),
+        }) => return cmd_excel(file, column.as_deref(), group.as_deref(), *rows, *json),
         Some(Commands::Image {
             files,
             width,
@@ -2337,6 +2341,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --열 금액",
                     "특정 열 합계·평균·최대·최소",
                 ),
+                (
+                    "wonjang 엑셀 <파일> --그룹 지점 --열 매출",
+                    "분류별 묶어 집계(피벗)",
+                ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
@@ -2977,7 +2985,29 @@ fn cmd_ddoganjip(
     Ok(())
 }
 
-fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize, json: bool) -> Result<()> {
+/// 통계 숫자를 깔끔히: 정수부엔 항상 천단위 콤마, 소수는 2자리까지(있을 때만).
+fn fmt_stat_num(v: f64) -> String {
+    let commas = |n: i64| expenses::won(n).trim_end_matches('원').to_string();
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        return commas(v as i64);
+    }
+    // 소수도 정수부에 콤마를 넣어 큰 평균이 '1616666.67'처럼 안 보이게.
+    let s = format!("{v:.2}"); // 반올림·자리올림은 여기서 정확히 처리됨
+    let (sign, body) = s.strip_prefix('-').map_or(("", s.as_str()), |b| ("-", b));
+    let (int_part, dec) = body.split_once('.').unwrap_or((body, "00"));
+    match int_part.parse::<i64>() {
+        Ok(n) => format!("{sign}{}.{dec}", commas(n)),
+        Err(_) => s, // 지나치게 큰 값이면 원본 그대로(드묾)
+    }
+}
+
+fn cmd_excel(
+    file: &str,
+    column: Option<&str>,
+    group: Option<&str>,
+    preview_rows: usize,
+    json: bool,
+) -> Result<()> {
     use owo_colors::OwoColorize;
     let table = sheet::Table::load(file)?;
 
@@ -3010,6 +3040,59 @@ fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize, json: bool) 
         table.headers.len()
     );
 
+    // 그룹별 집계(피벗): --그룹 지점 --열 매출액 → 지점별 매출 합계·평균.
+    if let Some(gkey) = group {
+        let gidx = table.col_index(gkey).ok_or_else(|| {
+            anyhow::anyhow!(
+                "'{gkey}' 열을 찾을 수 없어요. 열: {}",
+                table.headers.join(", ")
+            )
+        })?;
+        let vkey = column.ok_or_else(|| {
+            anyhow::anyhow!("--그룹은 집계할 --열과 함께 쓰세요. 예: --그룹 {gkey} --열 <숫자열>")
+        })?;
+        let vidx = table.col_index(vkey).ok_or_else(|| {
+            anyhow::anyhow!(
+                "'{vkey}' 열을 찾을 수 없어요. 열: {}",
+                table.headers.join(", ")
+            )
+        })?;
+        let groups = table.group_by(gidx, vidx);
+        println!();
+        println!(
+            "  📊 '{}'별 '{}' 집계 ({}개 그룹, 합계순)",
+            table.headers[gidx],
+            table.headers[vidx],
+            groups.len()
+        );
+        println!();
+        let namew = groups
+            .iter()
+            .map(|g| card::disp_width(&g.key))
+            .max()
+            .unwrap_or(4)
+            .clamp(4, 20);
+        let mut total = 0.0;
+        for g in &groups {
+            total += g.sum;
+            let name = card::truncate_pad(&g.key, namew);
+            let avg = if g.numeric_count > 0 {
+                g.sum / g.numeric_count as f64
+            } else {
+                0.0
+            };
+            println!(
+                "     {name}   합계 {}   평균 {}   ({}건)",
+                fmt_stat_num(g.sum).bright_white(),
+                fmt_stat_num(avg),
+                g.row_count
+            );
+        }
+        println!("     {}", format!("─ 전체 합계 {}", fmt_stat_num(total)).dimmed());
+        println!();
+        return Ok(());
+    }
+
     // 특정 열 통계.
     if let Some(key) = column {
         let idx = table.col_index(key).ok_or_else(|| {
@@ -3028,18 +3111,11 @@ fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize, json: bool) 
             let avg = sum / nums.len() as f64;
             let max = nums.iter().cloned().fold(f64::MIN, f64::max);
             let min = nums.iter().cloned().fold(f64::MAX, f64::min);
-            let fmt = |v: f64| {
-                if v.fract() == 0.0 && v.abs() < 1e15 {
-                    expenses::won(v as i64).trim_end_matches('원').to_string()
-                } else {
-                    format!("{v:.2}")
-                }
-            };
             println!("     개수   {}개 (숫자 {}개)", table.rows.len(), nums.len());
-            println!("     합계   {}", fmt(sum));
-            println!("     평균   {}", fmt(avg));
-            println!("     최대   {}", fmt(max));
-            println!("     최소   {}", fmt(min));
+            println!("     합계   {}", fmt_stat_num(sum));
+            println!("     평균   {}", fmt_stat_num(avg));
+            println!("     최대   {}", fmt_stat_num(max));
+            println!("     최소   {}", fmt_stat_num(min));
         }
         println!();
         return Ok(());
@@ -3071,6 +3147,11 @@ fn cmd_excel(file: &str, column: Option<&str>, preview_rows: usize, json: bool) 
         "  {} 특정 열 합계·평균: {}",
         "팁".dimmed(),
         format!("wonjang 엑셀 {file} --열 <열이름>").dimmed()
+    );
+    println!(
+        "  {} 묶어서 집계(피벗): {}",
+        "팁".dimmed(),
+        format!("wonjang 엑셀 {file} --그룹 <분류열> --열 <숫자열>").dimmed()
     );
     println!();
     Ok(())
