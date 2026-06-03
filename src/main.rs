@@ -5397,6 +5397,12 @@ fn cmd_pyeong(value: f64) -> Result<()> {
 fn cmd_age(birth: &str) -> Result<()> {
     let birth = age::parse_birth(birth)?;
     let today = chrono::Local::now().date_naive();
+    if birth > today {
+        anyhow::bail!(
+            "미래 날짜예요({}) — 생년월일을 다시 확인해 주세요.",
+            birth.format("%Y-%m-%d")
+        );
+    }
     let man = age::korean_age(birth, today);
     let yeon = age::year_age(birth, today);
     let dday = age::days_to_birthday(birth, today);
@@ -5442,6 +5448,9 @@ fn cmd_salary(manwon: f64) -> Result<()> {
 }
 
 fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
+    if months == 0 {
+        anyhow::bail!("개월 수는 1 이상이어야 해요. 예: wonjang 대출 30000 4.5 360");
+    }
     let principal = manwon * 10_000.0;
     let ep = loan::equal_payment(principal, rate, months);
     let pp = loan::equal_principal(principal, rate, months);
