@@ -145,12 +145,40 @@ impl HabitStore {
     }
 }
 
+/// 연속 일수가 기념할 만한 고비면 축하용 라벨을 돌려준다(자랑 카드 공유 유도 트리거).
+/// 흔치 않은 마일스톤에서만 떠 스팸이 되지 않는다.
+pub fn milestone(streak: i64) -> Option<&'static str> {
+    match streak {
+        7 => Some("일주일 연속 🎉"),
+        14 => Some("2주 연속 🎉"),
+        30 => Some("한 달 연속 🎊"),
+        50 => Some("50일 연속 🎊"),
+        100 => Some("백일 연속 🏆"),
+        200 => Some("200일 연속 🏆"),
+        365 => Some("1년 연속 👑"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn set(days: &[&str]) -> HashSet<String> {
         days.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn milestone_only_at_notable_streaks() {
+        assert_eq!(milestone(7), Some("일주일 연속 🎉"));
+        assert_eq!(milestone(30), Some("한 달 연속 🎊"));
+        assert_eq!(milestone(100), Some("백일 연속 🏆"));
+        assert_eq!(milestone(365), Some("1년 연속 👑"));
+        // 평범한 날엔 안 뜬다(매일 알림 스팸 방지).
+        assert_eq!(milestone(1), None);
+        assert_eq!(milestone(8), None);
+        assert_eq!(milestone(31), None);
+        assert_eq!(milestone(99), None);
     }
 
     #[test]

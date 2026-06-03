@@ -6556,7 +6556,19 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
             ui::note(&format!("습관 #{id} 추가: {name}. 오늘부터 시작해 봐요!"));
         }
         Some(HabitAction::Done { habit }) => match store.check(habit)? {
-            Some((name, streak)) => ui::note(&format!("'{name}' 완료! 🔥 {streak}일 연속")),
+            Some((name, streak)) => {
+                ui::note(&format!("'{name}' 완료! 🔥 {streak}일 연속"));
+                // 마일스톤이면 축하 + 자랑 카드 공유 유도(감정의 정점에서 전염 트리거).
+                if let Some(label) = habits::milestone(streak) {
+                    use owo_colors::OwoColorize;
+                    println!(
+                        "  🎉 {} {} 이 기록, 카드로 남겨 자랑해요 → {}",
+                        format!("{name} {label}").bright_yellow().bold(),
+                        "달성!".bright_yellow(),
+                        "wonjang 자랑 --복사".bright_cyan()
+                    );
+                }
+            }
             None => ui::error(&format!("'{habit}' 습관을 찾을 수 없습니다.")),
         },
         Some(HabitAction::Remove { id }) => {
