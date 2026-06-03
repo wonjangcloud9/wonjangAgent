@@ -298,6 +298,9 @@ enum Commands {
         /// 이 열로 묶어 집계(--열과 함께). 예: --그룹 지점 --열 매출액 → 지점별 매출 합계
         #[arg(long = "그룹")]
         group: Option<String>,
+        /// 조건에 맞는 행만(다른 분석과 조합). 예: --필터 지역=서울 · --필터 매출>1000000 (= != > < >= <= ~포함)
+        #[arg(long = "필터")]
+        filter: Option<String>,
         /// 이 열로 정렬해 상위 행 보기(기본 큰 값/늦은 가나다부터). 예: --정렬 매출액
         #[arg(long = "정렬")]
         sort: Option<String>,
@@ -1140,6 +1143,7 @@ async fn run() -> Result<()> {
             file,
             column,
             group,
+            filter,
             sort,
             ascending,
             rows,
@@ -1149,6 +1153,7 @@ async fn run() -> Result<()> {
                 file,
                 column.as_deref(),
                 group.as_deref(),
+                filter.as_deref(),
                 sort.as_deref(),
                 *ascending,
                 *rows,
@@ -2367,6 +2372,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --정렬 매출",
                     "그 열로 정렬해 상위 행",
                 ),
+                (
+                    "wonjang 엑셀 <파일> --필터 지역=서울",
+                    "조건 행만(정렬·집계와 조합)",
+                ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
@@ -3023,17 +3032,29 @@ fn fmt_stat_num(v: f64) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_excel(
     file: &str,
     column: Option<&str>,
     group: Option<&str>,
+    filter: Option<&str>,
     sort: Option<&str>,
     ascending: bool,
     preview_rows: usize,
     json: bool,
 ) -> Result<()> {
     use owo_colors::OwoColorize;
-    let table = sheet::Table::load(file)?;
+    let mut table = sheet::Table::load(file)?;
+
+    // 필터: 조건에 맞는 행만 남긴 새 표로 교체 → 이후 모든 분석이 부분집합 위에서.
+    let filter_note = match filter {
+        Some(expr) => {
+            let before = table.rows.len();
+            table = table.filtered(expr)?;
+            Some((expr, before, table.rows.len()))
+        }
+        None => None,
+    };
 
     // JSON 변환 모드: 표를 [{헤더: 값}] 배열로 출력.
     if json {
@@ -3063,6 +3084,18 @@ fn cmd_excel(
         table.rows.len(),
         table.headers.len()
     );
+    if let Some((expr, before, after)) = filter_note {
+        println!(
+            "  {} 필터 '{}': {before}행 중 {after}행",
+            "🔎".dimmed(),
+            expr.bright_white()
+        );
+        if after == 0 {
+            println!("     {}", "조건에 맞는 행이 없어요.".dimmed());
+            println!();
+            return Ok(());
+        }
+    }
 
     // 그룹별 집계(피벗): --그룹 지점 --열 매출액 → 지점별 매출 합계·평균.
     if let Some(gkey) = group {
@@ -3201,6 +3234,11 @@ fn cmd_excel(
         "  {} 정렬해서 상위 행: {}",
         "팁".dimmed(),
         format!("wonjang 엑셀 {file} --정렬 <열이름>").dimmed()
+    );
+    println!(
+        "  {} 조건 행만(조합 가능): {}",
+        "팁".dimmed(),
+        format!("wonjang 엑셀 {file} --필터 지역=서울").dimmed()
     );
     println!();
     Ok(())

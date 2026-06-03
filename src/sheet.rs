@@ -109,7 +109,88 @@ pub struct GroupStat {
     pub row_count: usize,
 }
 
+/// 필터 비교 연산자.
+#[derive(Clone, Copy, PartialEq)]
+enum FilterOp {
+    Eq,
+    Ne,
+    Gt,
+    Lt,
+    Ge,
+    Le,
+    Contains,
+}
+
 impl Table {
+    /// `열<연산>값` 식으로 행을 걸러 새 표를 만든다(원본 불변). 모든 분석 모드가
+    /// 걸러진 부분집합 위에서 그대로 동작한다(필터 → 집계/정렬/통계 조합).
+    /// 연산: `=` `!=` `>` `<` `>=` `<=` `~`(포함). 예: 지역=서울, 매출>1000000, 이름~상사.
+    pub fn filtered(&self, expr: &str) -> Result<Table> {
+        // 긴 연산자를 먼저 탐지(>=가 >·=보다, !=가 =보다 우선).
+        let ops: [(&str, FilterOp); 7] = [
+            (">=", FilterOp::Ge),
+            ("<=", FilterOp::Le),
+            ("!=", FilterOp::Ne),
+            ("~", FilterOp::Contains),
+            ("=", FilterOp::Eq),
+            (">", FilterOp::Gt),
+            ("<", FilterOp::Lt),
+        ];
+        let (col, op, val) = ops
+            .iter()
+            .find_map(|(s, o)| {
+                expr.find(s)
+                    .map(|pos| (expr[..pos].trim(), *o, expr[pos + s.len()..].trim()))
+            })
+            .ok_or_else(|| {
+                anyhow!("필터 형식이 이상해요. 예: 지역=서울 · 매출>1000000 · 이름~상사")
+            })?;
+        if col.is_empty() {
+            return Err(anyhow!("필터에 열 이름이 없어요. 예: 지역=서울"));
+        }
+        let idx = self.col_index(col).ok_or_else(|| {
+            anyhow!("'{col}' 열을 찾을 수 없어요. 열: {}", self.headers.join(", "))
+        })?;
+        let val_num = parse_num(val);
+        let matches = |cell: &str| -> bool {
+            let cell = cell.trim();
+            match op {
+                FilterOp::Contains => cell.contains(val),
+                FilterOp::Eq | FilterOp::Ne => {
+                    let eq = cell.eq_ignore_ascii_case(val)
+                        || parse_num(cell)
+                            .zip(val_num)
+                            .map_or(false, |(a, b)| a == b);
+                    if op == FilterOp::Eq {
+                        eq
+                    } else {
+                        !eq
+                    }
+                }
+                _ => match (parse_num(cell), val_num) {
+                    (Some(a), Some(b)) => match op {
+                        FilterOp::Gt => a > b,
+                        FilterOp::Lt => a < b,
+                        FilterOp::Ge => a >= b,
+                        FilterOp::Le => a <= b,
+                        _ => false,
+                    },
+                    _ => false, // 숫자 비교인데 셀이 숫자가 아니면 제외
+                },
+            }
+        };
+        let rows: Vec<Vec<String>> = self
+            .rows
+            .iter()
+            .filter(|row| matches(row.get(idx).map(|s| s.as_str()).unwrap_or("")))
+            .cloned()
+            .collect();
+        Ok(Table {
+            headers: self.headers.clone(),
+            rows,
+        })
+    }
+
     /// `idx` 열 기준으로 정렬한 행 인덱스를 돌려준다(원본은 안 건드림).
     /// 숫자로 읽히는 값이 항상 먼저(값 순), 숫자 아닌(빈칸·텍스트) 행은 뒤로.
     /// `ascending`=false면 숫자는 큰 값부터(상위 N 보기의 기본).
@@ -367,6 +448,31 @@ mod tests {
         assert_eq!(g[1].row_count, 2);
         assert_eq!(g[2].key, "(빈값)"); // 빈 그룹값
         assert_eq!(g[2].sum, 300.0);
+    }
+
+    #[test]
+    fn filtered_supports_ops() {
+        let t = Table {
+            headers: vec!["지역".into(), "매출".into()],
+            rows: vec![
+                vec!["서울".into(), "1,000".into()],
+                vec!["부산".into(), "3,000".into()],
+                vec!["서울".into(), "2,000".into()],
+                vec!["대구".into(), "500".into()],
+            ],
+        };
+        // 문자열 일치
+        assert_eq!(t.filtered("지역=서울").unwrap().rows.len(), 2);
+        assert_eq!(t.filtered("지역!=서울").unwrap().rows.len(), 2);
+        // 포함
+        assert_eq!(t.filtered("지역~부").unwrap().rows.len(), 1);
+        // 숫자 비교(콤마 든 값도 파싱)
+        assert_eq!(t.filtered("매출>1000").unwrap().rows.len(), 2); // 3000,2000
+        assert_eq!(t.filtered("매출>=2,000").unwrap().rows.len(), 2);
+        assert_eq!(t.filtered("매출<1000").unwrap().rows.len(), 1); // 500
+        // 없는 열 / 형식 오류
+        assert!(t.filtered("부서=영업").is_err());
+        assert!(t.filtered("지역서울").is_err());
     }
 
     #[test]
