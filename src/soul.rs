@@ -52,6 +52,8 @@ pub fn default_persona() -> &'static str {
 /// 프리셋 키로 페르소나 본문을 찾는다.
 pub fn preset(key: &str) -> Option<&'static str> {
     let k = key.trim();
+    // 별칭: README·온보딩이 기본 페르소나를 '다정'(다정한 비서)이라 부르므로 받아들인다.
+    let k = if k == "다정" { "기본" } else { k };
     PRESETS
         .iter()
         .find(|(name, _, _)| *name == k)
@@ -136,6 +138,13 @@ mod tests {
         assert!(preset("친구").unwrap().contains("반말"));
         assert!(preset("집사").unwrap().contains("주인님"));
         assert!(preset("없음").is_none());
+    }
+
+    #[test]
+    fn dajeong_alias_maps_to_default() {
+        // README·온보딩이 광고하는 '다정'이 기본(다정한 비서) 페르소나로 선택돼야 한다.
+        assert_eq!(preset("다정"), preset("기본"));
+        assert_eq!(preset("다정"), Some(default_persona()));
     }
 
     #[test]
