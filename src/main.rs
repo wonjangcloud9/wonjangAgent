@@ -1045,6 +1045,13 @@ enum ExpenseAction {
         /// 삭제할 지출 id
         id: u64,
     },
+    /// 모든 가계부 기록을 CSV로 내보냅니다(엑셀·wonjang 엑셀로 월별·분류별 분석). 예: wonjang 지출 내보내기
+    #[command(name = "내보내기", alias = "csv")]
+    Export {
+        /// 저장 경로(생략 시 가계부.csv)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2349,6 +2356,7 @@ fn cmd_guide() -> Result<()> {
             "📒 기록 & 지식",
             &[
                 ("wonjang 지출 add <금액> <분류>", "가계부"),
+                ("wonjang 지출 내보내기", "가계부를 CSV로(엑셀 분석)"),
                 ("wonjang 습관 done <이름>", "습관 트래커(연속일수)"),
                 ("wonjang 일기 \"<내용>\"", "간단 일기(월별 저장)"),
                 ("wonjang 일지/메모 (프리셋)", "옵시디언 노트"),
@@ -6735,6 +6743,47 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
             } else {
                 ui::error(&format!("지출 #{id}을(를) 찾을 수 없습니다."));
             }
+        }
+        Some(ExpenseAction::Export { output }) => {
+            use owo_colors::OwoColorize;
+            use std::path::{Path, PathBuf};
+            if store.items.is_empty() {
+                ui::info("내보낼 지출 기록이 없어요.");
+                return Ok(());
+            }
+            let headers = vec![
+                "날짜".to_string(),
+                "분류".into(),
+                "금액".into(),
+                "메모".into(),
+            ];
+            let rows: Vec<Vec<String>> = store
+                .items
+                .iter()
+                .map(|e| {
+                    vec![
+                        e.date.clone(),
+                        e.category.clone(),
+                        e.amount.to_string(), // 콤마 없는 원시 숫자(엑셀에서 숫자로 인식)
+                        e.note.clone(),
+                    ]
+                })
+                .collect();
+            let csv = sheet::to_csv(&headers, &rows);
+            let out_path = match output {
+                Some(o) => PathBuf::from(o),
+                None => PathBuf::from("가계부.csv"),
+            };
+            util::atomic_write(Path::new(&out_path), csv.as_bytes())
+                .map_err(|e| anyhow::anyhow!("저장 실패: {} ({e})", out_path.display()))?;
+            println!();
+            println!(
+                "  💾 가계부 {}건을 CSV로 내보냈어요 → {}",
+                store.items.len(),
+                out_path.display().to_string().bright_yellow()
+            );
+            ui::note("     분석: wonjang 엑셀 가계부.csv --그룹 분류 --열 금액");
+            println!();
         }
         Some(ExpenseAction::Month) => {
             let by = store.by_category_in_month(&ym);
