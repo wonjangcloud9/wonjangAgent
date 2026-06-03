@@ -1809,7 +1809,16 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
-        let mut store = cron::CronStore::load()?;
+        // 일시적 읽기 실패(동시 쓰기 중 파일 교체·I/O 순간 오류 등)로 데몬 전체가
+        // 죽으면 모든 알림이 조용히 멈춘다 → 로그만 남기고 이번 회차를 건너뛴다.
+        let mut store = match cron::CronStore::load() {
+            Ok(s) => s,
+            Err(e) => {
+                ui::error(&format!("예약 작업 목록을 읽지 못했어요(이번 회차 건너뜀): {e:#}"));
+                tokio::time::sleep(tick).await;
+                continue;
+            }
+        };
         let now = cron::now_ms();
         let due_ids: Vec<u64> = store
             .tasks
@@ -1825,8 +1834,21 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
             };
             ui::note(&format!("▶ 예약 작업 #{id} 실행: {prompt}"));
 
-            let mem = memory::Memory::load()?;
-            let skills = skill::SkillStore::load()?;
+            // 준비 단계 읽기 실패도 데몬을 죽이지 않고 이 작업만 건너뛴다(다음 틱에 재시도).
+            let mem = match memory::Memory::load() {
+                Ok(m) => m,
+                Err(e) => {
+                    ui::error(&format!("작업 #{id} 준비 실패(메모리 읽기, 건너뜀): {e:#}"));
+                    continue;
+                }
+            };
+            let skills = match skill::SkillStore::load() {
+                Ok(s) => s,
+                Err(e) => {
+                    ui::error(&format!("작업 #{id} 준비 실패(스킬 읽기, 건너뜀): {e:#}"));
+                    continue;
+                }
+            };
             let mut messages = vec![
                 Message::system(agent::system_prompt(
                     mem.prompt_block(),
