@@ -39,6 +39,16 @@ impl CliKind {
             CliKind::Codex => "Codex",
         }
     }
+
+    /// 이 백엔드 CLI가 PATH에 설치돼 있는지(프로세스 실행 없이 PATH 디렉터리만 확인).
+    /// 배너가 "연결됐어요"를 거짓으로 약속하지 않도록 가용성 판정에 쓴다.
+    pub fn is_available(&self) -> bool {
+        let bin = self.binary();
+        match std::env::var_os("PATH") {
+            Some(paths) => std::env::split_paths(&paths).any(|dir| dir.join(bin).is_file()),
+            None => false,
+        }
+    }
 }
 
 #[derive(Deserialize)]

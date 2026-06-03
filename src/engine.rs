@@ -34,9 +34,11 @@ pub fn resolve(cfg: &Config) -> Result<Backend> {
                 Ok(Backend::Codex)
             } else {
                 bail!(
-                    "사용할 백엔드를 찾지 못했습니다.\n  \
-                     - API 키를 설정하거나(예: export OPENROUTER_API_KEY=sk-...)\n  \
-                     - Claude Code(claude) 또는 Codex(codex) CLI를 설치/로그인하세요."
+                    "자연어(에이전트) 명령은 백엔드가 필요해요. 둘 중 하나로 연결하세요:\n  \
+                     - Claude Code(claude)나 Codex(codex) CLI 설치·로그인, 또는\n  \
+                     - API 키 설정(예: export OPENROUTER_API_KEY=sk-...)\n  \
+                     ※ 백엔드 없이도 지금 바로 됩니다 — \
+                     wonjang 자랑 · 습관 · 가계부 · 환율 · 날씨 · 엑셀 · pdf합치기 …  (전체: wonjang 도움)"
                 )
             }
         }
@@ -74,6 +76,15 @@ impl Engine {
         match self {
             Engine::Api { .. } => format!("API ({})", cfg.model),
             Engine::Cli(kind) => kind.label().to_string(),
+        }
+    }
+
+    /// 백엔드를 지금 바로 쓸 수 있는지(API는 항상 true, CLI는 바이너리 설치 여부).
+    /// 배너의 "연결됐어요" 약속이 참이 되도록 가드한다.
+    pub fn backend_ready(&self) -> bool {
+        match self {
+            Engine::Api { .. } => true,
+            Engine::Cli(kind) => kind.is_available(),
         }
     }
 }

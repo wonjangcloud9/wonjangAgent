@@ -1463,7 +1463,7 @@ async fn repl(
     messages: &mut Vec<Message>,
     sess: &session::Session,
 ) -> Result<()> {
-    ui::banner(&eng.label(cfg));
+    ui::banner(&eng.label(cfg), eng.backend_ready());
     ui::onboarding_if_first();
 
     loop {

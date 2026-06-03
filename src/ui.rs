@@ -86,7 +86,8 @@ pub fn tool_result(summary: &str) {
 }
 
 /// 환영 배너. `label`은 백엔드 표기("Claude Code"/"Codex"/"API (...)").
-pub fn banner(label: &str) {
+/// `ready`는 그 백엔드를 지금 바로 쓸 수 있는지(CLI 백엔드면 바이너리 설치 여부).
+pub fn banner(label: &str, ready: bool) {
     let version = env!("CARGO_PKG_VERSION");
     let keyless = !label.starts_with("API");
     use chrono::Datelike;
@@ -99,9 +100,16 @@ pub fn banner(label: &str) {
         "원장 에이전트".bright_cyan().bold(),
         format!("v{version}").dimmed()
     );
-    if keyless {
+    if keyless && ready {
         println!(
             "  🔑 키 없이 {}에 연결됐어요 — 바로 쓸 수 있어요",
+            label.bright_white()
+        );
+    } else if keyless {
+        // 백엔드 CLI가 아직 없을 때: 거짓 약속("연결됐어요") 대신 정직한 안내.
+        // 자연어(에이전트)만 그 CLI가 필요하고, 아래 빌트인 기능은 지금도 다 된다.
+        println!(
+            "  💡 {} 연결 전 — 설치·로그인하면 자연어 명령까지 (아래 기능들은 지금 바로 OK)",
             label.bright_white()
         );
     } else {
