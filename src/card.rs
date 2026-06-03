@@ -117,6 +117,17 @@ pub struct CardData {
     pub footer: String,
 }
 
+/// 잔디 줄이 `inner`(선행 공백 1칸 포함)를 넘으면 최신 날짜(뒤)를 보존하며 앞에서 줄인다.
+/// 잔디는 ▓░·공백 모두 1칸이라 글자 수 = 표시폭.
+fn fit_jandi_tail(jandi: &str, inner: usize) -> String {
+    let budget = inner.saturating_sub(1); // content가 앞에 공백 1칸을 더하므로.
+    let n = jandi.chars().count();
+    if n <= budget {
+        return jandi.to_string();
+    }
+    jandi.chars().skip(n - budget).collect()
+}
+
 /// 카드를 줄 단위 플레인 문자열로 렌더한다(색 없음 — 출력 측에서 입힘).
 /// 모든 줄의 `disp_width`가 동일(=width)함이 박스 정렬의 핵심 불변식.
 pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
@@ -130,7 +141,11 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
     }
     if !d.jandi.is_empty() {
         // 잔디는 폭이 커서(최대 31칸) 라벨 없이 한 줄 통째로 — 좁은 카톡 폭(34)에도 들어가게.
-        lines.push(content(&render_jandi(&d.jandi), inner));
+        // 더 좁아 다 못 담으면 '가장 중요한 최신 날짜'(뒤)를 보존하며 앞(오래된)부터 줄인다.
+        lines.push(content(
+            &fit_jandi_tail(&render_jandi(&d.jandi), inner),
+            inner,
+        ));
     }
     lines.push(row("🍅 이번 달 집중", &d.focus_label, inner, col));
     lines.push(row("💰 이번 달 지출", &d.expense_label, inner, col));
@@ -344,7 +359,8 @@ mod tests {
             comment: "운동 13일 연속, 너 좀 멋진데? 🙌".into(),
             footer: "wonjang · v1.9.0".into(),
         };
-        for width in [34usize, 40, 46, 52] {
+        // 좁은 폭(30~33)도 포함 — 적대적 리뷰가 미커버라 지적한 구간.
+        for width in [30usize, 31, 32, 33, 34, 40, 46, 52] {
             let lines = render_card(&d, width);
             for (i, line) in lines.iter().enumerate() {
                 assert_eq!(
@@ -355,6 +371,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn narrow_jandi_keeps_newest_days() {
+        // 최신 날(맨 뒤)만 ▓, 나머지 ░ → 좁은 폭에서 잘려도 최신 ▓가 보존돼야.
+        let mut jandi = vec![false; 28];
+        jandi[27] = true; // 오늘(최신) 완료
+        let d = CardData {
+            title: "t".into(),
+            streak: None,
+            jandi,
+            focus_label: "1시간".into(),
+            expense_label: "0원".into(),
+            dday: None,
+            journal_count: 0,
+            comment: "x".into(),
+            footer: "wonjang".into(),
+        };
+        let lines = render_card(&d, 32); // inner=30, 잔디 31 > 30 → 앞부터 잘림
+        let jandi_line = &lines[1]; // 0=상단테두리, 1=잔디(streak None이라)
+        assert!(
+            jandi_line.contains('▓'),
+            "최신 ▓가 보존돼야: {jandi_line:?}"
+        );
+        assert_eq!(disp_width(jandi_line), 32);
     }
 
     #[test]
