@@ -13,8 +13,13 @@ pub struct Table {
 }
 
 impl Table {
-    /// 확장자에 따라 CSV 또는 엑셀로 읽는다.
+    /// 확장자에 따라 CSV 또는 엑셀(첫 시트)로 읽는다.
     pub fn load(path: &str) -> Result<Table> {
+        Self::load_sheet(path, None)
+    }
+
+    /// 엑셀이면 지정 시트(이름 또는 1-기반 번호; 생략 시 첫 시트)를, CSV면 그대로 읽는다.
+    pub fn load_sheet(path: &str, sheet: Option<&str>) -> Result<Table> {
         if !Path::new(path).exists() {
             return Err(anyhow!("파일을 찾을 수 없어요: {path}"));
         }
@@ -24,8 +29,8 @@ impl Table {
             .unwrap_or("")
             .to_lowercase();
         match ext.as_str() {
-            "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" => load_spreadsheet(path),
-            _ => load_csv(path),
+            "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" => load_spreadsheet(path, sheet),
+            _ => load_csv(path), // CSV는 시트 개념이 없어 sheet 무시
         }
     }
 
@@ -337,13 +342,56 @@ fn parse_csv_line(line: &str, delim: char) -> Vec<String> {
 }
 
 /// 엑셀 계열 파일을 calamine으로 읽는다(첫 시트).
-fn load_spreadsheet(path: &str) -> Result<Table> {
+/// 엑셀 파일의 시트 이름 목록(CSV·열기 실패 시 빈 Vec). 다중 시트 안내·선택에 쓴다.
+pub fn list_sheets(path: &str) -> Vec<String> {
+    use calamine::{open_workbook_auto, Reader};
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !matches!(ext.as_str(), "xlsx" | "xls" | "xlsm" | "xlsb" | "ods") {
+        return Vec::new();
+    }
+    match open_workbook_auto(path) {
+        Ok(wb) => wb.sheet_names().to_vec(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn load_spreadsheet(path: &str, sheet: Option<&str>) -> Result<Table> {
     use calamine::{open_workbook_auto, Data, Reader};
     let mut wb = open_workbook_auto(path).map_err(|e| anyhow!("엑셀을 열 수 없어요: {e}"))?;
-    let range = wb
-        .worksheet_range_at(0)
-        .ok_or_else(|| anyhow!("시트가 없어요"))?
-        .map_err(|e| anyhow!("시트를 읽을 수 없어요: {e}"))?;
+    let names: Vec<String> = wb.sheet_names().to_vec();
+    if names.is_empty() {
+        return Err(anyhow!("시트가 없어요"));
+    }
+    let range = match sheet.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        None => wb
+            .worksheet_range_at(0)
+            .ok_or_else(|| anyhow!("시트가 없어요"))?
+            .map_err(|e| anyhow!("시트를 읽을 수 없어요: {e}"))?,
+        Some(s) => {
+            // 1-기반 번호 우선, 아니면 이름(대소문자·공백 무시) 매칭.
+            match s.parse::<usize>().ok().filter(|n| *n >= 1 && *n <= names.len()) {
+                Some(n) => wb
+                    .worksheet_range_at(n - 1)
+                    .ok_or_else(|| anyhow!("시트가 없어요"))?
+                    .map_err(|e| anyhow!("시트를 읽을 수 없어요: {e}"))?,
+                None => match names.iter().find(|nm| nm.trim().eq_ignore_ascii_case(s)) {
+                    Some(nm) => wb
+                        .worksheet_range(nm)
+                        .map_err(|e| anyhow!("시트를 읽을 수 없어요: {e}"))?,
+                    None => {
+                        return Err(anyhow!(
+                            "'{s}' 시트를 찾을 수 없어요. 시트: {}",
+                            names.join(" · ")
+                        ))
+                    }
+                },
+            }
+        }
+    };
 
     let cell = |d: &Data| -> String {
         match d {

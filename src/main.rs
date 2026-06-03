@@ -298,6 +298,9 @@ enum Commands {
         /// 이 열로 묶어 집계(--열과 함께). 예: --그룹 지점 --열 매출액 → 지점별 매출 합계
         #[arg(long = "그룹")]
         group: Option<String>,
+        /// 엑셀 다중 시트에서 분석할 시트(이름 또는 1-기반 번호). 생략 시 첫 시트
+        #[arg(long = "시트")]
+        sheet: Option<String>,
         /// 조건에 맞는 행만(다른 분석과 조합). 예: --필터 지역=서울 · --필터 매출>1000000 (= != > < >= <= ~포함)
         #[arg(long = "필터")]
         filter: Option<String>,
@@ -1143,6 +1146,7 @@ async fn run() -> Result<()> {
             file,
             column,
             group,
+            sheet,
             filter,
             sort,
             ascending,
@@ -1153,6 +1157,7 @@ async fn run() -> Result<()> {
                 file,
                 column.as_deref(),
                 group.as_deref(),
+                sheet.as_deref(),
                 filter.as_deref(),
                 sort.as_deref(),
                 *ascending,
@@ -2376,6 +2381,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --필터 지역=서울",
                     "조건 행만(정렬·집계와 조합)",
                 ),
+                (
+                    "wonjang 엑셀 <파일.xlsx> --시트 재고",
+                    "엑셀 다중 시트에서 선택",
+                ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
@@ -3037,6 +3046,7 @@ fn cmd_excel(
     file: &str,
     column: Option<&str>,
     group: Option<&str>,
+    sheet: Option<&str>,
     filter: Option<&str>,
     sort: Option<&str>,
     ascending: bool,
@@ -3044,7 +3054,7 @@ fn cmd_excel(
     json: bool,
 ) -> Result<()> {
     use owo_colors::OwoColorize;
-    let mut table = sheet::Table::load(file)?;
+    let mut table = sheet::Table::load_sheet(file, sheet)?;
 
     // 필터: 조건에 맞는 행만 남긴 새 표로 교체 → 이후 모든 분석이 부분집합 위에서.
     let filter_note = match filter {
@@ -3084,6 +3094,19 @@ fn cmd_excel(
         table.rows.len(),
         table.headers.len()
     );
+    // 다중 시트 엑셀이면 어떤 시트들이 있는지 알려준다(다른 탭 분석 유도).
+    let sheets = sheet::list_sheets(file);
+    if sheets.len() > 1 {
+        let cur = sheet.unwrap_or(&sheets[0]);
+        println!(
+            "  {} 시트 {}개 [{}]: {} {}",
+            "🗂".dimmed(),
+            sheets.len(),
+            cur.bright_white(),
+            sheets.join(" · ").dimmed(),
+            "(--시트 <이름>으로 전환)".dimmed()
+        );
+    }
     if let Some((expr, before, after)) = filter_note {
         println!(
             "  {} 필터 '{}': {before}행 중 {after}행",
