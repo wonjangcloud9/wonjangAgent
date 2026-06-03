@@ -14,6 +14,7 @@ mod bmr;
 mod bookmarks;
 mod briefing;
 mod calc;
+mod card;
 mod charcount;
 mod cli_backend;
 mod clipboard;
@@ -448,6 +449,19 @@ enum Commands {
         /// 안 읽은 메일 중에서 고르기
         #[arg(long = "안읽음")]
         unseen: bool,
+    },
+    /// 이번 달 내 기록을 자랑 카드 한 장으로(습관 잔디·집중·지출·D-day). 예: wonjang 자랑
+    #[command(alias = "자랑")]
+    Brag {
+        /// 특정 달(YYYY-MM, 기본 이번 달)
+        #[arg(long = "달")]
+        month: Option<String>,
+        /// 박스 폭(기본 46, 카톡엔 34 권장)
+        #[arg(long = "폭", default_value_t = 46)]
+        width: usize,
+        /// 색 없이 출력(파이프·복붙용)
+        #[arg(long = "no-color")]
+        no_color: bool,
     },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
@@ -1128,6 +1142,11 @@ async fn run() -> Result<()> {
                 output.as_deref(),
             )
         }
+        Some(Commands::Brag {
+            month,
+            width,
+            no_color,
+        }) => return cmd_brag(month.as_deref(), *width, *no_color),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
         Some(Commands::MailAttach { num, dir, unseen }) => {
@@ -2267,6 +2286,7 @@ fn cmd_guide() -> Result<()> {
             "📊 한눈에",
             &[
                 ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
+                ("wonjang 자랑", "이번 달 회고 카드(카톡 공유, --폭 34)"),
                 ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
                 ("wonjang config", "설정·연동 상태"),
             ],
@@ -4273,6 +4293,123 @@ fn status_highlight(
         ));
     }
     None
+}
+
+/// 이번 달 내 기록을 '자랑 카드' 한 장으로(카톡에 안 깨지는 ANSI 박스). 데이터는 읽기 전용.
+fn cmd_brag(month: Option<&str>, width: usize, no_color: bool) -> Result<()> {
+    use owo_colors::{AnsiColors, OwoColorize};
+    use std::io::IsTerminal;
+
+    // 대상 월(YYYY-MM)과 표시 제목.
+    let ym = match month {
+        Some(m) => m.trim().to_string(),
+        None => expenses::this_month(),
+    };
+    let title = match ym.split_once('-') {
+        Some((y, mo)) => format!("{y}년 {}월", mo.trim_start_matches('0')),
+        None => ym.clone(),
+    };
+
+    // 습관: 가장 긴 streak + 그 습관의 최근 28일 잔디.
+    let habit_store = habits::HabitStore::load().unwrap_or_default();
+    let today = habits::today();
+    let mut best: Option<(String, i64, std::collections::HashSet<String>)> = None;
+    for h in &habit_store.items {
+        let s = h.streak(today);
+        if best.as_ref().map(|(_, bs, _)| s > *bs).unwrap_or(true) {
+            best = Some((h.name.clone(), s, h.date_set()));
+        }
+    }
+    let streak = best.as_ref().map(|(n, s, _)| (n.clone(), *s));
+    let jandi: Vec<bool> = match &best {
+        Some((_, _, set)) => (0..28)
+            .rev()
+            .map(|i| {
+                let d = today - chrono::Duration::days(i);
+                set.contains(&d.format("%Y-%m-%d").to_string())
+            })
+            .collect(),
+        None => Vec::new(),
+    };
+
+    // 집중·지출(월 합계), 디데이(가까운 미래), 일기(이번 달 기록 수).
+    let foc = focus::FocusStore::load().unwrap_or_default();
+    let focus_min: i64 = (1..=31)
+        .map(|day| foc.today_total(&format!("{ym}-{day:02}")))
+        .sum();
+    let exp = expenses::ExpenseStore::load().unwrap_or_default();
+    let expense_won = exp.total_in_month(&ym);
+    let dd = ddays::DdayStore::load().unwrap_or_default();
+    let td = ddays::today();
+    let dday = dd
+        .all()
+        .iter()
+        .filter_map(|d| {
+            ddays::parse_date(&d.date)
+                .ok()
+                .map(|dt| (ddays::days_until(dt, td), d.label.clone()))
+        })
+        .filter(|(days, _)| *days >= 0)
+        .min_by_key(|(days, _)| *days)
+        .map(|(days, label)| format!("{label} {}", ddays::dday_label(days)));
+    let journal_count = journal::this_month().map(|v| v.len()).unwrap_or(0);
+
+    // 데이터가 없으면 카드 대신 '시작하기' 한 줄(수집→자랑 루프의 출발점).
+    let has_data = !habit_store.items.is_empty()
+        || focus_min > 0
+        || expense_won > 0
+        || dday.is_some()
+        || journal_count > 0;
+    if !has_data {
+        println!();
+        ui::note("아직 자랑할 게 쌓이지 않았어요. 습관 하나만 시작해봐요:");
+        println!("  {}", "wonjang 습관 add 운동".bright_cyan());
+        ui::info("  매일 'wonjang 습관 done 운동' 하면, 한 달 뒤 자랑할 카드가 생겨요 🌱");
+        println!();
+        return Ok(());
+    }
+
+    let persona = soul::active_preset_key();
+    let comment = card::card_comment(
+        persona,
+        streak.as_ref().map(|(_, s)| *s).unwrap_or(0),
+        streak.as_ref().map(|(n, _)| n.as_str()).unwrap_or("습관"),
+    );
+    let data = card::CardData {
+        title,
+        streak,
+        jandi,
+        focus_label: focus::fmt_minutes(focus_min),
+        expense_label: expenses::won(expense_won),
+        dday,
+        journal_count,
+        comment,
+        footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
+    };
+
+    let lines = card::render_card(&data, width);
+    let color = !no_color && std::io::stdout().is_terminal();
+    let theme = match persona {
+        "친구" => AnsiColors::Green,
+        "집사" => AnsiColors::Yellow,
+        "선배" => AnsiColors::White,
+        "발랄" => AnsiColors::Magenta,
+        _ => AnsiColors::Cyan,
+    };
+    println!();
+    for line in &lines {
+        let is_border = line.starts_with('╭') || line.starts_with('├') || line.starts_with('╰');
+        if color && is_border {
+            println!("{}", line.color(theme));
+        } else {
+            println!("{line}");
+        }
+    }
+    if color {
+        ui::info("  카톡엔 wonjang 자랑 --폭 34 가 딱 맞아요");
+    }
+    println!();
+    Ok(())
 }
 
 fn cmd_status() -> Result<()> {
