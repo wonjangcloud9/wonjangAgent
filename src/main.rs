@@ -314,7 +314,10 @@ enum Commands {
         /// JPEG 압축 품질(1~100, 기본 80)
         #[arg(long = "품질", default_value_t = 80)]
         quality: u8,
-        /// 저장 경로(생략 시 원본 옆에 _작게 붙여 저장)
+        /// 출력 형식 변환(jpg 또는 png). 생략 시 원본과 같은 형식
+        #[arg(long = "형식")]
+        format: Option<String>,
+        /// 저장 경로(생략 시 원본 옆에 _작게/_변환 붙여 저장)
         #[arg(long = "출력")]
         output: Option<String>,
     },
@@ -1101,8 +1104,18 @@ async fn run() -> Result<()> {
             width,
             scale,
             quality,
+            format,
             output,
-        }) => return cmd_image(files, *width, *scale, *quality, output.as_deref()),
+        }) => {
+            return cmd_image(
+                files,
+                *width,
+                *scale,
+                *quality,
+                format.as_deref(),
+                output.as_deref(),
+            )
+        }
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
         Some(Commands::MailAttach { num, dir, unseen }) => {
@@ -2192,7 +2205,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 (
                     "wonjang 이미지 <사진들> --폭 1280",
-                    "이미지 축소·압축(여러 장, 원본 보존)",
+                    "이미지 축소·압축(여러 장, --형식 jpg/png)",
                 ),
                 (
                     "wonjang 사진묶기 *.jpg",
@@ -3951,6 +3964,7 @@ fn cmd_image(
     width: Option<u32>,
     scale: Option<f64>,
     quality: u8,
+    format: Option<&str>,
     output: Option<&str>,
 ) -> Result<()> {
     if output.is_some() && files.len() > 1 {
@@ -3961,7 +3975,7 @@ fn cmd_image(
     let mut ok = 0usize;
     let mut failed = 0usize;
     for f in files {
-        match resize_one_image(f, width, scale, quality, output) {
+        match resize_one_image(f, width, scale, quality, format, output) {
             Ok(()) => ok += 1,
             Err(e) => {
                 failed += 1;
@@ -3986,12 +4000,13 @@ fn cmd_image(
     Ok(())
 }
 
-/// 이미지 한 장을 줄여 _작게(또는 --출력)로 저장한다.
+/// 이미지 한 장을 줄이거나/형식 변환해 _작게·_변환(또는 --출력)으로 저장한다.
 fn resize_one_image(
     file: &str,
     width: Option<u32>,
     scale: Option<f64>,
     quality: u8,
+    format: Option<&str>,
     output: Option<&str>,
 ) -> Result<()> {
     use owo_colors::OwoColorize;
@@ -4005,11 +4020,29 @@ fn resize_one_image(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    let is_jpeg = matches!(ext.as_str(), "jpg" | "jpeg");
-    let is_png = ext == "png";
-    if !is_jpeg && !is_png {
+    let src_jpeg = matches!(ext.as_str(), "jpg" | "jpeg");
+    let src_png = ext == "png";
+    if !src_jpeg && !src_png {
         anyhow::bail!("JPEG·PNG만 지원해요(받은 형식: .{ext}). HEIC·WebP는 아직 미지원이에요.");
     }
+    // 목표 형식(--형식 우선, 없으면 원본 형식).
+    let target_ext = match format {
+        Some(f) => match f.to_lowercase().as_str() {
+            "jpg" | "jpeg" => "jpg".to_string(),
+            "png" => "png".to_string(),
+            other => anyhow::bail!("형식은 jpg 또는 png만 돼요(받은 값: {other})."),
+        },
+        None => {
+            if src_jpeg {
+                "jpg".to_string()
+            } else {
+                "png".to_string()
+            }
+        }
+    };
+    let target_jpeg = target_ext == "jpg";
+    let converting = (target_jpeg && !src_jpeg) || (!target_jpeg && !src_png);
+
     let orig_bytes = std::fs::metadata(path)?.len();
     let img = open_image_oriented(path)?;
     let (w, h) = (img.width(), img.height());
@@ -4021,13 +4054,14 @@ fn resize_one_image(
         img
     };
 
-    // 출력 경로: 기본은 원본 옆에 _작게 접미사(원본 절대 덮어쓰지 않음).
+    // 출력 경로: 기본은 원본 옆에 접미사(형식 변환은 _변환, 아니면 _작게). 원본 절대 덮어쓰지 않음.
     let out_path = match output {
         Some(o) => PathBuf::from(o),
         None => {
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
             let parent = path.parent().unwrap_or_else(|| Path::new("."));
-            parent.join(format!("{stem}_작게.{ext}"))
+            let suffix = if converting { "_변환" } else { "_작게" };
+            parent.join(format!("{stem}{suffix}.{target_ext}"))
         }
     };
     if out_path == path {
@@ -4035,7 +4069,7 @@ fn resize_one_image(
     }
 
     // 인코딩: JPEG는 품질 적용, PNG는 무손실 재인코딩.
-    if is_jpeg {
+    if target_jpeg {
         let rgb = out_img.to_rgb8();
         let f = std::fs::File::create(&out_path)?;
         let mut w = std::io::BufWriter::new(f);
@@ -4061,6 +4095,12 @@ fn resize_one_image(
         );
     } else {
         println!("     크기  {w}×{h} (유지)");
+    }
+    if converting {
+        println!(
+            "     형식  .{ext}  →  {}",
+            format!(".{target_ext}").bright_white()
+        );
     }
     println!(
         "     용량  {}  →  {}  ({})",
