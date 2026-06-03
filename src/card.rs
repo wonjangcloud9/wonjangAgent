@@ -63,6 +63,17 @@ fn truncate_width(s: &str, max: usize) -> String {
     out
 }
 
+/// 가로 막대(값/최댓값 비율을 `█`로). 항상 정확히 `width` 표시칸(빈칸은 공백).
+/// 엑셀 그룹 집계의 막대그래프 등 한눈 비교에 쓴다. max≤0이면 빈 칸.
+pub fn hbar(value: f64, max: f64, width: usize) -> String {
+    if max <= 0.0 || width == 0 {
+        return " ".repeat(width);
+    }
+    let ratio = (value / max).clamp(0.0, 1.0);
+    let filled = ((ratio * width as f64).round() as usize).min(width);
+    format!("{}{}", "█".repeat(filled), " ".repeat(width - filled))
+}
+
 /// 표시폭 `width`에 맞춰 자르고(넘으면), 모자라면 오른쪽을 공백으로 채운다.
 /// 한글·전각이 섞인 표의 칸 정렬에 쓴다(엑셀 그룹 집계 등).
 pub fn truncate_pad(s: &str, width: usize) -> String {
@@ -491,5 +502,18 @@ mod tests {
         assert_eq!(truncate_width("운동하기", 4), "운동"); // 2+2
         assert_eq!(truncate_width("운동하기", 5), "운동"); // 한 글자(2칸) 더는 못 들어감
         assert_eq!(truncate_width("abcde", 3), "abc");
+    }
+
+    #[test]
+    fn hbar_is_proportional_and_fixed_width() {
+        assert_eq!(hbar(10.0, 10.0, 4), "████");
+        assert_eq!(hbar(5.0, 10.0, 4), "██  "); // 0.5×4=2칸
+        assert_eq!(hbar(0.0, 10.0, 4), "    ");
+        assert_eq!(hbar(10.0, 0.0, 4), "    "); // max≤0 가드
+        assert_eq!(hbar(99.0, 10.0, 4), "████"); // 비율 1.0으로 클램프
+        // 어떤 값이든 정확히 width 표시칸(█·공백 모두 1칸).
+        for v in [0.0, 1.0, 3.3, 7.7, 10.0] {
+            assert_eq!(disp_width(&hbar(v, 10.0, 8)), 8);
+        }
     }
 }

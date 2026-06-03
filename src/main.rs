@@ -3072,17 +3072,20 @@ fn cmd_excel(
             .max()
             .unwrap_or(4)
             .clamp(4, 20);
+        let maxsum = groups.first().map(|g| g.sum).unwrap_or(0.0);
         let mut total = 0.0;
         for g in &groups {
             total += g.sum;
             let name = card::truncate_pad(&g.key, namew);
+            let bar = card::hbar(g.sum, maxsum, 14);
             let avg = if g.numeric_count > 0 {
                 g.sum / g.numeric_count as f64
             } else {
                 0.0
             };
             println!(
-                "     {name}   합계 {}   평균 {}   ({}건)",
+                "     {name}  {}  합계 {}  평균 {}  ({}건)",
+                bar.bright_cyan(),
                 fmt_stat_num(g.sum).bright_white(),
                 fmt_stat_num(avg),
                 g.row_count
