@@ -298,6 +298,12 @@ enum Commands {
         /// 이 열로 묶어 집계(--열과 함께). 예: --그룹 지점 --열 매출액 → 지점별 매출 합계
         #[arg(long = "그룹")]
         group: Option<String>,
+        /// 이 열로 정렬해 상위 행 보기(기본 큰 값/늦은 가나다부터). 예: --정렬 매출액
+        #[arg(long = "정렬")]
+        sort: Option<String>,
+        /// 정렬을 오름차순(작은 값/가나다부터)으로
+        #[arg(long = "오름차순")]
+        ascending: bool,
         /// 미리볼 행 수(기본 5)
         #[arg(long = "행", default_value_t = 5)]
         rows: usize,
@@ -1134,9 +1140,21 @@ async fn run() -> Result<()> {
             file,
             column,
             group,
+            sort,
+            ascending,
             rows,
             json,
-        }) => return cmd_excel(file, column.as_deref(), group.as_deref(), *rows, *json),
+        }) => {
+            return cmd_excel(
+                file,
+                column.as_deref(),
+                group.as_deref(),
+                sort.as_deref(),
+                *ascending,
+                *rows,
+                *json,
+            )
+        }
         Some(Commands::Image {
             files,
             width,
@@ -2345,6 +2363,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --그룹 지점 --열 매출",
                     "분류별 묶어 집계(피벗)",
                 ),
+                (
+                    "wonjang 엑셀 <파일> --정렬 매출",
+                    "그 열로 정렬해 상위 행",
+                ),
                 ("wonjang 또간집 <지역>", "풍자 또간집 선정 맛집(지역)"),
                 ("wonjang 용량 [폴더]", "큰 파일·폴더 찾기(용량 분석)"),
                 ("wonjang 중복 [폴더]", "내용 같은 중복 파일 찾기"),
@@ -3005,6 +3027,8 @@ fn cmd_excel(
     file: &str,
     column: Option<&str>,
     group: Option<&str>,
+    sort: Option<&str>,
+    ascending: bool,
     preview_rows: usize,
     json: bool,
 ) -> Result<()> {
@@ -3124,14 +3148,31 @@ fn cmd_excel(
         return Ok(());
     }
 
-    // 열 목록 + 미리보기.
+    // 열 목록 + 미리보기(정렬 옵션이 있으면 그 열 기준으로).
     println!("  열: {}", table.headers.join(" · ").dimmed());
-    let n = preview_rows.min(table.rows.len());
+    let order: Vec<usize> = if let Some(skey) = sort {
+        let sidx = table.col_index(skey).ok_or_else(|| {
+            anyhow::anyhow!(
+                "'{skey}' 열을 찾을 수 없어요. 열: {}",
+                table.headers.join(", ")
+            )
+        })?;
+        table.sorted_rows(sidx, ascending)
+    } else {
+        (0..table.rows.len()).collect()
+    };
+    let n = preview_rows.min(order.len());
     if n > 0 {
         println!();
-        println!("  미리보기 (상위 {n}행):");
-        for row in table.rows.iter().take(n) {
-            let cells: Vec<String> = row
+        match sort {
+            Some(skey) => {
+                let dir = if ascending { "오름차순" } else { "큰 값부터" };
+                println!("  미리보기 ('{skey}' {dir} 상위 {n}행):");
+            }
+            None => println!("  미리보기 (상위 {n}행):"),
+        }
+        for &ri in order.iter().take(n) {
+            let cells: Vec<String> = table.rows[ri]
                 .iter()
                 .map(|c| {
                     let c = c.trim();
@@ -3155,6 +3196,11 @@ fn cmd_excel(
         "  {} 묶어서 집계(피벗): {}",
         "팁".dimmed(),
         format!("wonjang 엑셀 {file} --그룹 <분류열> --열 <숫자열>").dimmed()
+    );
+    println!(
+        "  {} 정렬해서 상위 행: {}",
+        "팁".dimmed(),
+        format!("wonjang 엑셀 {file} --정렬 <열이름>").dimmed()
     );
     println!();
     Ok(())

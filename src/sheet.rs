@@ -109,6 +109,42 @@ pub struct GroupStat {
     pub row_count: usize,
 }
 
+impl Table {
+    /// `idx` 열 기준으로 정렬한 행 인덱스를 돌려준다(원본은 안 건드림).
+    /// 숫자로 읽히는 값이 항상 먼저(값 순), 숫자 아닌(빈칸·텍스트) 행은 뒤로.
+    /// `ascending`=false면 숫자는 큰 값부터(상위 N 보기의 기본).
+    pub fn sorted_rows(&self, idx: usize, ascending: bool) -> Vec<usize> {
+        use std::cmp::Ordering;
+        let mut order: Vec<usize> = (0..self.rows.len()).collect();
+        order.sort_by(|&a, &b| {
+            let va = self.rows[a].get(idx).and_then(|s| parse_num(s));
+            let vb = self.rows[b].get(idx).and_then(|s| parse_num(s));
+            match (va, vb) {
+                (Some(x), Some(y)) => {
+                    let c = x.partial_cmp(&y).unwrap_or(Ordering::Equal);
+                    if ascending {
+                        c
+                    } else {
+                        c.reverse()
+                    }
+                }
+                (Some(_), None) => Ordering::Less, // 숫자가 항상 먼저
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => {
+                    let sa = self.rows[a].get(idx).map(|s| s.trim()).unwrap_or("");
+                    let sb = self.rows[b].get(idx).map(|s| s.trim()).unwrap_or("");
+                    if ascending {
+                        sa.cmp(sb)
+                    } else {
+                        sb.cmp(sa)
+                    }
+                }
+            }
+        });
+        order
+    }
+}
+
 /// 통화기호·콤마·% 등을 떼고 숫자로 파싱.
 fn parse_num(s: &str) -> Option<f64> {
     let s = s.trim();
@@ -331,6 +367,25 @@ mod tests {
         assert_eq!(g[1].row_count, 2);
         assert_eq!(g[2].key, "(빈값)"); // 빈 그룹값
         assert_eq!(g[2].sum, 300.0);
+    }
+
+    #[test]
+    fn sorted_rows_numeric_desc_and_text_last() {
+        let t = Table {
+            headers: vec!["지점".into(), "매출".into()],
+            rows: vec![
+                vec!["A".into(), "1,000".into()],
+                vec!["B".into(), "3,000".into()],
+                vec!["C".into(), "미정".into()], // 숫자 아님 → 뒤로
+                vec!["D".into(), "2,000".into()],
+            ],
+        };
+        // 기본(큰 값부터): B(3000) > D(2000) > A(1000) > C(텍스트)
+        assert_eq!(t.sorted_rows(1, false), vec![1, 3, 0, 2]);
+        // 오름차순: A(1000) < D(2000) < B(3000), 텍스트는 여전히 끝
+        assert_eq!(t.sorted_rows(1, true), vec![0, 3, 1, 2]);
+        // 텍스트 열(지점) 오름차순 = 가나다(A<B<C<D)
+        assert_eq!(t.sorted_rows(0, true), vec![0, 1, 2, 3]);
     }
 
     #[test]
