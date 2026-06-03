@@ -66,7 +66,7 @@ impl CronStore {
 
     pub fn save(&self) -> Result<()> {
         let path = store_path()?;
-        std::fs::write(&path, serde_json::to_string_pretty(self)?)?;
+        crate::util::atomic_write(&path, serde_json::to_string_pretty(self)?.as_bytes())?;
         Ok(())
     }
 

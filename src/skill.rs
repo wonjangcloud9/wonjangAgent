@@ -52,7 +52,7 @@ impl SkillStore {
             content.trim()
         );
         let path = self.path_for(name);
-        std::fs::write(&path, doc)
+        crate::util::atomic_write(&path, doc.as_bytes())
             .with_context(|| format!("스킬을 저장할 수 없습니다: {}", path.display()))?;
         Ok(path)
     }

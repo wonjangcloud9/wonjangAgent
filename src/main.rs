@@ -2524,15 +2524,6 @@ fn cmd_zip(sources: &[String], output: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// zip 엔트리 파일명을 사람이 읽게 디코드한다(UTF-8이면 그대로, 아니면 CP949). 순수.
-/// 윈도우에서 만든 한국 zip은 파일명이 CP949라 다른 도구에선 깨져 보인다.
-fn decode_zip_name(raw: &[u8]) -> String {
-    match std::str::from_utf8(raw) {
-        Ok(s) => s.to_string(),
-        Err(_) => encoding_rs::EUC_KR.decode(raw).0.into_owned(),
-    }
-}
-
 /// zip을 풀지 않고 안의 목록만 보여준다(한글 파일명 깨짐 보정).
 fn cmd_zip_view(file: &str) -> Result<()> {
     use owo_colors::OwoColorize;
@@ -2558,7 +2549,7 @@ fn cmd_zip_view(file: &str) -> Result<()> {
     let mut dirs = 0usize;
     for i in 0..count {
         let entry = archive.by_index(i)?;
-        let name = decode_zip_name(entry.name_raw());
+        let name = archive::decode_zip_name(entry.name_raw());
         if entry.is_dir() {
             dirs += 1;
             println!("     📁 {}", name.dimmed());
@@ -6480,7 +6471,7 @@ mod image_tests {
 
 #[cfg(test)]
 mod zipview_tests {
-    use super::decode_zip_name;
+    use crate::archive::decode_zip_name;
 
     #[test]
     fn utf8_name_passthrough() {

@@ -62,7 +62,7 @@ impl Memory {
             content.push('\n');
         }
         content.push_str(&format!("- {fact}\n"));
-        std::fs::write(&self.path, content)
+        crate::util::atomic_write(&self.path, content.as_bytes())
             .with_context(|| format!("메모리를 저장할 수 없습니다: {}", self.path.display()))?;
         Ok(())
     }

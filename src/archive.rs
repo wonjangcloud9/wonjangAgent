@@ -76,6 +76,32 @@ pub fn create_zip(sources: &[PathBuf], output: &Path) -> Result<usize> {
     Ok(files.len())
 }
 
+/// zip 엔트리 파일명을 사람이 읽게 디코드한다(UTF-8이면 그대로, 아니면 CP949).
+/// 윈도우에서 만든 한국 zip은 파일명이 CP949라 다른 도구·맥에선 깨져 보인다.
+pub fn decode_zip_name(raw: &[u8]) -> String {
+    match std::str::from_utf8(raw) {
+        Ok(s) => s.to_string(),
+        Err(_) => encoding_rs::EUC_KR.decode(raw).0.into_owned(),
+    }
+}
+
+/// 디코드된 zip 내부 경로를 zip-slip 안전한 상대경로로 정제한다(절대경로·`..` 차단).
+fn safe_relative(name: &str) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for comp in name.split(['/', '\\']) {
+        match comp {
+            "" | "." => continue,
+            ".." => return None, // 경로 탈출 차단
+            c => out.push(c),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
 /// zip을 대상 폴더로 푼다. 푼 파일 수를 반환.
 pub fn extract_zip(zip_path: &Path, dest: &Path) -> Result<usize> {
     let file = File::open(zip_path)?;
@@ -84,8 +110,9 @@ pub fn extract_zip(zip_path: &Path, dest: &Path) -> Result<usize> {
     let mut count = 0;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
-        // 경로 탈출(zip-slip) 방지: 안전한 내부 경로만 사용.
-        let rel = match entry.enclosed_name() {
+        // 한글 파일명(CP949)을 제대로 디코드한 뒤 zip-slip 안전 경로로 정제.
+        let name = decode_zip_name(entry.name_raw());
+        let rel = match safe_relative(&name) {
             Some(p) => p,
             None => continue,
         };

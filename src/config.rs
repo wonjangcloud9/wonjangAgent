@@ -223,7 +223,7 @@ impl Config {
         to_save.notion_token = String::new(); // 보안: 노션 토큰도 파일에 남기지 않는다.
         to_save.kakao_access_token = String::new(); // 보안: 카카오 토큰도 파일에 남기지 않는다.
         let text = toml::to_string_pretty(&to_save)?;
-        std::fs::write(&path, text)?;
+        crate::util::atomic_write(&path, text.as_bytes())?;
         Ok(path)
     }
 }

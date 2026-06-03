@@ -65,7 +65,7 @@ impl Session {
             messages: messages.to_vec(),
         };
         let json = serde_json::to_string_pretty(&file)?;
-        std::fs::write(&self.path, json)
+        crate::util::atomic_write(&self.path, json.as_bytes())
             .with_context(|| format!("세션을 저장할 수 없습니다: {}", self.path.display()))?;
         Ok(())
     }

@@ -73,7 +73,10 @@ impl DdoganjipStore {
     }
 
     pub fn save(&self) -> Result<()> {
-        std::fs::write(store_path()?, serde_json::to_string_pretty(self)?)?;
+        crate::util::atomic_write(
+            &store_path()?,
+            serde_json::to_string_pretty(self)?.as_bytes(),
+        )?;
         Ok(())
     }
 

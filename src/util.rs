@@ -24,6 +24,18 @@ where
     .map_err(|_| anyhow::anyhow!("작업 스레드가 패닉했습니다"))?
 }
 
+/// 파일을 **원자적으로** 쓴다(임시 파일에 쓴 뒤 rename).
+///
+/// `std::fs::write`는 쓰는 도중 끊기면(크래시·동시 쓰기) 파일이 반쯤 쓰여 깨진다.
+/// 데몬(예약 작업)과 CLI가 같은 저장소를 동시에 쓸 수 있으므로, 임시 파일에 다 쓴 뒤
+/// 같은 디렉터리 안에서 rename(원자적)으로 교체해 **반쯤 쓰인 깨진 파일이 남지 않게** 한다.
+/// 임시 파일명에 프로세스 id를 붙여 동시 쓰기 시 임시 파일끼리도 충돌하지 않는다.
+pub fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)
+}
+
 /// 문자열을 최대 `max_bytes` 바이트 이하에서 **UTF-8 문자 경계로** 안전하게 자른다.
 ///
 /// `&s[..max_bytes]`는 한글·이모지 같은 멀티바이트 글자 중간을 자르면 패닉한다.
