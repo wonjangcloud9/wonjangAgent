@@ -640,12 +640,12 @@ enum Commands {
         #[arg(default_value_t = 100)]
         unit: i64,
     },
-    /// 단위 변환(온도/무게/길이). 예: wonjang 변환 100 c
+    /// 단위 변환(온도·무게·길이·속도·부피·넓이). 예: wonjang 변환 100 c
     #[command(alias = "변환")]
     Convert {
         /// 값
         value: f64,
-        /// 단위(c/f, kg/lb, cm/inch, km/mile)
+        /// 단위(c/f · kg/lb · cm/inch · km/mile · kmh/mph · l/gal · sqm/sqft)
         unit: String,
     },
     /// BMI 계산(아시아 기준 판정). 예: wonjang bmi 175 68
@@ -5763,7 +5763,20 @@ fn cmd_convert(value: f64, unit: &str) -> Result<()> {
     println!();
     match convert::convert(value, unit) {
         Some(c) => println!("  📏 {}", c.label),
-        None => println!("  '{unit}' 단위는 몰라요. 가능: {}", convert::supported()),
+        None => {
+            // 평·면적은 한국에서 제일 흔한 변환이라 전용 명령으로 안내(convert엔 평이 없음).
+            let u = unit.trim();
+            if matches!(u, "평" | "평수" | "pyeong" | "py") {
+                let v = if value.fract() == 0.0 {
+                    format!("{}", value as i64)
+                } else {
+                    format!("{value}")
+                };
+                println!("  📐 평↔㎡ 변환은 이걸 쓰세요:  wonjang 평 {v}");
+            } else {
+                println!("  '{unit}' 단위는 몰라요. 가능: {}", convert::supported());
+            }
+        }
     }
     println!();
     Ok(())
