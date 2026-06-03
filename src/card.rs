@@ -6,6 +6,11 @@
 
 use unicode_width::UnicodeWidthChar;
 
+/// 공유 카드 하단 테두리에 박는 전염성 풋터. 카드를 받은 사람에게 '무엇인지·어떻게 받는지'를
+/// 알려주는 유일한 성장 고리 표면이라, 내부 버전(설치 불가) 대신 npm 설치명을 노출한다.
+/// 표시폭 27(테두리 패딩 포함 29) — 카톡 폭 34(inner 32) 이하에서도 안 잘린다.
+pub const SHARE_FOOTER: &str = "나도 만들기 → wonjang-agent";
+
 /// base 한 글자의 폭(unicode-width 기준). 결합문자·변이선택자은 0.
 fn base_width(c: char) -> usize {
     match c {
@@ -357,7 +362,7 @@ mod tests {
             dday: Some("토익 D-3".into()),
             journal_count: 9,
             comment: "운동 13일 연속, 너 좀 멋진데? 🙌".into(),
-            footer: "wonjang · v1.9.0".into(),
+            footer: SHARE_FOOTER.into(),
         };
         // 좁은 폭(30~33)도 포함 — 적대적 리뷰가 미커버라 지적한 구간.
         for width in [30usize, 31, 32, 33, 34, 40, 46, 52] {
@@ -371,6 +376,13 @@ mod tests {
                 );
             }
         }
+        // 전염성 풋터: 카톡 폭(34)에서 설치명이 잘리면 성장 고리가 끊긴다 → 보존 확인.
+        let kakao = render_card(&d, 34);
+        let last = kakao.last().unwrap();
+        assert!(
+            last.contains("wonjang-agent"),
+            "카톡 폭에서 풋터 설치명이 잘림: {last:?}"
+        );
     }
 
     #[test]

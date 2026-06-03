@@ -4481,7 +4481,7 @@ fn cmd_brag(
         dday,
         journal_count,
         comment,
-        footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
+        footer: card::SHARE_FOOTER.to_string(),
     };
 
     print_card(&card::render_card(&data, width), persona, no_color, copy);
@@ -4607,7 +4607,7 @@ fn cmd_brag_weekly(width: usize, no_color: bool, copy: bool) -> Result<()> {
         focus_value,
         expense_value,
         comment: card::weekly_comment(persona, f_delta),
-        footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
+        footer: card::SHARE_FOOTER.to_string(),
     };
     print_card(
         &card::render_weekly_card(&data, width),
