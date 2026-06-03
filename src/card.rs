@@ -33,31 +33,49 @@ fn paired_width(c: char, next: Option<char>) -> usize {
     }
 }
 
-/// 문자열의 터미널 표시 폭(카톡·터미널 정렬 기준). 변이선택자 페어 인식.
-pub fn disp_width(s: &str) -> usize {
-    let mut w = 0;
+/// 문자열을 '표시 클러스터' 단위로 나눈다 — (클러스터 문자열, 표시폭).
+/// 클러스터 = base 글자 + 뒤따르는 변이선택자(FE0F/FE0E) + ZWJ로 이어진 후속 이모지들.
+/// ZWJ 이모지(🏃‍♂️·👨‍💻·👨‍👩‍👧 등)는 한 글자(폭=base)로 친다(wcwidth와 일치).
+fn clusters(s: &str) -> Vec<(String, usize)> {
+    let mut out: Vec<(String, usize)> = Vec::new();
     let mut it = s.chars().peekable();
     while let Some(c) = it.next() {
-        w += paired_width(c, it.peek().copied());
+        let width = paired_width(c, it.peek().copied());
+        let mut cl = String::new();
+        cl.push(c);
+        // 뒤따르는 변이선택자를 같은 클러스터로 흡수.
+        while matches!(it.peek(), Some('\u{FE0F}') | Some('\u{FE0E}')) {
+            cl.push(it.next().unwrap());
+        }
+        // ZWJ로 이어진 후속(ZWJ + base + 변이선택자)도 같은 클러스터(폭은 0 추가).
+        while it.peek() == Some(&'\u{200D}') {
+            cl.push(it.next().unwrap()); // ZWJ
+            if let Some(j) = it.next() {
+                cl.push(j);
+                while matches!(it.peek(), Some('\u{FE0F}') | Some('\u{FE0E}')) {
+                    cl.push(it.next().unwrap());
+                }
+            }
+        }
+        out.push((cl, width));
     }
-    w
+    out
 }
 
-/// 표시 폭이 `max` 이하가 되도록 글자 경계에서 자른다(base+변이선택자를 한 단위로 유지).
+/// 문자열의 터미널 표시 폭(카톡·터미널 정렬 기준). 변이선택자·ZWJ 이모지 인식.
+pub fn disp_width(s: &str) -> usize {
+    clusters(s).iter().map(|(_, w)| w).sum()
+}
+
+/// 표시 폭이 `max` 이하가 되도록 클러스터 경계에서 자른다(ZWJ 이모지를 중간에 안 쪼갬).
 fn truncate_width(s: &str, max: usize) -> String {
     let mut w = 0;
     let mut out = String::new();
-    let mut it = s.chars().peekable();
-    while let Some(c) = it.next() {
-        let cw = paired_width(c, it.peek().copied());
+    for (cl, cw) in clusters(s) {
         if w + cw > max {
             break;
         }
-        out.push(c);
-        // 뒤따르는 변이선택자도 함께 넣어 페어를 깨지 않는다.
-        if matches!(it.peek(), Some('\u{FE0F}') | Some('\u{FE0E}')) {
-            out.push(it.next().unwrap());
-        }
+        out.push_str(&cl);
         w += cw;
     }
     out
@@ -516,6 +534,18 @@ mod tests {
         assert_eq!(truncate_width("운동하기", 4), "운동"); // 2+2
         assert_eq!(truncate_width("운동하기", 5), "운동"); // 한 글자(2칸) 더는 못 들어감
         assert_eq!(truncate_width("abcde", 3), "abc");
+    }
+
+    #[test]
+    fn zwj_emoji_counts_as_single_glyph() {
+        // ZWJ 이모지 시퀀스는 한 글자(폭 2) — wcwidth와 일치해야 박스가 안 깨진다.
+        assert_eq!(disp_width("🏃\u{200D}♂\u{FE0F}"), 2); // 🏃‍♂️ 달리는 남자
+        assert_eq!(disp_width("👨\u{200D}💻"), 2); // 👨‍💻 개발자
+        assert_eq!(disp_width("👨\u{200D}👩\u{200D}👧\u{200D}👦"), 2); // 가족(4명 ZWJ)
+        // 일반 텍스트·이모지와 섞여도 정확.
+        assert_eq!(disp_width("가🏃\u{200D}♂\u{FE0F}나"), 6); // 2+2+2
+        // truncate가 ZWJ 글자를 중간에 안 쪼갬: 폭4면 '가'(2)+ZWJ글자(2)=4 다 들어감.
+        assert_eq!(truncate_width("가🏃\u{200D}♂\u{FE0F}나", 4), "가🏃\u{200D}♂\u{FE0F}");
     }
 
     #[test]
