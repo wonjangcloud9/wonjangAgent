@@ -156,6 +156,18 @@ fn fit_jandi_tail(jandi: &str, inner: usize) -> String {
     jandi.chars().skip(n - budget).collect()
 }
 
+/// 연속 일수의 성취 등급 뱃지(카드에 표시 — 공유 시 성취 수준을 한눈에=사회적 화폐).
+/// 앞에 공백 1칸을 포함해 돌려준다(달성 전엔 빈 문자열).
+fn streak_badge(s: i64) -> &'static str {
+    match s {
+        s if s >= 365 => " 👑",
+        s if s >= 100 => " 🏆",
+        s if s >= 30 => " 🎊",
+        s if s >= 7 => " 🎉",
+        _ => "",
+    }
+}
+
 /// 카드를 줄 단위 플레인 문자열로 렌더한다(색 없음 — 출력 측에서 입힘).
 /// 모든 줄의 `disp_width`가 동일(=width)함이 박스 정렬의 핵심 불변식.
 pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
@@ -165,7 +177,8 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     lines.push(rule('╭', '╮', &format!("원장 카드 · {}", d.title), inner));
     if let Some((name, s)) = &d.streak {
-        lines.push(row("🔥 가장 긴 연속", &format!("{name} {s}일"), inner, col));
+        let value = format!("{name} {s}일{}", streak_badge(*s));
+        lines.push(row("🔥 가장 긴 연속", &value, inner, col));
     }
     if !d.jandi.is_empty() {
         // 잔디는 폭이 커서(최대 31칸) 라벨 없이 한 줄 통째로 — 좁은 카톡 폭(34)에도 들어가게.
@@ -378,7 +391,8 @@ mod tests {
         // 전각/반각/이모지 혼합 카드의 모든 줄이 정확히 같은 표시폭이어야 박스가 안 깨진다.
         let d = CardData {
             title: "2026년 6월".into(),
-            streak: Some(("운동".into(), 13)),
+            streak: Some(("운동".into(), 100)), // 마일스톤(🏆 뱃지) 포함해 폭 불변식 검증
+
             jandi: (0..28).map(|i| i % 3 != 0).collect(),
             focus_label: "42시간 30분".into(),
             expense_label: "1,240,000원".into(),
@@ -502,6 +516,16 @@ mod tests {
         assert_eq!(truncate_width("운동하기", 4), "운동"); // 2+2
         assert_eq!(truncate_width("운동하기", 5), "운동"); // 한 글자(2칸) 더는 못 들어감
         assert_eq!(truncate_width("abcde", 3), "abc");
+    }
+
+    #[test]
+    fn streak_badge_tiers() {
+        assert_eq!(streak_badge(6), "");
+        assert_eq!(streak_badge(7), " 🎉");
+        assert_eq!(streak_badge(29), " 🎉");
+        assert_eq!(streak_badge(30), " 🎊");
+        assert_eq!(streak_badge(100), " 🏆");
+        assert_eq!(streak_badge(365), " 👑");
     }
 
     #[test]
