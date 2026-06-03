@@ -1774,6 +1774,7 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     let mut last_briefed: Option<String> = None;
     let mut last_holiday_alert: Option<String> = None;
     let mut last_habit_alert: Option<String> = None;
+    let mut last_weekly_recap: Option<String> = None;
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
@@ -1828,6 +1829,9 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
 
         // 저녁이면 끊길 위기 습관을 먼저 챙겨 리마인드(선톡).
         maybe_alert_habit_evening(cfg, &mut last_habit_alert).await;
+
+        // 일요일 저녁이면 이번 주 결산을 먼저 푸시(자랑 카드 트리거).
+        maybe_push_weekly_recap(cfg, &mut last_weekly_recap).await;
 
         tokio::time::sleep(tick).await;
     }
@@ -2015,6 +2019,46 @@ async fn maybe_alert_habit_evening(cfg: &Config, last_alert: &mut Option<String>
     if let Some(msg) = habit_evening_nudge(&at_risk) {
         let sent = push::push(cfg, &msg).await;
         ui::note(&format!("저녁 습관 리마인드 전송({sent}개 채널)."));
+    }
+}
+
+/// 일요일 저녁, 이번 주 결산을 먼저 푸시한다(자랑 카드 보러 가게 유도 — 선톡 × 전염).
+/// 일요일 19시 이후·주 1회·푸시 채널 설정 시. 데이터 집계는 cmd_brag_weekly와 동일.
+async fn maybe_push_weekly_recap(cfg: &Config, last: &mut Option<String>) {
+    use chrono::{Datelike, Timelike, Weekday};
+    if push::configured_channels(cfg).is_empty() {
+        return;
+    }
+    let now = chrono::Local::now();
+    if now.weekday() != Weekday::Sun || now.hour() < 19 {
+        return;
+    }
+    let today = now.format("%Y-%m-%d").to_string();
+    if last.as_deref() == Some(today.as_str()) {
+        return;
+    }
+    *last = Some(today.clone()); // 데이터가 없어 안 보내도 주 1회만 시도.
+
+    let td = ddays::today();
+    let day = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+    let habit_store = habits::HabitStore::load().unwrap_or_default();
+    let streak = habit_store
+        .items
+        .iter()
+        .max_by_key(|h| h.streak(td))
+        .map(|h| (h.name.clone(), h.streak(td)));
+    let foc = focus::FocusStore::load().unwrap_or_default();
+    let exp = expenses::ExpenseStore::load().unwrap_or_default();
+    let (mut tw_f, mut lw_f, mut tw_e, mut lw_e) = (0i64, 0i64, 0i64, 0i64);
+    for i in 0..7 {
+        tw_f += foc.today_total(&day(td - chrono::Duration::days(i)));
+        lw_f += foc.today_total(&day(td - chrono::Duration::days(i + 7)));
+        tw_e += exp.total_on(&day(td - chrono::Duration::days(i)));
+        lw_e += exp.total_on(&day(td - chrono::Duration::days(i + 7)));
+    }
+    if let Some(msg) = card::weekly_recap_text(streak, tw_f, tw_f - lw_f, tw_e, tw_e - lw_e) {
+        let sent = push::push(cfg, &msg).await;
+        ui::note(&format!("주간 결산 선톡 전송({sent}개 채널)."));
     }
 }
 

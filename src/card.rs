@@ -201,6 +201,68 @@ pub fn weekly_comment(persona_key: &str, focus_delta: i64) -> String {
     }
 }
 
+/// 일요일 저녁 '이번 주 결산' 선톡 문구(데몬이 푸시). 데이터가 없으면 None. 순수.
+/// 푸시는 플레인 텍스트라 박스 대신 한 줄 요약 + 카드 보기 유도.
+pub fn weekly_recap_text(
+    streak: Option<(String, i64)>,
+    focus_min: i64,
+    focus_delta: i64,
+    expense: i64,
+    expense_delta: i64,
+) -> Option<String> {
+    let fmt_h = |m: i64| {
+        if m >= 60 {
+            format!("{}시간", m / 60)
+        } else {
+            format!("{m}분")
+        }
+    };
+    let fmt_w = |w: i64| {
+        let digits = w.abs().to_string();
+        let mut out = String::new();
+        for (i, c) in digits.chars().rev().enumerate() {
+            if i > 0 && i % 3 == 0 {
+                out.push(',');
+            }
+            out.push(c);
+        }
+        out.chars().rev().collect::<String>()
+    };
+    let mut parts: Vec<String> = Vec::new();
+    if let Some((name, s)) = &streak {
+        if *s >= 1 {
+            parts.push(format!("🔥{name} {s}일"));
+        }
+    }
+    if focus_min > 0 {
+        let d = if focus_delta == 0 {
+            String::new()
+        } else {
+            format!("{}{}", delta_arrow(focus_delta), fmt_h(focus_delta.abs()))
+        };
+        parts.push(format!("🍅집중 {}{d}", fmt_h(focus_min)));
+    }
+    if expense > 0 {
+        let d = if expense_delta == 0 {
+            String::new()
+        } else {
+            format!(
+                "{}{}원",
+                delta_arrow(expense_delta),
+                fmt_w(expense_delta.abs())
+            )
+        };
+        parts.push(format!("💰{}원{d}", fmt_w(expense)));
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "📊 이번 주 결산! {} · 'wonjang 자랑 --주'로 카드 보기 👀",
+        parts.join(" · ")
+    ))
+}
+
 /// 페르소나별 카드 코멘트(자랑 말투).
 pub fn card_comment(persona_key: &str, streak: i64, habit: &str) -> String {
     if streak >= 2 {
@@ -279,6 +341,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn weekly_recap_formats_and_skips_empty() {
+        // 데이터 있으면 요약 + 카드 유도.
+        let t = weekly_recap_text(Some(("운동".into(), 7)), 660, 120, 240000, -50000).unwrap();
+        assert!(t.contains("운동 7일"));
+        assert!(t.contains("🍅집중 11시간▲2시간"));
+        assert!(t.contains("💰240,000원▼50,000원"));
+        assert!(t.contains("자랑 --주"));
+        // 변화 0이면 화살표 없음.
+        let t2 = weekly_recap_text(None, 120, 0, 0, 0).unwrap();
+        assert!(t2.contains("🍅집중 2시간") && !t2.contains("▲") && !t2.contains("▼"));
+        // 아무 데이터 없으면 None(선톡 안 함).
+        assert!(weekly_recap_text(None, 0, 0, 0, 0).is_none());
     }
 
     #[test]
