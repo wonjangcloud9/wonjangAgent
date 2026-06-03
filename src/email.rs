@@ -89,26 +89,17 @@ pub fn guess_smtp_host(email: &str) -> String {
 }
 
 /// 메일을 보낸다(SMTP over rustls, 암묵 TLS 465). 외부 전송 — 호출자가 사용자 의도를 확인한 뒤 부른다.
-pub fn send_mail(cfg: &EmailConfig, to: &str, subject: &str, body: &str) -> Result<()> {
-    use lettre::message::header::ContentType;
-    use lettre::message::Mailbox;
+pub fn send_mail(
+    cfg: &EmailConfig,
+    to: &str,
+    subject: &str,
+    body: &str,
+    attachments: &[(String, Vec<u8>)],
+) -> Result<()> {
     use lettre::transport::smtp::authentication::Credentials;
-    use lettre::{Message, SmtpTransport, Transport};
+    use lettre::{SmtpTransport, Transport};
 
-    let from: Mailbox = cfg
-        .user
-        .parse()
-        .map_err(|_| anyhow::anyhow!("보내는 주소 형식이 이상해요: {}", cfg.user))?;
-    let to_mb: Mailbox = to
-        .parse()
-        .map_err(|_| anyhow::anyhow!("받는 사람 주소 형식이 올바르지 않아요: {to}"))?;
-    let email = Message::builder()
-        .from(from)
-        .to(to_mb)
-        .subject(subject)
-        .header(ContentType::TEXT_PLAIN)
-        .body(body.to_string())
-        .map_err(|e| anyhow::anyhow!("메일 작성 실패: {e}"))?;
+    let email = build_email(&cfg.user, to, subject, body, attachments)?;
     let creds = Credentials::new(cfg.user.clone(), cfg.password.clone());
     let mailer = SmtpTransport::relay(&cfg.smtp_host)
         .map_err(|e| anyhow::anyhow!("SMTP 설정 실패({}): {e}", cfg.smtp_host))?
@@ -118,6 +109,65 @@ pub fn send_mail(cfg: &EmailConfig, to: &str, subject: &str, body: &str) -> Resu
         .send(&email)
         .map_err(|e| anyhow::anyhow!("전송 실패: {e}. 앱 비밀번호/SMTP 설정을 확인하세요."))?;
     Ok(())
+}
+
+/// 보낼 메일을 구성한다(첨부 있으면 multipart/mixed). 순수 — `.formatted()`로 오프라인 검증 가능.
+pub fn build_email(
+    from: &str,
+    to: &str,
+    subject: &str,
+    body: &str,
+    attachments: &[(String, Vec<u8>)],
+) -> Result<lettre::Message> {
+    use lettre::message::header::ContentType;
+    use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart};
+    use lettre::Message;
+
+    let from_mb: Mailbox = from
+        .parse()
+        .map_err(|_| anyhow::anyhow!("보내는 주소 형식이 이상해요: {from}"))?;
+    let to_mb: Mailbox = to
+        .parse()
+        .map_err(|_| anyhow::anyhow!("받는 사람 주소 형식이 올바르지 않아요: {to}"))?;
+    let builder = Message::builder().from(from_mb).to(to_mb).subject(subject);
+    if attachments.is_empty() {
+        builder
+            .header(ContentType::TEXT_PLAIN)
+            .body(body.to_string())
+            .map_err(|e| anyhow::anyhow!("메일 작성 실패: {e}"))
+    } else {
+        let mut mp = MultiPart::mixed().singlepart(SinglePart::plain(body.to_string()));
+        for (filename, bytes) in attachments {
+            let part = Attachment::new(filename.clone()).body(bytes.clone(), guess_mime(filename));
+            mp = mp.singlepart(part);
+        }
+        builder
+            .multipart(mp)
+            .map_err(|e| anyhow::anyhow!("메일 작성 실패: {e}"))
+    }
+}
+
+/// 파일 확장자로 MIME 타입을 추정한다.
+fn guess_mime(filename: &str) -> lettre::message::header::ContentType {
+    use lettre::message::header::ContentType;
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    let s = match ext.as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "txt" | "csv" | "log" | "md" => "text/plain; charset=utf-8",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "html" | "htm" => "text/html; charset=utf-8",
+        _ => "application/octet-stream",
+    };
+    ContentType::parse(s)
+        .unwrap_or_else(|_| ContentType::parse("application/octet-stream").unwrap())
 }
 
 /// 받은편지함 헤더 한 줄.
@@ -570,6 +620,33 @@ mod tests {
         assert_eq!(guess_imap_host("me@naver.com"), "imap.naver.com");
         assert_eq!(guess_imap_host("me@daum.net"), "imap.daum.net");
         assert_eq!(guess_imap_host("me@company.co.kr"), "imap.company.co.kr");
+    }
+
+    #[test]
+    fn builds_multipart_email_with_attachment() {
+        let msg = super::build_email(
+            "me@a.com",
+            "you@b.com",
+            "제목",
+            "본문",
+            &[("report.pdf".to_string(), b"HELLO".to_vec())],
+        )
+        .unwrap();
+        let raw = String::from_utf8_lossy(&msg.formatted()).to_string();
+        assert!(raw.contains("multipart/mixed"));
+        assert!(raw.to_lowercase().contains("report.pdf"));
+        // 첨부 파트가 disposition과 함께 포함된다(내용은 ASCII면 7bit, 바이너리면 base64).
+        assert!(raw.contains("Content-Disposition: attachment"));
+        assert!(raw.contains("application/pdf"));
+        assert!(raw.contains("HELLO"));
+    }
+
+    #[test]
+    fn builds_plain_email_without_attachment() {
+        let msg = super::build_email("me@a.com", "you@b.com", "t", "본문내용", &[]).unwrap();
+        let raw = String::from_utf8_lossy(&msg.formatted()).to_string();
+        // 첨부 없으면 multipart가 아니어야 한다.
+        assert!(!raw.contains("multipart/mixed"));
     }
 
     #[test]

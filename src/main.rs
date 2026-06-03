@@ -380,7 +380,7 @@ enum Commands {
         #[arg(long = "안읽음")]
         unseen: bool,
     },
-    /// 메일을 보냅니다(SMTP). 예: wonjang 메일보내기 --받는사람 a@b.com --제목 "안녕" --내용 "본문"
+    /// 메일을 보냅니다(SMTP, 파일 첨부 가능). 예: wonjang 메일보내기 --받는사람 a@b.com --제목 "안녕" --내용 "본문" --첨부 계약서.pdf
     #[command(name = "메일보내기", alias = "메일전송")]
     MailSend {
         /// 받는 사람 이메일 주소
@@ -392,6 +392,9 @@ enum Commands {
         /// 본문 내용
         #[arg(long = "내용")]
         body: String,
+        /// 첨부할 파일(여러 번 지정 가능)
+        #[arg(long = "첨부")]
+        attach: Vec<String>,
     },
     /// 메일의 첨부파일을 저장합니다. 예: wonjang 메일첨부 1 --저장폴더 ~/Downloads
     #[command(name = "메일첨부", alias = "메일첨부저장")]
@@ -1090,7 +1093,12 @@ async fn run() -> Result<()> {
         Some(Commands::MailAttach { num, dir, unseen }) => {
             return cmd_mail_attach(*num, dir.as_deref(), *unseen)
         }
-        Some(Commands::MailSend { to, subject, body }) => return cmd_mail_send(to, subject, body),
+        Some(Commands::MailSend {
+            to,
+            subject,
+            body,
+            attach,
+        }) => return cmd_mail_send(to, subject, body, attach),
         Some(Commands::Encfix {
             file,
             output,
@@ -2189,8 +2197,8 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 메일읽기 1", "그 메일 본문 읽기(1=최신)"),
                 ("wonjang 메일첨부 1 --저장폴더 …", "메일 첨부파일 저장"),
                 (
-                    "wonjang 메일보내기 --받는사람 …",
-                    "메일 보내기(SMTP·제목·내용)",
+                    "wonjang 메일보내기 --받는사람 … --첨부 파일",
+                    "메일 보내기(파일 첨부 가능)",
                 ),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
@@ -3558,9 +3566,11 @@ fn cmd_mail(count: usize, unseen: bool) -> Result<()> {
     Ok(())
 }
 
-/// 메일을 보낸다(SMTP). 외부 전송이므로 보내기 전 받는사람·제목을 명확히 echo한다.
-fn cmd_mail_send(to: &str, subject: &str, body: &str) -> Result<()> {
+/// 메일을 보낸다(SMTP, 첨부 가능). 외부 전송이므로 보내기 전 받는사람·제목·첨부를 명확히 echo한다.
+fn cmd_mail_send(to: &str, subject: &str, body: &str, attach: &[String]) -> Result<()> {
+    use anyhow::Context;
     use owo_colors::OwoColorize;
+    use std::path::Path;
     let cfg = match email::EmailConfig::from_env() {
         Some(c) => c,
         None => {
@@ -3570,6 +3580,21 @@ fn cmd_mail_send(to: &str, subject: &str, body: &str) -> Result<()> {
     };
     if to.trim().is_empty() || !to.contains('@') {
         anyhow::bail!("받는 사람 이메일 주소를 정확히 적어주세요(--받는사람 a@b.com).");
+    }
+    // 첨부 파일 읽기(보내기 전에 확인).
+    let mut attachments: Vec<(String, Vec<u8>)> = Vec::new();
+    for p in attach {
+        let path = Path::new(p);
+        if !path.exists() {
+            anyhow::bail!("첨부할 파일을 찾을 수 없어요: {p}");
+        }
+        let bytes = std::fs::read(path).with_context(|| format!("첨부 읽기 실패: {p}"))?;
+        let filename = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("attachment")
+            .to_string();
+        attachments.push((filename, bytes));
     }
     // 외부 전송 — 무엇을 보내는지 먼저 명확히 보여준다.
     println!();
@@ -3584,11 +3609,27 @@ fn cmd_mail_send(to: &str, subject: &str, body: &str) -> Result<()> {
         preview,
         if body.chars().count() > 80 { "…" } else { "" }
     );
+    for (name, bytes) in &attachments {
+        println!(
+            "     {} {}  ({})",
+            "첨부    ".dimmed(),
+            name.bright_white(),
+            human_bytes(bytes.len() as u64)
+        );
+    }
     println!();
     ui::info(&format!("     SMTP {} 로 전송 중…", cfg.smtp_host));
-    email::send_mail(&cfg, to, subject, body)?;
+    email::send_mail(&cfg, to, subject, body, &attachments)?;
     println!();
-    println!("  ✅ {} 에게 보냈어요!", to.bright_white());
+    println!(
+        "  ✅ {} 에게 보냈어요!{}",
+        to.bright_white(),
+        if attachments.is_empty() {
+            String::new()
+        } else {
+            format!(" (첨부 {}개)", attachments.len())
+        }
+    );
     println!();
     Ok(())
 }
