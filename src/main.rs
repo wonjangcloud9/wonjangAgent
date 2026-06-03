@@ -380,6 +380,19 @@ enum Commands {
         #[arg(long = "안읽음")]
         unseen: bool,
     },
+    /// 메일을 보냅니다(SMTP). 예: wonjang 메일보내기 --받는사람 a@b.com --제목 "안녕" --내용 "본문"
+    #[command(name = "메일보내기", alias = "메일전송")]
+    MailSend {
+        /// 받는 사람 이메일 주소
+        #[arg(long = "받는사람")]
+        to: String,
+        /// 제목
+        #[arg(long = "제목")]
+        subject: String,
+        /// 본문 내용
+        #[arg(long = "내용")]
+        body: String,
+    },
     /// 특정 메일의 본문을 읽습니다. 예: wonjang 메일읽기 1 (가장 최근)
     #[command(name = "메일읽기", alias = "메일내용")]
     MailRead {
@@ -1061,6 +1074,7 @@ async fn run() -> Result<()> {
         }) => return cmd_image(files, *width, *scale, *quality, output.as_deref()),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
+        Some(Commands::MailSend { to, subject, body }) => return cmd_mail_send(to, subject, body),
         Some(Commands::Encfix {
             file,
             output,
@@ -2157,6 +2171,10 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 메일 --안읽음", "받은편지함 목록(IMAP·앱비밀번호)"),
                 ("wonjang 메일읽기 1", "그 메일 본문 읽기(1=최신)"),
+                (
+                    "wonjang 메일보내기 --받는사람 …",
+                    "메일 보내기(SMTP·제목·내용)",
+                ),
                 ("wonjang 찾기 <폴더> <단어>", "파일 내용 검색(grep)"),
                 ("wonjang json <파일>", "JSON 검증·정렬·값추출(--키)"),
                 ("wonjang 해시 <파일>", "SHA-256 체크섬(무결성 --확인)"),
@@ -3519,6 +3537,41 @@ fn cmd_mail(count: usize, unseen: bool) -> Result<()> {
     }
     println!();
     ui::info("     (본문 읽기: wonjang 메일읽기 <번호> · 안 읽은 것만: --안읽음)");
+    println!();
+    Ok(())
+}
+
+/// 메일을 보낸다(SMTP). 외부 전송이므로 보내기 전 받는사람·제목을 명확히 echo한다.
+fn cmd_mail_send(to: &str, subject: &str, body: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let cfg = match email::EmailConfig::from_env() {
+        Some(c) => c,
+        None => {
+            print_mail_setup_help();
+            return Ok(());
+        }
+    };
+    if to.trim().is_empty() || !to.contains('@') {
+        anyhow::bail!("받는 사람 이메일 주소를 정확히 적어주세요(--받는사람 a@b.com).");
+    }
+    // 외부 전송 — 무엇을 보내는지 먼저 명확히 보여준다.
+    println!();
+    println!("  📤 {}", "메일을 보냅니다".bright_cyan().bold());
+    println!("     {} {}", "보내는이".dimmed(), cfg.user);
+    println!("     {} {}", "받는이  ".dimmed(), to.bright_white());
+    println!("     {} {}", "제목    ".dimmed(), subject);
+    let preview: String = body.chars().take(80).collect();
+    println!(
+        "     {} {}{}",
+        "내용    ".dimmed(),
+        preview,
+        if body.chars().count() > 80 { "…" } else { "" }
+    );
+    println!();
+    ui::info(&format!("     SMTP {} 로 전송 중…", cfg.smtp_host));
+    email::send_mail(&cfg, to, subject, body)?;
+    println!();
+    println!("  ✅ {} 에게 보냈어요!", to.bright_white());
     println!();
     Ok(())
 }

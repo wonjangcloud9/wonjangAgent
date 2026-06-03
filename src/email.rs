@@ -17,6 +17,7 @@ use std::sync::Arc;
 pub struct EmailConfig {
     pub host: String,
     pub port: u16,
+    pub smtp_host: String,
     pub user: String,
     pub password: String,
 }
@@ -37,9 +38,14 @@ impl EmailConfig {
             .ok()
             .and_then(|p| p.trim().parse().ok())
             .unwrap_or(993);
+        let smtp_host = std::env::var("WONJANG_SMTP_HOST")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| guess_smtp_host(&user));
         Some(Self {
             host,
             port,
+            smtp_host,
             user,
             password,
         })
@@ -63,6 +69,55 @@ pub fn guess_imap_host(email: &str) -> String {
         "" => "imap.localhost".to_string(),
         other => format!("imap.{other}"),
     }
+}
+
+/// 이메일 도메인으로 SMTP 호스트를 추정한다(보내기용). 순수.
+pub fn guess_smtp_host(email: &str) -> String {
+    let domain = email.split('@').nth(1).unwrap_or("").to_lowercase();
+    match domain.as_str() {
+        "gmail.com" | "googlemail.com" => "smtp.gmail.com".to_string(),
+        "naver.com" => "smtp.naver.com".to_string(),
+        "daum.net" | "hanmail.net" => "smtp.daum.net".to_string(),
+        "kakao.com" => "smtp.kakao.com".to_string(),
+        "nate.com" => "smtp.mail.nate.com".to_string(),
+        "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => "smtp.office365.com".to_string(),
+        "icloud.com" | "me.com" => "smtp.mail.me.com".to_string(),
+        "yahoo.com" => "smtp.mail.yahoo.com".to_string(),
+        "" => "smtp.localhost".to_string(),
+        other => format!("smtp.{other}"),
+    }
+}
+
+/// 메일을 보낸다(SMTP over rustls, 암묵 TLS 465). 외부 전송 — 호출자가 사용자 의도를 확인한 뒤 부른다.
+pub fn send_mail(cfg: &EmailConfig, to: &str, subject: &str, body: &str) -> Result<()> {
+    use lettre::message::header::ContentType;
+    use lettre::message::Mailbox;
+    use lettre::transport::smtp::authentication::Credentials;
+    use lettre::{Message, SmtpTransport, Transport};
+
+    let from: Mailbox = cfg
+        .user
+        .parse()
+        .map_err(|_| anyhow::anyhow!("보내는 주소 형식이 이상해요: {}", cfg.user))?;
+    let to_mb: Mailbox = to
+        .parse()
+        .map_err(|_| anyhow::anyhow!("받는 사람 주소 형식이 올바르지 않아요: {to}"))?;
+    let email = Message::builder()
+        .from(from)
+        .to(to_mb)
+        .subject(subject)
+        .header(ContentType::TEXT_PLAIN)
+        .body(body.to_string())
+        .map_err(|e| anyhow::anyhow!("메일 작성 실패: {e}"))?;
+    let creds = Credentials::new(cfg.user.clone(), cfg.password.clone());
+    let mailer = SmtpTransport::relay(&cfg.smtp_host)
+        .map_err(|e| anyhow::anyhow!("SMTP 설정 실패({}): {e}", cfg.smtp_host))?
+        .credentials(creds)
+        .build();
+    mailer
+        .send(&email)
+        .map_err(|e| anyhow::anyhow!("전송 실패: {e}. 앱 비밀번호/SMTP 설정을 확인하세요."))?;
+    Ok(())
 }
 
 /// 받은편지함 헤더 한 줄.
@@ -435,6 +490,14 @@ mod tests {
         assert_eq!(guess_imap_host("me@naver.com"), "imap.naver.com");
         assert_eq!(guess_imap_host("me@daum.net"), "imap.daum.net");
         assert_eq!(guess_imap_host("me@company.co.kr"), "imap.company.co.kr");
+    }
+
+    #[test]
+    fn guesses_smtp_hosts() {
+        assert_eq!(guess_smtp_host("me@gmail.com"), "smtp.gmail.com");
+        assert_eq!(guess_smtp_host("me@naver.com"), "smtp.naver.com");
+        assert_eq!(guess_smtp_host("me@outlook.com"), "smtp.office365.com");
+        assert_eq!(guess_smtp_host("me@company.co.kr"), "smtp.company.co.kr");
     }
 
     #[test]
