@@ -2062,17 +2062,6 @@ fn cmd_notify(cfg: &Config, message: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// 시간대별 인사(아침/낮/저녁/밤).
-fn greeting() -> &'static str {
-    use chrono::Timelike;
-    match chrono::Local::now().hour() {
-        5..=10 => "좋은 아침이에요 ☀️",
-        11..=16 => "좋은 오후예요 🌤️",
-        17..=20 => "좋은 저녁이에요 🌆",
-        _ => "편안한 밤 되세요 🌙",
-    }
-}
-
 /// 모든 데이터를 타임스탬프 폴더로 백업한다 — LLM 없이 즉시.
 fn cmd_backup(dest: &Option<String>) -> Result<()> {
     let dest_dir = match dest {
@@ -4421,7 +4410,7 @@ fn cmd_status() -> Result<()> {
     println!(
         "  {}  {}",
         "원장 현황".bright_cyan().bold(),
-        greeting().dimmed()
+        soul::greeting().dimmed()
     );
     // 오늘 날짜·요일(매일 보는 대시보드의 기본).
     let now_local = chrono::Local::now().date_naive();

@@ -113,11 +113,55 @@ pub fn banner(label: &str) {
         crate::soul::greeting().bold(),
         format!("오늘은 {}월 {}일 ({weekday}).", today.month(), today.day()).dimmed()
     );
+    // '수집→자랑' 루프를 첫 화면에 각인: 오늘까지의 미니 잔디 한 줄.
+    println!("  {}", habit_strip());
     println!(
         "  {}",
-        "무엇이든 한국어로 시켜보세요.  /help · /성격 · /exit".dimmed()
+        "무엇이든 한국어로 시켜보세요.  /help · /성격 · /자랑 · /exit".dimmed()
     );
     println!();
+}
+
+/// 배너용 미니 잔디 한 줄. 습관이 있으면 가장 긴 연속 + 최근 7일 ▓░,
+/// 없으면 빈 잔디로 '수집→자랑' 루프를 유도한다.
+fn habit_strip() -> String {
+    let store = match crate::habits::HabitStore::load() {
+        Ok(s) => s,
+        Err(_) => return "오늘부터 한 칸씩 쌓아봐요 🌱".dimmed().to_string(),
+    };
+    if store.items.is_empty() {
+        return format!(
+            "{}  {}",
+            "░░░░░░░".dimmed(),
+            "습관 하나만 등록하면 — 한 달 뒤 자랑 카드가 생겨요 (wonjang 자랑)".dimmed()
+        );
+    }
+    let today = crate::habits::today();
+    let best = store
+        .items
+        .iter()
+        .max_by_key(|h| h.streak(today))
+        .expect("items non-empty");
+    let s = best.streak(today);
+    let set = best.date_set();
+    let bools: Vec<bool> = (0..7)
+        .rev()
+        .map(|i| {
+            let d = today - chrono::Duration::days(i);
+            set.contains(&d.format("%Y-%m-%d").to_string())
+        })
+        .collect();
+    let jandi = crate::card::render_jandi(&bools);
+    if s > 0 {
+        format!(
+            "🔥 {} {}일째   {}",
+            best.name.bright_white(),
+            s.bright_yellow(),
+            jandi.green()
+        )
+    } else {
+        format!("{}  {}", jandi.dimmed(), "오늘 한 칸 채워볼까요?".dimmed())
+    }
 }
 
 /// 처음 쓰는 사용자에게 한 번만 보여주는 따뜻한 안내.
@@ -135,14 +179,21 @@ pub fn onboarding_if_first() {
     );
     println!(
         "     {}",
-        "예) \"다운로드 폴더 정리해줘\"  ·  \"오늘 서울 날씨\"  ·  \"강남역 지하철 언제 와?\""
-            .dimmed()
+        "예) \"오늘 서울 날씨\"  ·  \"다운로드 폴더 정리해줘\"".dimmed()
+    );
+    println!(
+        "     {} {}",
+        "🌱 오늘부터 한 가지만 쌓아봐요:".dimmed(),
+        "wonjang 습관 add 운동".bright_cyan()
     );
     println!(
         "     {}",
-        "💡 제 말투도 바꿀 수 있어요:  /성격 친구".dimmed()
+        "   매일 한 칸씩 채우면, 한 달 뒤 자랑할 카드가 생겨요 →  wonjang 자랑".dimmed()
     );
-    println!("     {}", "📋 할 수 있는 일 전체는:  wonjang 도움".dimmed());
+    println!(
+        "     {}",
+        "💡 말투 바꾸기: /성격 친구   ·   📋 전체 기능: wonjang 도움".dimmed()
+    );
     println!();
     if let Some(parent) = marker.parent() {
         std::fs::create_dir_all(parent).ok();

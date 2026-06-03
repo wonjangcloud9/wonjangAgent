@@ -79,7 +79,7 @@ fn rule(left: char, right: char, title: &str, inner: usize) -> String {
 }
 
 /// 28일 잔디(오래된→최신)를 7개씩 묶어 렌더. ▓=완료, ░=미완.
-fn render_jandi(days: &[bool]) -> String {
+pub fn render_jandi(days: &[bool]) -> String {
     let mut out = String::new();
     for (i, chunk) in days.chunks(7).enumerate() {
         if i > 0 {
