@@ -59,14 +59,25 @@ impl Table {
 
 /// 통화기호·콤마·% 등을 떼고 숫자로 파싱.
 fn parse_num(s: &str) -> Option<f64> {
+    let s = s.trim();
+    // 회계식 음수 표기 (1,000) → -1,000.
+    let (s, neg) = if s.starts_with('(') && s.ends_with(')') && s.len() >= 2 {
+        (&s[1..s.len() - 1], true)
+    } else {
+        (s, false)
+    };
+    // 통화·단위·구분 기호 제거(원: 한국 화폐 단위, ₩·$·%·콤마·공백).
     let cleaned: String = s
         .chars()
-        .filter(|c| !matches!(c, ',' | '₩' | '$' | '%' | ' ' | '\t'))
+        .filter(|c| !matches!(c, ',' | '₩' | '$' | '%' | ' ' | '\t' | '원'))
         .collect();
     if cleaned.is_empty() {
         return None;
     }
-    cleaned.parse::<f64>().ok()
+    cleaned
+        .parse::<f64>()
+        .ok()
+        .map(|v| if neg { -v } else { v })
 }
 
 /// CSV(또는 TSV) 파일을 읽는다.
@@ -205,6 +216,23 @@ mod tests {
         assert_eq!(t.col_index("금액"), Some(1));
         assert_eq!(t.col_index("2"), Some(1));
         assert_eq!(t.col_index("없는열"), None);
+    }
+
+    #[test]
+    fn parse_num_handles_korean_money() {
+        // 천단위 콤마 + 통화기호.
+        assert_eq!(parse_num("1,000"), Some(1000.0));
+        assert_eq!(parse_num("₩3,000"), Some(3000.0));
+        // 원 접미사(한국 가계부·은행 CSV에 흔함).
+        assert_eq!(parse_num("5,000원"), Some(5000.0));
+        assert_eq!(parse_num("12,000 원"), Some(12000.0));
+        // 회계식 괄호 음수.
+        assert_eq!(parse_num("(1,000)"), Some(-1000.0));
+        // 음수·소수.
+        assert_eq!(parse_num("-2,500.5"), Some(-2500.5));
+        // 진짜 텍스트는 여전히 None.
+        assert_eq!(parse_num("원룸"), None);
+        assert_eq!(parse_num(""), None);
     }
 
     #[test]
