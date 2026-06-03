@@ -1752,6 +1752,36 @@ fn cmd_cron_remove(id: u64) -> Result<()> {
     Ok(())
 }
 
+/// 선제 알림(브리핑·공휴일·습관·주간결산)의 '보낸 날' 표시 — 파일에 저장해 데몬 재시작에도 중복 방지.
+#[derive(Default, Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+struct AlertState {
+    #[serde(default)]
+    last_briefed: Option<String>,
+    #[serde(default)]
+    last_holiday: Option<String>,
+    #[serde(default)]
+    last_habit: Option<String>,
+    #[serde(default)]
+    last_weekly: Option<String>,
+}
+
+impl AlertState {
+    fn path() -> Option<std::path::PathBuf> {
+        dirs::data_dir().map(|d| d.join("wonjang").join("alert_state.json"))
+    }
+    fn load() -> Self {
+        Self::path()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+    fn save(&self) {
+        if let (Some(p), Ok(json)) = (Self::path(), serde_json::to_string_pretty(self)) {
+            let _ = crate::util::atomic_write(&p, json.as_bytes());
+        }
+    }
+}
+
 /// 크론 데몬 — 포그라운드에서 주기적으로 due 작업을 실행한다.
 async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     let store = cron::CronStore::load()?;
@@ -1771,10 +1801,9 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         allow_dangerous: false,
     };
     let tick = std::time::Duration::from_secs(30);
-    let mut last_briefed: Option<String> = None;
-    let mut last_holiday_alert: Option<String> = None;
-    let mut last_habit_alert: Option<String> = None;
-    let mut last_weekly_recap: Option<String> = None;
+    // 선제 알림 dedup 상태를 파일에서 복원(재시작해도 같은 윈도우 중복 푸시 방지).
+    let mut alerts = AlertState::load();
+    let mut alerts_saved = alerts.clone();
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
@@ -1819,19 +1848,25 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         check_due_reminders(cfg);
 
         // 매일 자동 브리핑(설정된 시각이 지났고 오늘 아직 안 보냈으면).
-        maybe_send_briefing(eng, cfg, &ctx, &mut last_briefed).await;
+        maybe_send_briefing(eng, cfg, &ctx, &mut alerts.last_briefed).await;
 
         // 코인 시세 알림: 목표가에 도달한 알림을 푸시한다.
         check_price_watches(cfg).await;
 
         // 공휴일 전날이면 "내일 빨간날" 알림(선제성).
-        maybe_alert_holiday_eve(cfg, &mut last_holiday_alert).await;
+        maybe_alert_holiday_eve(cfg, &mut alerts.last_holiday).await;
 
         // 저녁이면 끊길 위기 습관을 먼저 챙겨 리마인드(선톡).
-        maybe_alert_habit_evening(cfg, &mut last_habit_alert).await;
+        maybe_alert_habit_evening(cfg, &mut alerts.last_habit).await;
 
         // 일요일 저녁이면 이번 주 결산을 먼저 푸시(자랑 카드 트리거).
-        maybe_push_weekly_recap(cfg, &mut last_weekly_recap).await;
+        maybe_push_weekly_recap(cfg, &mut alerts.last_weekly).await;
+
+        // 알림 dedup 표시가 바뀌었으면 파일에 저장(재시작 후 중복 방지).
+        if alerts != alerts_saved {
+            alerts.save();
+            alerts_saved = alerts.clone();
+        }
 
         tokio::time::sleep(tick).await;
     }
@@ -6699,5 +6734,26 @@ mod flatten_tests {
         // 반투명 검정(a=128)을 흰 위에: 약 127.
         let g = out.get_pixel(2, 0).0;
         assert!(g[0] >= 125 && g[0] <= 129, "회색 기대, got {g:?}");
+    }
+}
+
+#[cfg(test)]
+mod alert_state_tests {
+    use super::AlertState;
+
+    #[test]
+    fn roundtrips_and_defaults_missing_fields() {
+        let s = AlertState {
+            last_briefed: Some("2026-06-03".into()),
+            last_holiday: None,
+            last_habit: Some("2026-06-03".into()),
+            last_weekly: None,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back: AlertState = serde_json::from_str(&json).unwrap();
+        assert_eq!(s, back);
+        // 빈 JSON·누락 필드는 기본값(None)으로 복원 — 구버전 파일 호환.
+        let partial: AlertState = serde_json::from_str("{}").unwrap();
+        assert_eq!(partial, AlertState::default());
     }
 }
