@@ -3137,6 +3137,9 @@ fn cmd_pdf_merge(files: &[String], output: Option<&str>) -> Result<()> {
         let doc = lopdf::Document::load(f).map_err(|e| {
             anyhow::anyhow!("PDF를 열지 못했어요({f}): {e}. 암호·손상 여부를 확인해 주세요.")
         })?;
+        if doc.is_encrypted() {
+            anyhow::bail!("비밀번호가 걸린 PDF예요: {f}. 먼저 PDF 뷰어에서 암호를 풀어 저장한 뒤 다시 시도하세요.");
+        }
         docs.push(doc);
     }
     let (mut merged, count) = merge_documents(docs)?;
@@ -3260,6 +3263,11 @@ fn cmd_pdf_rotate(file: &str, angle: i64, pages: Option<&str>, output: Option<&s
     let mut doc = lopdf::Document::load(path).map_err(|e| {
         anyhow::anyhow!("PDF를 열지 못했어요({e}). 암호가 걸렸거나 손상됐을 수 있어요.")
     })?;
+    if doc.is_encrypted() {
+        anyhow::bail!(
+            "비밀번호가 걸린 PDF예요. 먼저 PDF 뷰어에서 암호를 풀어 저장한 뒤 다시 시도하세요."
+        );
+    }
     let page_map = doc.get_pages();
     let total = page_map.len() as u32;
     if total == 0 {
@@ -3368,6 +3376,11 @@ fn cmd_pdf_pages(file: &str, range: &str, output: Option<&str>) -> Result<()> {
     let mut doc = lopdf::Document::load(path).map_err(|e| {
         anyhow::anyhow!("PDF를 열지 못했어요({e}). 암호가 걸렸거나 손상됐을 수 있어요.")
     })?;
+    if doc.is_encrypted() {
+        anyhow::bail!(
+            "비밀번호가 걸린 PDF예요. 먼저 PDF 뷰어에서 암호를 풀어 저장한 뒤 다시 시도하세요."
+        );
+    }
     let total = doc.get_pages().len() as u32;
     if total == 0 {
         anyhow::bail!("페이지가 없는 PDF예요.");
@@ -3695,7 +3708,8 @@ fn plan_resize(w: u32, h: u32, target_w: Option<u32>, scale: Option<f64>) -> (u3
         return (tw, nh.max(1));
     }
     if let Some(s) = scale {
-        if s <= 0.0 || s >= 1.0 {
+        // NaN·무한대(잘못된 --배율 입력)는 안전하게 원본 유지.
+        if !s.is_finite() || s <= 0.0 || s >= 1.0 {
             return (w, h);
         }
         let nw = ((w as f64) * s).round() as u32;
@@ -6466,6 +6480,9 @@ mod image_tests {
         // 잘못된 값은 안전하게 원본.
         assert_eq!(plan_resize(640, 480, Some(0), None), (640, 480));
         assert_eq!(plan_resize(640, 480, None, Some(0.0)), (640, 480));
+        // NaN·무한대(잘못된 --배율)도 1×1로 망가지지 않고 원본 유지.
+        assert_eq!(plan_resize(640, 480, None, Some(f64::NAN)), (640, 480));
+        assert_eq!(plan_resize(640, 480, None, Some(f64::INFINITY)), (640, 480));
     }
 }
 

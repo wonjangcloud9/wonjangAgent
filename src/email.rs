@@ -18,6 +18,7 @@ pub struct EmailConfig {
     pub host: String,
     pub port: u16,
     pub smtp_host: String,
+    pub smtp_port: u16,
     pub user: String,
     pub password: String,
 }
@@ -42,10 +43,16 @@ impl EmailConfig {
             .ok()
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| guess_smtp_host(&user));
+        // 기본 465(암묵 TLS). Office365·일부 사내메일은 465를 막으니 587로 지정하면 STARTTLS.
+        let smtp_port = std::env::var("WONJANG_SMTP_PORT")
+            .ok()
+            .and_then(|p| p.trim().parse().ok())
+            .unwrap_or(465);
         Some(Self {
             host,
             port,
             smtp_host,
+            smtp_port,
             user,
             password,
         })
@@ -88,7 +95,8 @@ pub fn guess_smtp_host(email: &str) -> String {
     }
 }
 
-/// 메일을 보낸다(SMTP over rustls, 암묵 TLS 465). 외부 전송 — 호출자가 사용자 의도를 확인한 뒤 부른다.
+/// 메일을 보낸다(SMTP over rustls). 465=암묵 TLS(기본), 그 외(587 등)=STARTTLS.
+/// 외부 전송 — 호출자가 사용자 의도를 확인한 뒤 부른다.
 pub fn send_mail(
     cfg: &EmailConfig,
     to: &str,
@@ -101,13 +109,20 @@ pub fn send_mail(
 
     let email = build_email(&cfg.user, to, subject, body, attachments)?;
     let creds = Credentials::new(cfg.user.clone(), cfg.password.clone());
-    let mailer = SmtpTransport::relay(&cfg.smtp_host)
-        .map_err(|e| anyhow::anyhow!("SMTP 설정 실패({}): {e}", cfg.smtp_host))?
-        .credentials(creds)
-        .build();
-    mailer
-        .send(&email)
-        .map_err(|e| anyhow::anyhow!("전송 실패: {e}. 앱 비밀번호/SMTP 설정을 확인하세요."))?;
+    // 465는 암묵 TLS(relay), 587 등은 STARTTLS(starttls_relay) — Office365·587전용 사내메일 지원.
+    let builder = if cfg.smtp_port == 465 {
+        SmtpTransport::relay(&cfg.smtp_host)
+    } else {
+        SmtpTransport::starttls_relay(&cfg.smtp_host)
+    }
+    .map_err(|e| anyhow::anyhow!("SMTP 설정 실패({}): {e}", cfg.smtp_host))?;
+    let mailer = builder.port(cfg.smtp_port).credentials(creds).build();
+    mailer.send(&email).map_err(|e| {
+        anyhow::anyhow!(
+            "전송 실패: {e}. 앱 비밀번호를 확인하세요. \
+             Office365·일부 사내메일은 465를 막으니 WONJANG_SMTP_PORT=587 로 다시 시도해 보세요."
+        )
+    })?;
     Ok(())
 }
 
@@ -565,9 +580,15 @@ fn decode_one_word(s: &str) -> Option<(String, usize)> {
     let text = &rest2[..end];
     let consumed = 2 + q1 + 1 + q2 + 1 + end + 2;
     let raw = match enc.to_ascii_uppercase().as_str() {
+        // 일부 메일러는 패딩(=) 없이 B-인코딩을 보낸다 → STANDARD 실패 시 패딩 빼고 재시도.
         "B" => base64::engine::general_purpose::STANDARD
             .decode(text)
-            .ok()?,
+            .ok()
+            .or_else(|| {
+                base64::engine::general_purpose::STANDARD_NO_PAD
+                    .decode(text.trim_end_matches('='))
+                    .ok()
+            })?,
         "Q" => q_decode(text),
         _ => return None,
     };
@@ -689,6 +710,16 @@ mod tests {
         // "=?UTF-8?B?7JWI64WV?=" == "안녕"
         let enc = "=?UTF-8?B?7JWI64WV?=";
         assert_eq!(decode_mime_words(enc), "안녕");
+    }
+
+    #[test]
+    fn decodes_base64_word_without_padding() {
+        // 일부 메일러는 패딩(=)을 생략한다. "한" = EC 95 BC? → "한"의 UTF-8 base64는 "7ZWc"(패딩 없음).
+        // "=?UTF-8?B?7ZWc?=" == "한" (이미 패딩 불필요한 4글자 케이스)
+        assert_eq!(decode_mime_words("=?UTF-8?B?7ZWc?="), "한");
+        // 패딩이 필요한데 생략된 경우: "안"의 base64는 "7JWI"(패딩X), "가"는 "6rCA"... 패딩 생략 케이스를 직접:
+        // base64("AB") = "QUI=" → 패딩 생략하면 "QUI"
+        assert_eq!(decode_mime_words("=?UTF-8?B?QUI?="), "AB");
     }
 
     #[test]

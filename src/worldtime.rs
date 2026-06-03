@@ -67,6 +67,10 @@ fn format_city(name: &str, tz: Tz) -> CityTime {
 /// 이름(부분일치)으로 도시의 (정식명, 타임존)을 찾는다.
 pub fn find_tz(name: &str) -> Option<(&'static str, Tz)> {
     let q = name.trim().to_lowercase();
+    // 빈 질의는 모든 도시에 매칭("".contains는 항상 true)되어 첫 도시로 조용히 빠지므로 차단.
+    if q.is_empty() {
+        return None;
+    }
     CITIES
         .iter()
         .find(|(n, _)| n.to_lowercase().contains(&q))

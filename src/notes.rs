@@ -42,9 +42,13 @@ pub fn resolve(vault: &Path, rel: &str) -> Result<PathBuf> {
         }
     }
     let mut path = vault.join(rel);
-    // .md 확장자 자동 보정(디렉터리가 아니면).
-    if path.extension().is_none() {
-        path.set_extension("md");
+    // 실제 .md/.markdown로 끝나지 않으면 .md를 덧붙인다.
+    // (set_extension은 '2026.05.31'처럼 점 든 한글 날짜·제목의 마지막 조각을 확장자로 오인해 날린다)
+    let lower = path.to_string_lossy().to_lowercase();
+    if !(lower.ends_with(".md") || lower.ends_with(".markdown")) {
+        let mut s = path.into_os_string();
+        s.push(".md");
+        path = s.into();
     }
     Ok(path)
 }

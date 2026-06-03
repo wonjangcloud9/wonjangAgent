@@ -93,6 +93,7 @@ fn client() -> Result<reqwest::Client> {
 /// 지역 이름 → (위도, 경도, 표시이름). 주요 도시는 내장, 그 외는 지오코딩.
 /// (대기질 등 다른 위치 기반 기능에서도 재사용한다.)
 pub async fn resolve(loc: &str) -> Result<(f64, f64, String)> {
+    let loc = loc.trim();
     if loc.is_empty() {
         return Ok((37.5665, 126.9780, "서울".to_string()));
     }
@@ -120,7 +121,16 @@ pub async fn resolve(loc: &str) -> Result<(f64, f64, String)> {
 
 /// 주요 한국 도시 좌표(지오코딩보다 정확).
 fn korean_city(name: &str) -> Option<(f64, f64)> {
-    let n = name.trim_end_matches("특별시").trim_end_matches("광역시");
+    // 구어체 접미사 제거(긴 것 먼저, 단일 글자 마지막): '서울시·대전시·세종특별자치시' 등.
+    let n = name
+        .trim()
+        .trim_end_matches("특별자치시")
+        .trim_end_matches("특별자치도")
+        .trim_end_matches("특별시")
+        .trim_end_matches("광역시")
+        .trim_end_matches('시')
+        .trim_end_matches('도')
+        .trim();
     let coord = match n {
         "서울" => (37.5665, 126.9780),
         "부산" => (35.1796, 129.0756),
