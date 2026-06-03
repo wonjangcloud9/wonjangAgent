@@ -245,7 +245,7 @@ enum Commands {
         output: Option<String>,
     },
     /// zip 파일을 풉니다. 예: wonjang 압축풀기 자료.zip
-    #[command(alias = "압축풀기")]
+    #[command(aliases = ["압축풀기", "압축해제"])]
     Unzip {
         /// 풀 zip 파일
         file: String,
@@ -259,7 +259,7 @@ enum Commands {
         file: String,
     },
     /// 파일 이름 일괄 변경(특정 문자 치환). 예: wonjang 이름변경 ~/사진 IMG_ 여행_
-    #[command(alias = "이름변경")]
+    #[command(aliases = ["이름변경", "이름바꾸기"])]
     Rename {
         /// 대상 폴더
         path: String,
@@ -383,7 +383,7 @@ enum Commands {
         output: Option<String>,
     },
     /// 한글 깨진 파일(EUC-KR/CP949)을 UTF-8로 복구합니다. 예: wonjang 깨짐 가계부.csv
-    #[command(alias = "깨짐")]
+    #[command(aliases = ["깨짐", "한글복구"])]
     Encfix {
         /// 텍스트 파일 경로(.txt .csv 등)
         file: String,
@@ -496,7 +496,7 @@ enum Commands {
         source: String,
     },
     /// 가계부: 지출을 기록하거나 합계를 봅니다.
-    #[command(alias = "지출")]
+    #[command(aliases = ["지출", "가계부"])]
     Expense {
         #[command(subcommand)]
         action: Option<ExpenseAction>,
@@ -549,7 +549,7 @@ enum Commands {
         location: Vec<String>,
     },
     /// 환율. 예: wonjang 환율 (주요통화) / wonjang 환율 100 USD (환산)
-    #[command(alias = "환율")]
+    #[command(aliases = ["환율", "환전"])]
     Exchange {
         /// 환산할 금액(선택)
         amount: Option<f64>,
@@ -576,7 +576,7 @@ enum Commands {
         games: Option<usize>,
     },
     /// 평수 변환(평 ↔ ㎡). 예: wonjang 평 30
-    #[command(alias = "평")]
+    #[command(aliases = ["평", "평수"])]
     Pyeong {
         /// 변환할 숫자
         value: f64,
