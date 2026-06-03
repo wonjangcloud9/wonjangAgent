@@ -249,6 +249,12 @@ enum Commands {
         /// 풀 폴더(생략 시 zip 이름의 새 폴더)
         dest: Option<String>,
     },
+    /// zip을 풀지 않고 안의 목록만 봅니다(한글 파일명 깨짐 보정). 예: wonjang 압축보기 자료.zip
+    #[command(name = "압축보기", alias = "압축목록")]
+    ZipView {
+        /// 들여다볼 zip 파일
+        file: String,
+    },
     /// 파일 이름 일괄 변경(특정 문자 치환). 예: wonjang 이름변경 ~/사진 IMG_ 여행_
     #[command(alias = "이름변경")]
     Rename {
@@ -1138,6 +1144,7 @@ async fn run() -> Result<()> {
         Some(Commands::Search { path, query, max }) => return cmd_search(path, query, *max),
         Some(Commands::Zip { sources, output }) => return cmd_zip(sources, output.as_deref()),
         Some(Commands::Unzip { file, dest }) => return cmd_unzip(file, dest.as_deref()),
+        Some(Commands::ZipView { file }) => return cmd_zip_view(file),
         Some(Commands::Rename {
             path,
             find,
@@ -2170,6 +2177,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 이름변경 <폴더> A B", "파일명 A를 B로 일괄 치환"),
                 ("wonjang 압축 <폴더>", "zip 압축 / 압축풀기 <zip>"),
                 (
+                    "wonjang 압축보기 <파일.zip>",
+                    "풀지 않고 목록 보기(한글명 보정)",
+                ),
+                (
                     "wonjang 이미지 <사진들> --폭 1280",
                     "이미지 축소·압축(여러 장, 원본 보존)",
                 ),
@@ -2455,6 +2466,69 @@ fn cmd_zip(sources: &[String], output: Option<&str>) -> Result<()> {
         out.display(),
         diskusage::human(size)
     );
+    println!();
+    Ok(())
+}
+
+/// zip 엔트리 파일명을 사람이 읽게 디코드한다(UTF-8이면 그대로, 아니면 CP949). 순수.
+/// 윈도우에서 만든 한국 zip은 파일명이 CP949라 다른 도구에선 깨져 보인다.
+fn decode_zip_name(raw: &[u8]) -> String {
+    match std::str::from_utf8(raw) {
+        Ok(s) => s.to_string(),
+        Err(_) => encoding_rs::EUC_KR.decode(raw).0.into_owned(),
+    }
+}
+
+/// zip을 풀지 않고 안의 목록만 보여준다(한글 파일명 깨짐 보정).
+fn cmd_zip_view(file: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let zip_path = expand_path(file);
+    if !zip_path.exists() {
+        return Err(anyhow::anyhow!("zip 파일이 없어요: {}", zip_path.display()));
+    }
+    let f = std::fs::File::open(&zip_path)?;
+    let mut archive = zip::ZipArchive::new(f).map_err(|e| {
+        anyhow::anyhow!("zip을 열지 못했어요({e}). 손상됐거나 zip이 아닐 수 있어요.")
+    })?;
+    let count = archive.len();
+    println!();
+    println!(
+        "  📦 {}  ({}개 항목)",
+        file.bright_cyan(),
+        count.to_string().bright_white()
+    );
+    println!();
+    let mut total_size = 0u64;
+    let mut total_comp = 0u64;
+    let mut files = 0usize;
+    let mut dirs = 0usize;
+    for i in 0..count {
+        let entry = archive.by_index(i)?;
+        let name = decode_zip_name(entry.name_raw());
+        if entry.is_dir() {
+            dirs += 1;
+            println!("     📁 {}", name.dimmed());
+        } else {
+            files += 1;
+            let size = entry.size();
+            total_size += size;
+            total_comp += entry.compressed_size();
+            println!("     📄 {}  {}", name, human_bytes(size).dimmed());
+        }
+    }
+    println!();
+    let ratio = total_comp
+        .saturating_mul(100)
+        .checked_div(total_size)
+        .map(|comp_pct| 100u64.saturating_sub(comp_pct.min(100)))
+        .unwrap_or(0);
+    println!(
+        "  파일 {files}개 · 폴더 {dirs}개 · 원본 {} → 압축 {} ({}% 절감)",
+        human_bytes(total_size),
+        human_bytes(total_comp),
+        ratio
+    );
+    ui::info("     푸는 건: wonjang 압축풀기 <파일.zip>");
     println!();
     Ok(())
 }
@@ -6044,5 +6118,24 @@ mod image_tests {
         // 잘못된 값은 안전하게 원본.
         assert_eq!(plan_resize(640, 480, Some(0), None), (640, 480));
         assert_eq!(plan_resize(640, 480, None, Some(0.0)), (640, 480));
+    }
+}
+
+#[cfg(test)]
+mod zipview_tests {
+    use super::decode_zip_name;
+
+    #[test]
+    fn utf8_name_passthrough() {
+        assert_eq!(decode_zip_name("한글.txt".as_bytes()), "한글.txt");
+        assert_eq!(decode_zip_name(b"report.pdf"), "report.pdf");
+    }
+
+    #[test]
+    fn cp949_name_decoded() {
+        // 윈도우 zip의 CP949 파일명을 복구.
+        let cp949 = encoding_rs::EUC_KR.encode("계약서.hwp").0.into_owned();
+        // CP949 바이트는 보통 유효한 UTF-8이 아니므로 EUC-KR로 디코드돼야 한다.
+        assert_eq!(decode_zip_name(&cp949), "계약서.hwp");
     }
 }
