@@ -3344,6 +3344,29 @@ fn open_image_oriented(path: &std::path::Path) -> Result<image::DynamicImage> {
     }
 }
 
+/// 이미지를 RGB로 바꾸되, 투명한 부분은 **흰 배경**에 합성한다(알파를 그냥 버리면 검게 됨).
+/// JPEG로 저장하거나 PDF에 임베드할 때 사용 — 투명 PNG가 검은 배경으로 나오는 문제를 막는다.
+fn flatten_on_white(img: &image::DynamicImage) -> image::RgbImage {
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let mut out = image::RgbImage::new(w, h);
+    for (x, y, p) in rgba.enumerate_pixels() {
+        let [r, g, b, a] = p.0;
+        if a == 255 {
+            out.put_pixel(x, y, image::Rgb([r, g, b]));
+        } else {
+            let af = a as f32 / 255.0;
+            let blend = |c: u8| {
+                ((c as f32 * af) + 255.0 * (1.0 - af))
+                    .round()
+                    .clamp(0.0, 255.0) as u8
+            };
+            out.put_pixel(x, y, image::Rgb([blend(r), blend(g), blend(b)]));
+        }
+    }
+    out
+}
+
 /// 확장자가 우리가 다루는 이미지(JPEG/PNG)인지. 순수 함수.
 fn is_supported_image_ext(name: &str) -> bool {
     let lower = name.to_lowercase();
@@ -3379,8 +3402,9 @@ fn cmd_photos_pdf(files: &[String], output: Option<&str>) -> Result<()> {
 
     for f in files {
         // EXIF 방향 적용해 열고(폰 사진 정방향), RGB 베이스라인 JPEG로 임베드.
+        // 투명 PNG는 흰 배경에 합성(검게 임베드되지 않도록).
         let img = open_image_oriented(Path::new(f))?;
-        let rgb = img.to_rgb8();
+        let rgb = flatten_on_white(&img);
         let (w, h) = (rgb.width(), rgb.height());
         let mut jpeg: Vec<u8> = Vec::new();
         {
@@ -4070,7 +4094,8 @@ fn resize_one_image(
 
     // 인코딩: JPEG는 품질 적용, PNG는 무손실 재인코딩.
     if target_jpeg {
-        let rgb = out_img.to_rgb8();
+        // 투명 부분은 흰 배경에 합성(검게 나오지 않도록).
+        let rgb = flatten_on_white(&out_img);
         let f = std::fs::File::create(&out_path)?;
         let mut w = std::io::BufWriter::new(f);
         let q = quality.clamp(1, 100);
@@ -6252,5 +6277,25 @@ mod zipview_tests {
         let cp949 = encoding_rs::EUC_KR.encode("계약서.hwp").0.into_owned();
         // CP949 바이트는 보통 유효한 UTF-8이 아니므로 EUC-KR로 디코드돼야 한다.
         assert_eq!(decode_zip_name(&cp949), "계약서.hwp");
+    }
+}
+
+#[cfg(test)]
+mod flatten_tests {
+    use super::flatten_on_white;
+
+    #[test]
+    fn transparent_becomes_white_opaque_preserved() {
+        let mut rgba = image::RgbaImage::new(3, 1);
+        rgba.put_pixel(0, 0, image::Rgba([255, 0, 0, 255])); // 불투명 빨강 → 그대로
+        rgba.put_pixel(1, 0, image::Rgba([0, 0, 0, 0])); // 완전 투명 → 흰색
+        rgba.put_pixel(2, 0, image::Rgba([0, 0, 0, 128])); // 반투명 검정 → 회색
+        let dynimg = image::DynamicImage::ImageRgba8(rgba);
+        let out = flatten_on_white(&dynimg);
+        assert_eq!(out.get_pixel(0, 0).0, [255, 0, 0]);
+        assert_eq!(out.get_pixel(1, 0).0, [255, 255, 255]);
+        // 반투명 검정(a=128)을 흰 위에: 약 127.
+        let g = out.get_pixel(2, 0).0;
+        assert!(g[0] >= 125 && g[0] <= 129, "회색 기대, got {g:?}");
     }
 }
