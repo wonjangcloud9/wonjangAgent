@@ -1959,9 +1959,11 @@ async fn maybe_alert_holiday_eve(cfg: &Config, last_alert: &mut Option<String>) 
     if last_alert.as_deref() == Some(today.as_str()) || now.hour() < 9 {
         return;
     }
-    *last_alert = Some(today.clone());
     let tomorrow = now.date_naive() + chrono::Duration::days(1);
-    if let Ok(list) = holidays::fetch(now.year()).await {
+    // 내일이 속한 연도를 조회(연말 12/31에 다음 해 1/1 공휴일을 놓치지 않게).
+    if let Ok(list) = holidays::fetch(tomorrow.year()).await {
+        // 조회에 성공했을 때만 오늘 점검 완료로 표시(네트워크 실패 시 같은 날 재시도).
+        *last_alert = Some(today.clone());
         if let Some(h) = list.iter().find(|h| h.date == tomorrow) {
             let msg = format!(
                 "🔴 내일({})은 '{}'이에요! 빨간날 잘 보내세요 🎉",
@@ -4354,9 +4356,15 @@ fn cmd_brag(
         return cmd_brag_weekly(width, no_color, copy);
     }
 
-    // 대상 월(YYYY-MM)과 표시 제목.
+    // 대상 월(YYYY-MM)과 표시 제목. 한 자리 월("2026-6")도 0 채워 정규화(저장 형식과 일치).
     let ym = match month {
-        Some(m) => m.trim().to_string(),
+        Some(m) => match m.trim().split_once('-') {
+            Some((y, mo)) => match mo.trim().parse::<u32>() {
+                Ok(n) if (1..=12).contains(&n) => format!("{}-{n:02}", y.trim()),
+                _ => m.trim().to_string(),
+            },
+            None => m.trim().to_string(),
+        },
         None => expenses::this_month(),
     };
     let title = match ym.split_once('-') {

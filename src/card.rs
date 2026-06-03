@@ -6,42 +6,54 @@
 
 use unicode_width::UnicodeWidthChar;
 
-/// 한 글자의 터미널 표시 폭. 결합문자·변이선택자=0, 한글·전각·흔한 이모지=2.
-fn char_width(c: char) -> usize {
+/// base 한 글자의 폭(unicode-width 기준). 결합문자·변이선택자은 0.
+fn base_width(c: char) -> usize {
     match c {
-        '\u{FE0F}' | '\u{FE0E}' | '\u{200D}' => 0, // 변이 선택자·ZWJ
-        _ => {
-            let cp = c as u32;
-            // 흔한 이모지는 macOS 터미널·카톡에서 2칸으로 렌더된다.
-            let emoji = (0x1F300..=0x1FAFF).contains(&cp)
-                || (0x2600..=0x27BF).contains(&cp) // ✍ ✅ 등 기타기호·딩벳
-                || cp == 0x2B50
-                || cp == 0x2B55;
-            if emoji {
-                2
-            } else {
-                UnicodeWidthChar::width(c).unwrap_or(0)
-            }
-        }
+        '\u{FE0F}' | '\u{FE0E}' | '\u{200D}' => 0,
+        _ => UnicodeWidthChar::width(c).unwrap_or(0),
     }
 }
 
-/// 문자열의 터미널 표시 폭(카톡·터미널 정렬 기준).
-pub fn disp_width(s: &str) -> usize {
-    s.chars().map(char_width).sum()
+/// base 글자 뒤에 따라오는 변이선택자를 반영한 폭.
+/// 다음 글자가 U+FE0F(이모지 표현)면 2칸, U+FE0E(텍스트 표현)면 1칸, 그 외엔 base 폭.
+/// 이렇게 해야 `★♥❤☎` 등 텍스트표현 기호(변이선택자 없음)를 1칸으로, `✍️` 등 이모지표현을 2칸으로 본다.
+fn paired_width(c: char, next: Option<char>) -> usize {
+    match c {
+        '\u{FE0F}' | '\u{FE0E}' | '\u{200D}' => 0,
+        _ => match next {
+            Some('\u{FE0F}') => 2,
+            Some('\u{FE0E}') => 1,
+            _ => base_width(c),
+        },
+    }
 }
 
-/// 표시 폭이 `max` 이하가 되도록 글자 경계에서 자른다.
+/// 문자열의 터미널 표시 폭(카톡·터미널 정렬 기준). 변이선택자 페어 인식.
+pub fn disp_width(s: &str) -> usize {
+    let mut w = 0;
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        w += paired_width(c, it.peek().copied());
+    }
+    w
+}
+
+/// 표시 폭이 `max` 이하가 되도록 글자 경계에서 자른다(base+변이선택자를 한 단위로 유지).
 fn truncate_width(s: &str, max: usize) -> String {
     let mut w = 0;
     let mut out = String::new();
-    for c in s.chars() {
-        let cw = char_width(c);
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        let cw = paired_width(c, it.peek().copied());
         if w + cw > max {
             break;
         }
-        w += cw;
         out.push(c);
+        // 뒤따르는 변이선택자도 함께 넣어 페어를 깨지 않는다.
+        if matches!(it.peek(), Some('\u{FE0F}') | Some('\u{FE0E}')) {
+            out.push(it.next().unwrap());
+        }
+        w += cw;
     }
     out
 }
@@ -292,6 +304,30 @@ mod tests {
         assert_eq!(disp_width("abc"), 3);
         assert_eq!(disp_width("a가b"), 4); // 1+2+1
         assert_eq!(disp_width("▓░▓"), 3); // 잔디 블록은 1칸
+    }
+
+    #[test]
+    fn text_presentation_symbols_are_width_one() {
+        // 변이선택자 없는 ★♥❤☎ 등은 1칸(터미널·카톡 렌더와 일치). 과거엔 2칸으로 과대계상해 박스가 깨졌다.
+        assert_eq!(disp_width("★독서"), 5); // 1 + 2 + 2
+        assert_eq!(disp_width("♥운동"), 5);
+        assert_eq!(disp_width("❤️운동"), 6); // ❤ + FE0F = 2칸(이모지 표현)
+        assert_eq!(disp_width("✍️"), 2); // 카드 라벨(이모지 표현) 보존
+                                         // 텍스트표현 기호가 든 습관명으로도 카드 모든 줄이 동일폭.
+        let d = CardData {
+            title: "2026년 6월".into(),
+            streak: Some(("★독서♥".into(), 13)),
+            jandi: (0..28).map(|i| i % 2 == 0).collect(),
+            focus_label: "3시간".into(),
+            expense_label: "1,000원".into(),
+            dday: None,
+            journal_count: 2,
+            comment: "꾸준하네 ☎".into(),
+            footer: "wonjang".into(),
+        };
+        for line in render_card(&d, 40) {
+            assert_eq!(disp_width(&line), 40, "★♥☎ 든 카드 줄 폭 불일치: {line:?}");
+        }
     }
 
     #[test]

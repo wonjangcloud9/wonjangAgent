@@ -33,7 +33,10 @@ where
 pub fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
     std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path)
+    // rename 실패 시 임시 파일을 정리(고아 tmp 누수 방지).
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
 
 /// 문자열을 최대 `max_bytes` 바이트 이하에서 **UTF-8 문자 경계로** 안전하게 자른다.

@@ -81,7 +81,7 @@ impl CronStore {
             .max()
             .unwrap_or(0)
             .max(self.next_id)
-            + 1;
+            .saturating_add(1);
         self.next_id = id;
         self.tasks.push(CronTask {
             id,
