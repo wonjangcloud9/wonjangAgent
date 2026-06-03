@@ -467,16 +467,17 @@ mod tests {
 
     #[test]
     fn weekly_card_every_line_exact_width() {
+        // 적대적 데이터: ZWJ 이모지(👨‍💻·🏃‍♂️) 든 긴 습관명·코멘트, ▲▼ 델타.
         let d = WeeklyCardData {
             title: "6/1~6/7".into(),
-            streak: Some(("운동".into(), 13)),
+            streak: Some(("👨\u{200D}💻 코딩 🏃\u{200D}♂\u{FE0F} 운동 전부 길게".into(), 130)),
             jandi7: vec![true, true, false, true, true, true, false],
             focus_value: "12시간 30분  ▲2시간".into(),
             expense_value: "240,000원  ▼50,000".into(),
-            comment: "이번 주 집중 늘었네! 가보자 💪".into(),
-            footer: "wonjang · v1.13.0".into(),
+            comment: "👨\u{200D}💻 코딩 이번 주 집중 늘었네! 가보자 💪".into(),
+            footer: "나도 만들기 → wonjang-agent".into(),
         };
-        for width in [34usize, 40, 46, 52] {
+        for width in [30usize, 34, 40, 46, 52, 60, 80] {
             for line in render_weekly_card(&d, width) {
                 assert_eq!(
                     disp_width(&line),
