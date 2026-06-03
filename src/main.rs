@@ -364,6 +364,19 @@ enum Commands {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// 여러 이미지를 한 장으로 이어붙입니다(긴 캡처·영수증 합본). 예: wonjang 이미지이어붙이기 1.png 2.png --세로
+    #[command(name = "이미지이어붙이기", aliases = ["사진이어붙이기", "이어붙이기"])]
+    ImageStitch {
+        /// 이어붙일 이미지들(적은 순서대로, 2개 이상)
+        #[arg(required = true)]
+        files: Vec<String>,
+        /// 가로로 나란히(기본은 세로로 쌓기)
+        #[arg(long = "가로")]
+        horizontal: bool,
+        /// 저장 경로(생략 시 이어붙임.png)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
     /// 여러 PDF를 하나로 합칩니다(서류 합본 제출). 예: wonjang pdf합치기 a.pdf b.pdf
     #[command(name = "pdf합치기", alias = "피디에프합치기")]
     PdfMerge {
@@ -1231,6 +1244,11 @@ async fn run() -> Result<()> {
         Some(Commands::PhotosPdf { files, output }) => {
             return cmd_photos_pdf(files, output.as_deref())
         }
+        Some(Commands::ImageStitch {
+            files,
+            horizontal,
+            output,
+        }) => return cmd_image_stitch(files, *horizontal, output.as_deref()),
         Some(Commands::PdfMerge { files, output }) => {
             return cmd_pdf_merge(files, output.as_deref())
         }
@@ -2432,6 +2450,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 사진묶기 *.jpg",
                     "여러 사진을 PDF 한 파일로(서류 제출)",
+                ),
+                (
+                    "wonjang 이미지이어붙이기 1.png 2.png --세로",
+                    "여러 이미지를 한 장으로(긴 캡처·영수증)",
                 ),
                 (
                     "wonjang pdf합치기 a.pdf b.pdf",
@@ -4087,6 +4109,86 @@ fn cmd_photos_pdf(files: &[String], output: Option<&str>) -> Result<()> {
     println!(
         "     저장  {}  ({})",
         out_path.display().to_string().bright_yellow(),
+        human_bytes(bytes)
+    );
+    println!();
+    Ok(())
+}
+
+/// 여러 이미지를 한 장으로 이어붙인다(세로 쌓기 기본, --가로면 나란히). EXIF 방향 적용.
+/// GPT가 못 하는 일: 내 컴퓨터의 캡처·영수증 사진들을 실제로 합쳐 한 장으로.
+fn cmd_image_stitch(files: &[String], horizontal: bool, output: Option<&str>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+
+    if files.len() < 2 {
+        anyhow::bail!(
+            "이어붙일 이미지를 2개 이상 적어주세요. 예: wonjang 이미지이어붙이기 1.png 2.png --세로"
+        );
+    }
+    // 로드(EXIF 방향 적용 — 옆으로 누운 폰 사진도 바로).
+    let mut imgs: Vec<image::RgbaImage> = Vec::new();
+    for f in files {
+        if !Path::new(f).exists() {
+            anyhow::bail!("파일을 찾을 수 없어요: {f}");
+        }
+        imgs.push(open_image_oriented(Path::new(f))?.to_rgba8());
+    }
+    // 캔버스 크기: 세로면 폭=최대, 높이=합 / 가로면 높이=최대, 폭=합.
+    let (cw, ch) = if horizontal {
+        (
+            imgs.iter().map(|i| i.width()).sum::<u32>(),
+            imgs.iter().map(|i| i.height()).max().unwrap_or(0),
+        )
+    } else {
+        (
+            imgs.iter().map(|i| i.width()).max().unwrap_or(0),
+            imgs.iter().map(|i| i.height()).sum::<u32>(),
+        )
+    };
+    if cw == 0 || ch == 0 {
+        anyhow::bail!("이미지 크기가 0이에요.");
+    }
+    // OOM 방지: 합친 캔버스가 지나치게 크면 거부하고 줄이기를 안내.
+    if cw as u64 * ch as u64 > 100_000_000 {
+        anyhow::bail!(
+            "합치면 너무 커요({cw}×{ch}). 먼저 'wonjang 이미지 <파일> --폭 1280'으로 줄여보세요."
+        );
+    }
+    // 흰 배경 캔버스에 차례로 합성(투명 영역은 흰색으로).
+    let mut canvas = image::RgbaImage::from_pixel(cw, ch, image::Rgba([255, 255, 255, 255]));
+    let (mut x, mut y) = (0i64, 0i64);
+    for img in &imgs {
+        image::imageops::overlay(&mut canvas, img, x, y);
+        if horizontal {
+            x += img.width() as i64;
+        } else {
+            y += img.height() as i64;
+        }
+    }
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => PathBuf::from("이어붙임.png"),
+    };
+    if files.iter().any(|f| Path::new(f) == out_path) {
+        anyhow::bail!("원본을 덮어쓸 수 없어요. 다른 출력 경로를 쓰세요(--출력).");
+    }
+    // JPEG 등도 되도록 RGB로 변환해 저장(흰 배경이라 알파 불필요).
+    let rgb = image::DynamicImage::ImageRgba8(canvas).to_rgb8();
+    rgb.save(&out_path)
+        .map_err(|e| anyhow::anyhow!("저장 실패: {e}"))?;
+    let bytes = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+    println!();
+    println!(
+        "  🧵 이미지 {}장을 {}로 이어붙였어요",
+        files.len(),
+        if horizontal { "가로" } else { "세로" }
+    );
+    println!(
+        "     저장  {}  ({}×{}, {})",
+        out_path.display().to_string().bright_yellow(),
+        cw,
+        ch,
         human_bytes(bytes)
     );
     println!();
