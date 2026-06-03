@@ -311,7 +311,7 @@ enum Commands {
         #[arg(long = "오름차순")]
         ascending: bool,
         /// 결과(필터·정렬 행 또는 --그룹 집계)를 새 CSV로 저장. 예: --저장 서울매출.csv
-        #[arg(long = "저장")]
+        #[arg(long = "저장", visible_alias = "출력")]
         save: Option<String>,
         /// 미리볼 행 수(기본 5)
         #[arg(long = "행", default_value_t = 5)]
@@ -326,7 +326,7 @@ enum Commands {
         /// 합칠 파일들(같은·비슷한 머리글, 2개 이상). 열 순서가 달라도 이름으로 맞춤
         files: Vec<String>,
         /// 결과 저장 경로(생략 시 미리보기만). 예: --저장 합본.csv
-        #[arg(long = "저장")]
+        #[arg(long = "저장", visible_alias = "출력")]
         save: Option<String>,
         /// 맨 앞에 '출처'(각 파일 이름) 열 추가 — 합친 뒤 어느 파일에서 왔는지
         #[arg(long = "출처")]
