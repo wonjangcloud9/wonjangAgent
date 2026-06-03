@@ -450,12 +450,15 @@ enum Commands {
         #[arg(long = "안읽음")]
         unseen: bool,
     },
-    /// 이번 달 내 기록을 자랑 카드 한 장으로(습관 잔디·집중·지출·D-day). 예: wonjang 자랑
+    /// 내 기록을 자랑 카드 한 장으로(습관 잔디·집중·지출·D-day). 예: wonjang 자랑 (주간은 --주)
     #[command(alias = "자랑")]
     Brag {
         /// 특정 달(YYYY-MM, 기본 이번 달)
         #[arg(long = "달")]
         month: Option<String>,
+        /// 주간 카드(이번 주 + 지난주 대비 ▲▼)
+        #[arg(long = "주")]
+        week: bool,
         /// 박스 폭(기본 46, 카톡엔 34 권장)
         #[arg(long = "폭", default_value_t = 46)]
         width: usize,
@@ -1144,9 +1147,10 @@ async fn run() -> Result<()> {
         }
         Some(Commands::Brag {
             month,
+            week,
             width,
             no_color,
-        }) => return cmd_brag(month.as_deref(), *width, *no_color),
+        }) => return cmd_brag(month.as_deref(), *week, *width, *no_color),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
         Some(Commands::MailAttach { num, dir, unseen }) => {
@@ -2275,7 +2279,7 @@ fn cmd_guide() -> Result<()> {
             "📊 한눈에",
             &[
                 ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
-                ("wonjang 자랑", "이번 달 회고 카드(카톡 공유, --폭 34)"),
+                ("wonjang 자랑", "회고 카드(주간 --주, 카톡 --폭 34)"),
                 ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
                 ("wonjang config", "설정·연동 상태"),
             ],
@@ -4288,10 +4292,13 @@ fn status_highlight(
     None
 }
 
-/// 이번 달 내 기록을 '자랑 카드' 한 장으로(카톡에 안 깨지는 ANSI 박스). 데이터는 읽기 전용.
-fn cmd_brag(month: Option<&str>, width: usize, no_color: bool) -> Result<()> {
-    use owo_colors::{AnsiColors, OwoColorize};
-    use std::io::IsTerminal;
+/// 내 기록을 '자랑 카드' 한 장으로(카톡에 안 깨지는 ANSI 박스). 데이터는 읽기 전용.
+fn cmd_brag(month: Option<&str>, week: bool, width: usize, no_color: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+
+    if week {
+        return cmd_brag_weekly(width, no_color);
+    }
 
     // 대상 월(YYYY-MM)과 표시 제목.
     let ym = match month {
@@ -4380,7 +4387,14 @@ fn cmd_brag(month: Option<&str>, width: usize, no_color: bool) -> Result<()> {
         footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
     };
 
-    let lines = card::render_card(&data, width);
+    print_card(&card::render_card(&data, width), persona, no_color);
+    Ok(())
+}
+
+/// 카드 줄들을 출력한다(테두리만 페르소나 테마색, TTY가 아니거나 --no-color면 플레인).
+fn print_card(lines: &[String], persona: &str, no_color: bool) {
+    use owo_colors::{AnsiColors, OwoColorize};
+    use std::io::IsTerminal;
     let color = !no_color && std::io::stdout().is_terminal();
     let theme = match persona {
         "친구" => AnsiColors::Green,
@@ -4390,7 +4404,7 @@ fn cmd_brag(month: Option<&str>, width: usize, no_color: bool) -> Result<()> {
         _ => AnsiColors::Cyan,
     };
     println!();
-    for line in &lines {
+    for line in lines {
         let is_border = line.starts_with('╭') || line.starts_with('├') || line.starts_with('╰');
         if color && is_border {
             println!("{}", line.color(theme));
@@ -4399,9 +4413,100 @@ fn cmd_brag(month: Option<&str>, width: usize, no_color: bool) -> Result<()> {
         }
     }
     if color {
-        ui::info("  카톡엔 wonjang 자랑 --폭 34 가 딱 맞아요");
+        ui::info("  카톡엔 --폭 34 가 딱 맞아요(복붙은 --no-color)");
     }
     println!();
+}
+
+/// 주간 자랑 카드(이번 주 + 지난주 대비 ▲▼). 데이터 읽기 전용.
+fn cmd_brag_weekly(width: usize, no_color: bool) -> Result<()> {
+    use chrono::Datelike;
+    use owo_colors::OwoColorize;
+    let today = ddays::today();
+    let day = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+
+    // 습관: 가장 긴 streak + 이번 주 7일 잔디.
+    let habit_store = habits::HabitStore::load().unwrap_or_default();
+    let mut best: Option<(String, i64, std::collections::HashSet<String>)> = None;
+    for h in &habit_store.items {
+        let s = h.streak(today);
+        if best.as_ref().map(|(_, bs, _)| s > *bs).unwrap_or(true) {
+            best = Some((h.name.clone(), s, h.date_set()));
+        }
+    }
+    let streak = best.as_ref().map(|(n, s, _)| (n.clone(), *s));
+    let jandi7: Vec<bool> = match &best {
+        Some((_, _, set)) => (0..7)
+            .rev()
+            .map(|i| set.contains(&day(today - chrono::Duration::days(i))))
+            .collect(),
+        None => Vec::new(),
+    };
+
+    // 집중·지출: 이번 주(오늘-6..오늘) vs 지난주(오늘-13..오늘-7).
+    let foc = focus::FocusStore::load().unwrap_or_default();
+    let exp = expenses::ExpenseStore::load().unwrap_or_default();
+    let (mut tw_f, mut lw_f, mut tw_e, mut lw_e) = (0i64, 0i64, 0i64, 0i64);
+    for i in 0..7 {
+        let d = today - chrono::Duration::days(i);
+        let d2 = today - chrono::Duration::days(i + 7);
+        tw_f += foc.today_total(&day(d));
+        lw_f += foc.today_total(&day(d2));
+        tw_e += exp.total_on(&day(d));
+        lw_e += exp.total_on(&day(d2));
+    }
+
+    let has_data = !habit_store.items.is_empty() || tw_f > 0 || lw_f > 0 || tw_e > 0 || lw_e > 0;
+    if !has_data {
+        println!();
+        ui::note("이번 주 자랑할 게 아직 없어요. 습관 하나만 시작해봐요:");
+        println!("  {}", "wonjang 습관 add 운동".bright_cyan());
+        println!();
+        return Ok(());
+    }
+
+    let persona = soul::active_preset_key();
+    let f_delta = tw_f - lw_f;
+    let e_delta = tw_e - lw_e;
+    let focus_value = if f_delta == 0 {
+        focus::fmt_minutes(tw_f)
+    } else {
+        format!(
+            "{}  {}{}",
+            focus::fmt_minutes(tw_f),
+            card::delta_arrow(f_delta),
+            focus::fmt_minutes(f_delta.abs())
+        )
+    };
+    let expense_value = if e_delta == 0 {
+        expenses::won(tw_e)
+    } else {
+        format!(
+            "{}  {}{}",
+            expenses::won(tw_e),
+            card::delta_arrow(e_delta),
+            expenses::won(e_delta.abs())
+        )
+    };
+
+    let start = today - chrono::Duration::days(6);
+    let title = format!(
+        "{}/{}~{}/{}",
+        start.month(),
+        start.day(),
+        today.month(),
+        today.day()
+    );
+    let data = card::WeeklyCardData {
+        title,
+        streak,
+        jandi7,
+        focus_value,
+        expense_value,
+        comment: card::weekly_comment(persona, f_delta),
+        footer: format!("wonjang · v{}", env!("CARGO_PKG_VERSION")),
+    };
+    print_card(&card::render_weekly_card(&data, width), persona, no_color);
     Ok(())
 }
 

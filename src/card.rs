@@ -137,6 +137,70 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
     lines
 }
 
+/// 주간 카드 데이터(이번 주 + 지난주 대비).
+pub struct WeeklyCardData {
+    pub title: String,
+    pub streak: Option<(String, i64)>,
+    pub jandi7: Vec<bool>,
+    pub focus_value: String,   // 예: "12시간 30분  ▲2시간"
+    pub expense_value: String, // 예: "240,000원  ▼50,000"
+    pub comment: String,
+    pub footer: String,
+}
+
+/// 주간 카드를 줄 단위로 렌더(월간과 같은 박스 시스템·전각폭 불변식).
+pub fn render_weekly_card(d: &WeeklyCardData, width: usize) -> Vec<String> {
+    let w = width.clamp(30, 80);
+    let inner = w - 2;
+    let col = 16;
+    let mut lines = Vec::new();
+    lines.push(rule('╭', '╮', &format!("원장 주간 · {}", d.title), inner));
+    if let Some((name, s)) = &d.streak {
+        lines.push(row("🔥 가장 긴 연속", &format!("{name} {s}일"), inner, col));
+    }
+    if !d.jandi7.is_empty() {
+        lines.push(content(&render_jandi(&d.jandi7), inner));
+    }
+    lines.push(row("🍅 이번 주 집중", &d.focus_value, inner, col));
+    lines.push(row("💰 이번 주 지출", &d.expense_value, inner, col));
+    lines.push(rule('├', '┤', "", inner));
+    lines.push(content(&format!("💬 {}", d.comment), inner));
+    lines.push(rule('╰', '╯', &d.footer, inner));
+    lines
+}
+
+/// 증감 화살표(지난주 대비). 순수.
+pub fn delta_arrow(delta: i64) -> &'static str {
+    if delta > 0 {
+        "▲"
+    } else if delta < 0 {
+        "▼"
+    } else {
+        "·"
+    }
+}
+
+/// 주간 코멘트 — 집중 증감 기준 페르소나 말투.
+pub fn weekly_comment(persona_key: &str, focus_delta: i64) -> String {
+    if focus_delta > 0 {
+        match persona_key {
+            "친구" => "이번 주 집중 늘었네! 가보자 💪".to_string(),
+            "집사" => "지난주보다 더 정진하셨습니다, 주인님.".to_string(),
+            "선배" => "지난주보다 나아졌네. 좋아.".to_string(),
+            "발랄" => "집중 업업! 이번 주 멋졌어✨".to_string(),
+            _ => "지난주보다 집중이 늘었어요. 좋아요!".to_string(),
+        }
+    } else if focus_delta < 0 {
+        match persona_key {
+            "친구" => "이번 주는 좀 쉬어갔네. 다음 주 가자!".to_string(),
+            "발랄" => "이번 주는 충전! 다음 주 다시 달리자✨".to_string(),
+            _ => "이번 주는 잠시 쉬어갔네요. 다음 주 다시!".to_string(),
+        }
+    } else {
+        "꾸준히 가고 있어요.".to_string()
+    }
+}
+
 /// 페르소나별 카드 코멘트(자랑 말투).
 pub fn card_comment(persona_key: &str, streak: i64, habit: &str) -> String {
     if streak >= 2 {
@@ -193,6 +257,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn weekly_card_every_line_exact_width() {
+        let d = WeeklyCardData {
+            title: "6/1~6/7".into(),
+            streak: Some(("운동".into(), 13)),
+            jandi7: vec![true, true, false, true, true, true, false],
+            focus_value: "12시간 30분  ▲2시간".into(),
+            expense_value: "240,000원  ▼50,000".into(),
+            comment: "이번 주 집중 늘었네! 가보자 💪".into(),
+            footer: "wonjang · v1.13.0".into(),
+        };
+        for width in [34usize, 40, 46, 52] {
+            for line in render_weekly_card(&d, width) {
+                assert_eq!(
+                    disp_width(&line),
+                    width,
+                    "주간카드 폭 불일치(w={width}): {line:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn delta_arrow_directions() {
+        assert_eq!(delta_arrow(120), "▲");
+        assert_eq!(delta_arrow(-30), "▼");
+        assert_eq!(delta_arrow(0), "·");
+        assert!(weekly_comment("친구", 60).contains("늘었"));
+        assert!(weekly_comment("기본", -60).contains("쉬어"));
     }
 
     #[test]
