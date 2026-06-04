@@ -53,8 +53,7 @@ impl ReminderStore {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let text = std::fs::read_to_string(&path)?;
-        Ok(serde_json::from_str(&text).unwrap_or_default())
+        Ok(crate::util::load_json_or_recover(&path))
     }
 
     pub fn save(&self) -> Result<()> {

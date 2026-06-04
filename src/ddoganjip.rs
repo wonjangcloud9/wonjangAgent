@@ -58,11 +58,7 @@ fn seed() -> Vec<Spot> {
 impl DdoganjipStore {
     pub fn load() -> Result<Self> {
         let path = store_path()?;
-        let mut store: Self = if path.exists() {
-            serde_json::from_str(&std::fs::read_to_string(&path)?).unwrap_or_default()
-        } else {
-            Self::default()
-        };
+        let mut store: Self = crate::util::load_json_or_recover(&path);
         // 최초 1회만 시드 주입.
         if !store.seeded && store.items.is_empty() {
             store.items = seed();

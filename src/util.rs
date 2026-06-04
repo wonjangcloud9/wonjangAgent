@@ -39,6 +39,44 @@ pub fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()>
     })
 }
 
+/// JSON 저장소를 읽어 역직렬화한다 — **손상 시 조용히 비우지 않는다**.
+///
+/// 기존 패턴 `from_str(&text).unwrap_or_default()`는 파일에 필수 필드가 빠진 항목이
+/// 하나라도 있으면 배열 전체 파싱이 실패해 **빈 저장소**가 되고, 다음 save가 파일을
+/// 통째로 덮어써 **모든 데이터가 조용히 사라진다**(외부 편집·디스크 손상 시).
+///
+/// 이 헬퍼는 파싱 실패 시 손상 파일을 `*.corrupt`로 **보존**(복구 가능)하고 기본값을
+/// 돌려준다 — 명령은 계속 동작하되 원본 데이터는 잃지 않는다.
+pub fn load_json_or_recover<T>(path: &std::path::Path) -> T
+where
+    T: serde::de::DeserializeOwned + Default,
+{
+    if !path.exists() {
+        return T::default();
+    }
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(_) => return T::default(),
+    };
+    if text.trim().is_empty() {
+        return T::default();
+    }
+    match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            // 손상 파일을 .corrupt로 백업한 뒤 기본값으로(덮어쓰기 전 보존 → 무음 손실 방지).
+            let backup = path.with_extension("corrupt");
+            if std::fs::rename(path, &backup).is_ok() {
+                eprintln!(
+                    "  ⚠ 저장 파일이 손상돼 {}로 옮기고 새로 시작해요({e}). 복구하려면 그 파일을 확인하세요.",
+                    backup.display()
+                );
+            }
+            T::default()
+        }
+    }
+}
+
 /// 문자열을 최대 `max_bytes` 바이트 이하에서 **UTF-8 문자 경계로** 안전하게 자른다.
 ///
 /// `&s[..max_bytes]`는 한글·이모지 같은 멀티바이트 글자 중간을 자르면 패닉한다.

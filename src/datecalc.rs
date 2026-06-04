@@ -30,12 +30,12 @@ pub fn days_between(a: NaiveDate, b: NaiveDate) -> i64 {
     (b - a).num_days()
 }
 
-/// 기준 날짜에 `n`일을 더한다(음수면 빼기).
-pub fn add_days(base: NaiveDate, n: i64) -> NaiveDate {
+/// 기준 날짜에 `n`일을 더한다(음수면 빼기). 표현 가능 범위를 벗어나면 None(패닉 방지).
+pub fn add_days(base: NaiveDate, n: i64) -> Option<NaiveDate> {
     if n >= 0 {
-        base + Days::new(n as u64)
+        base.checked_add_days(Days::new(n as u64))
     } else {
-        base - Days::new((-n) as u64)
+        base.checked_sub_days(Days::new(n.unsigned_abs()))
     }
 }
 
@@ -55,9 +55,10 @@ mod tests {
 
     #[test]
     fn add_and_subtract() {
-        assert_eq!(add_days(d(2026, 1, 1), 30), d(2026, 1, 31));
-        assert_eq!(add_days(d(2026, 3, 1), -1), d(2026, 2, 28));
-        assert_eq!(add_days(d(2024, 3, 1), -1), d(2024, 2, 29)); // 윤년
+        assert_eq!(add_days(d(2026, 1, 1), 30), Some(d(2026, 1, 31)));
+        assert_eq!(add_days(d(2026, 3, 1), -1), Some(d(2026, 2, 28)));
+        assert_eq!(add_days(d(2024, 3, 1), -1), Some(d(2024, 2, 29))); // 윤년
+        assert_eq!(add_days(d(2026, 1, 1), i64::MAX), None); // 범위 초과 → None(패닉 없음)
     }
 
     #[test]

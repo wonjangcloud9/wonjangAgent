@@ -11,10 +11,17 @@ use unicode_width::UnicodeWidthChar;
 /// 표시폭 27(테두리 패딩 포함 29) — 카톡 폭 34(inner 32) 이하에서도 안 잘린다.
 pub const SHARE_FOOTER: &str = "나도 만들기 → wonjang-agent";
 
-/// base 한 글자의 폭(unicode-width 기준). 결합문자·변이선택자은 0.
+/// 앞 글자와 한 글자로 합쳐지는 이모지 수정자: 변이선택자(FE0F/FE0E)·피부톤(Fitzpatrick).
+/// 이들은 단독 폭 0이고, 클러스터에서 앞 글자에 흡수된다.
+fn is_emoji_modifier(c: char) -> bool {
+    matches!(c, '\u{FE0F}' | '\u{FE0E}') || ('\u{1F3FB}'..='\u{1F3FF}').contains(&c)
+}
+
+/// base 한 글자의 폭(unicode-width 기준). 결합문자·변이선택자·피부톤·ZWJ은 0.
 fn base_width(c: char) -> usize {
     match c {
-        '\u{FE0F}' | '\u{FE0E}' | '\u{200D}' => 0,
+        '\u{200D}' => 0,
+        c if is_emoji_modifier(c) => 0,
         _ => UnicodeWidthChar::width(c).unwrap_or(0),
     }
 }
@@ -24,7 +31,8 @@ fn base_width(c: char) -> usize {
 /// 이렇게 해야 `★♥❤☎` 등 텍스트표현 기호(변이선택자 없음)를 1칸으로, `✍️` 등 이모지표현을 2칸으로 본다.
 fn paired_width(c: char, next: Option<char>) -> usize {
     match c {
-        '\u{FE0F}' | '\u{FE0E}' | '\u{200D}' => 0,
+        '\u{200D}' => 0,
+        c if is_emoji_modifier(c) => 0,
         _ => match next {
             Some('\u{FE0F}') => 2,
             Some('\u{FE0E}') => 1,
@@ -43,16 +51,16 @@ fn clusters(s: &str) -> Vec<(String, usize)> {
         let width = paired_width(c, it.peek().copied());
         let mut cl = String::new();
         cl.push(c);
-        // 뒤따르는 변이선택자를 같은 클러스터로 흡수.
-        while matches!(it.peek(), Some('\u{FE0F}') | Some('\u{FE0E}')) {
+        // 뒤따르는 이모지 수정자(변이선택자·피부톤)를 같은 클러스터로 흡수.
+        while it.peek().is_some_and(|&n| is_emoji_modifier(n)) {
             cl.push(it.next().unwrap());
         }
-        // ZWJ로 이어진 후속(ZWJ + base + 변이선택자)도 같은 클러스터(폭은 0 추가).
+        // ZWJ로 이어진 후속(ZWJ + base + 수정자)도 같은 클러스터(폭은 0 추가).
         while it.peek() == Some(&'\u{200D}') {
             cl.push(it.next().unwrap()); // ZWJ
             if let Some(j) = it.next() {
                 cl.push(j);
-                while matches!(it.peek(), Some('\u{FE0F}') | Some('\u{FE0E}')) {
+                while it.peek().is_some_and(|&n| is_emoji_modifier(n)) {
                     cl.push(it.next().unwrap());
                 }
             }
@@ -543,6 +551,10 @@ mod tests {
         assert_eq!(disp_width("🏃\u{200D}♂\u{FE0F}"), 2); // 🏃‍♂️ 달리는 남자
         assert_eq!(disp_width("👨\u{200D}💻"), 2); // 👨‍💻 개발자
         assert_eq!(disp_width("👨\u{200D}👩\u{200D}👧\u{200D}👦"), 2); // 가족(4명 ZWJ)
+        assert_eq!(disp_width("💪\u{1F3FD}"), 2); // 💪🏽 피부톤 수정자(한 글자)
+        assert_eq!(disp_width("👋\u{1F3FF}"), 2); // 👋🏿 손 흔들기+피부톤
+        assert_eq!(disp_width("🧑\u{1F3FD}\u{200D}💻"), 2); // 🧑🏽‍💻 피부톤+ZWJ 조합
+        assert_eq!(disp_width("가💪\u{1F3FD}나"), 6); // 2+2+2
         // 일반 텍스트·이모지와 섞여도 정확.
         assert_eq!(disp_width("가🏃\u{200D}♂\u{FE0F}나"), 6); // 2+2+2
         // truncate가 ZWJ 글자를 중간에 안 쪼갬: 폭4면 '가'(2)+ZWJ글자(2)=4 다 들어감.

@@ -5485,6 +5485,9 @@ fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
 }
 
 fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<()> {
+    if months == 0 {
+        anyhow::bail!("개월 수는 1 이상이어야 해요. 예: wonjang 예금 1000 3.5 12");
+    }
     let amount = manwon * 10_000.0;
     let m = if is_savings {
         deposit::installment(amount, rate, months)
@@ -5848,7 +5851,8 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         println!("     {days}일 ({weeks}주 {rest}일)");
     } else if let Some(n) = plus {
         // N일 후/전 날짜.
-        let result = datecalc::add_days(base, n);
+        let result = datecalc::add_days(base, n)
+            .ok_or_else(|| anyhow::anyhow!("{n}일은 너무 커서 날짜 범위를 벗어나요. 더 작은 값을 쓰세요."))?;
         let word = if n >= 0 { "후" } else { "전" };
         println!("  📅 {} 기준 {}일 {word}", fmt(base), n.abs());
         println!("     👉 {}", fmt(result));
@@ -6045,9 +6049,19 @@ fn cmd_calc(expr: &[String]) -> Result<()> {
 }
 
 fn cmd_amount(value: u64) -> Result<()> {
+    // u64를 i64로 캐스트하면 2^63 이상에서 음수로 깨지므로(한글 줄과 모순·디버그 패닉) 직접 콤마 포맷.
+    let s = value.to_string();
+    let n = s.len();
+    let mut commad = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (n - i) % 3 == 0 {
+            commad.push(',');
+        }
+        commad.push(ch);
+    }
     println!();
     println!("  💴 한글 금액");
-    println!("     {}", expenses::won(value as i64));
+    println!("     {commad}원");
     println!("     👉 일금 {}원정", koreannum::to_korean(value));
     println!();
     Ok(())
