@@ -23,7 +23,11 @@ use std::time::Duration;
 #[derive(Deserialize)]
 struct UpdatesResp {
     #[serde(default)]
+    ok: bool,
+    #[serde(default)]
     result: Vec<Update>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -186,6 +190,14 @@ async fn get_updates(http: &reqwest::Client, base: &str, offset: i64) -> Result<
         .json()
         .await
         .context("getUpdates 응답 파싱 실패")?;
+    // API 오류(예: 409 Conflict — 같은 토큰으로 다른 폴러)는 ok=false로 즉시 반환된다.
+    // 이를 Ok(빈 결과)로 흘리면 메인 루프가 sleep 없이 무한 핫루프에 빠지므로 Err로.
+    if !resp.ok {
+        bail!(
+            "텔레그램 API 오류: {}",
+            resp.description.as_deref().unwrap_or("ok=false")
+        );
+    }
     Ok(resp.result)
 }
 
@@ -245,5 +257,19 @@ mod tests {
     #[test]
     fn empty_text_yields_placeholder() {
         assert_eq!(split_chunks("", 100), vec!["(빈 응답)"]);
+    }
+
+    #[test]
+    fn updates_resp_captures_api_error() {
+        // 409 Conflict 등 API 오류 바디는 ok=false로 잡혀야(get_updates가 Err로 → 핫루프 방지).
+        let err: UpdatesResp =
+            serde_json::from_str(r#"{"ok":false,"error_code":409,"description":"Conflict"}"#)
+                .unwrap();
+        assert!(!err.ok);
+        assert_eq!(err.description.as_deref(), Some("Conflict"));
+        assert!(err.result.is_empty());
+        // 정상 응답은 ok=true.
+        let okr: UpdatesResp = serde_json::from_str(r#"{"ok":true,"result":[]}"#).unwrap();
+        assert!(okr.ok);
     }
 }

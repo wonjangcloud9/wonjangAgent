@@ -71,7 +71,7 @@ pub async fn run(
 
     let answer = match kind {
         CliKind::Claude => run_claude(&system, &prompt, ctx.auto_approve).await?,
-        CliKind::Codex => run_codex(&prompt, &system).await?,
+        CliKind::Codex => run_codex(&prompt, &system, ctx.auto_approve).await?,
     };
 
     messages.push(Message {
@@ -170,10 +170,19 @@ async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<St
 }
 
 /// Codex(codex exec)에 위임한다(실험적 — stdout 텍스트를 그대로 반환).
-async fn run_codex(prompt: &str, system: &str) -> Result<String> {
+async fn run_codex(prompt: &str, system: &str, auto_approve: bool) -> Result<String> {
     let full = format!("{system}\n\n{prompt}");
+    // 자동 승인이 아니면 read-only 샌드박스로 제한(Claude 백엔드의 읽기전용 도구셋과 동등).
+    // 이게 없으면 codex exec가 wonjang의 읽기전용 의도를 무시하고 파일 쓰기·명령을 실행한다(보안).
+    let sandbox = if auto_approve {
+        "workspace-write"
+    } else {
+        "read-only"
+    };
     let output = Command::new("codex")
         .arg("exec")
+        .arg("--sandbox")
+        .arg(sandbox)
         .arg(&full)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
