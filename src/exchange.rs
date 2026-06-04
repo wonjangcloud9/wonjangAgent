@@ -50,6 +50,24 @@ pub fn krw_per(currency: &str, rates: &HashMap<String, f64>) -> Option<f64> {
     Some(krw / c)
 }
 
+/// 갱신 시각(API가 주는 RFC-2822·UTC 문자열)을 한국 시간 기준 깔끔한 표기로.
+///
+/// open.er-api.com은 `"Thu, 04 Jun 2026 00:02:31 +0000"`처럼 **영문 RFC-2822**로
+/// 내려보내는데, 한국어 일색인 출력에 영문 날짜가 끼면 이질적이다. 한국 사용자에게
+/// 가장 쓸모 있는 **KST 기준**으로 `"2026-06-04 09:02 기준 (KST)"`로 바꾼다.
+/// 파싱 실패 시(형식 변화 등) 원본을 그대로 돌려준다.
+pub fn format_update_time(rfc2822: &str) -> String {
+    use chrono::{DateTime, FixedOffset};
+    let s = rfc2822.trim();
+    match DateTime::parse_from_rfc2822(s) {
+        Ok(dt) => {
+            let kst = dt.with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap());
+            format!("{} 기준 (KST)", kst.format("%Y-%m-%d %H:%M"))
+        }
+        Err(_) => s.to_string(),
+    }
+}
+
 /// 통화 코드의 한국어 이름.
 pub fn currency_name(code: &str) -> &'static str {
     match code.to_uppercase().as_str() {
@@ -121,5 +139,21 @@ mod tests {
         assert_eq!(comma(1506.777, 2), "1,506.78");
         assert_eq!(comma(150678.0, 0), "150,678");
         assert_eq!(comma(946.0, 0), "946");
+    }
+
+    #[test]
+    fn update_time_to_kst() {
+        // UTC 00:02 → KST 09:02.
+        assert_eq!(
+            format_update_time("Thu, 04 Jun 2026 00:02:31 +0000"),
+            "2026-06-04 09:02 기준 (KST)"
+        );
+        // 자정 직전 UTC는 다음 날 KST로 넘어간다.
+        assert_eq!(
+            format_update_time("Wed, 03 Jun 2026 23:30:00 +0000"),
+            "2026-06-04 08:30 기준 (KST)"
+        );
+        // 파싱 실패 시 원본 보존(형식 변화 방어).
+        assert_eq!(format_update_time("garbage"), "garbage");
     }
 }

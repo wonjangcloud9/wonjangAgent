@@ -6646,7 +6646,7 @@ fn cmd_exchange(amount: Option<f64>, currency: &Option<String>) -> Result<()> {
             }
         }
     }
-    ui::info(&format!("     ({})", date.trim()));
+    ui::info(&format!("     {}", exchange::format_update_time(&date)));
     println!();
     Ok(())
 }
