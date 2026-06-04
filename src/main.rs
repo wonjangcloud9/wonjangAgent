@@ -1892,6 +1892,11 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
     // 선제 알림 dedup 상태를 파일에서 복원(재시작해도 같은 윈도우 중복 푸시 방지).
     let mut alerts = AlertState::load();
     let mut alerts_saved = alerts.clone();
+    // 디스크 저장이 실패해도(읽기전용·디스크 가득) 같은 작업을 매 틱 재실행(LLM·푸시 폭주)하지
+    // 않도록, 실행 시각을 인메모리에도 보관해 매 틱 reload된 store에 병합한다.
+    let mut ran_at: std::collections::HashMap<u64, u128> = std::collections::HashMap::new();
+    // 시세 알림도 같은 결: 저장 실패해도 매 틱 재발동하지 않게 인메모리로 발동 워치 ID 보관.
+    let mut watch_fired: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
     loop {
         // 매 틱마다 저장소를 다시 읽어 추가/삭제를 반영한다.
@@ -1907,6 +1912,14 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
                 continue;
             }
         };
+        // 인메모리 실행기록을 reload된 store에 병합(디스크 저장 실패분 보존 → 재실행 폭주 방지).
+        for t in store.tasks.iter_mut() {
+            if let Some(&ms) = ran_at.get(&t.id) {
+                if t.last_run_ms.is_none_or(|d| d < ms) {
+                    t.last_run_ms = Some(ms);
+                }
+            }
+        }
         let now = cron::now_ms();
         let due_ids: Vec<u64> = store
             .tasks
@@ -1949,10 +1962,12 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
                 Err(e) => ui::error(&format!("작업 #{id} 오류: {e:#}")),
             }
 
-            // 실행 시각 기록.
+            // 실행 시각 기록(디스크 + 인메모리 둘 다 — 디스크 저장 실패해도 재실행 방지).
+            let ran_ms = cron::now_ms();
             if let Some(t) = store.tasks.iter_mut().find(|t| t.id == id) {
-                t.last_run_ms = Some(cron::now_ms());
+                t.last_run_ms = Some(ran_ms);
             }
+            ran_at.insert(id, ran_ms);
             store.save().ok();
         }
 
@@ -1963,7 +1978,7 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         maybe_send_briefing(eng, cfg, &ctx, &mut alerts.last_briefed).await;
 
         // 코인 시세 알림: 목표가에 도달한 알림을 푸시한다.
-        check_price_watches(cfg).await;
+        check_price_watches(cfg, &mut watch_fired).await;
 
         // 공휴일 전날이면 "내일 빨간날" 알림(선제성).
         maybe_alert_holiday_eve(cfg, &mut alerts.last_holiday).await;
@@ -1985,7 +2000,7 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
 }
 
 /// 목표가에 도달한 시세 알림을 푸시하고 발동 표시한다(코인 + 환율).
-async fn check_price_watches(cfg: &Config) {
+async fn check_price_watches(cfg: &Config, fired: &mut std::collections::HashSet<u64>) {
     let mut store = match watch::WatchStore::load() {
         Ok(s) => s,
         Err(_) => return,
@@ -2028,7 +2043,8 @@ async fn check_price_watches(cfg: &Config) {
             coins.iter().find(|c| c.symbol == w.symbol).map(|c| c.price)
         };
         if let Some(p) = price {
-            if watch::should_trigger(w, p) {
+            // 디스크 저장 실패해도 같은 워치를 매 틱 재발동(푸시 폭주)하지 않도록 인메모리 dedup.
+            if !fired.contains(&w.id) && watch::should_trigger(w, p) {
                 let dir = if w.above { "도달" } else { "하락" };
                 ui::note(&format!("🔔 시세 알림: {} {dir}!", w.symbol));
                 push::push_blocking(
@@ -2041,6 +2057,7 @@ async fn check_price_watches(cfg: &Config) {
                     ),
                 );
                 store.mark_triggered(w.id);
+                fired.insert(w.id);
                 changed = true;
             }
         }
