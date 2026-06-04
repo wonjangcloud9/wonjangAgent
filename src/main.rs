@@ -370,6 +370,9 @@ enum Commands {
         /// 이어붙일 이미지들(적은 순서대로, 2개 이상)
         #[arg(required = true)]
         files: Vec<String>,
+        /// 세로로 쌓기(기본). 명시적으로 적어도 됩니다
+        #[arg(long = "세로")]
+        vertical: bool,
         /// 가로로 나란히(기본은 세로로 쌓기)
         #[arg(long = "가로")]
         horizontal: bool,
@@ -1260,9 +1263,13 @@ async fn run() -> Result<()> {
         }
         Some(Commands::ImageStitch {
             files,
+            vertical,
             horizontal,
             output,
-        }) => return cmd_image_stitch(files, *horizontal, output.as_deref()),
+        }) => {
+            // --세로(명시)는 기본이므로 --가로만 가로로. 둘 다면 --세로 우선.
+            return cmd_image_stitch(files, *horizontal && !*vertical, output.as_deref());
+        }
         Some(Commands::PdfMerge { files, output }) => {
             return cmd_pdf_merge(files, output.as_deref())
         }
