@@ -60,7 +60,7 @@ fn extract_href(s: &str) -> Option<String> {
     let pos = s.find("href=")? + "href=".len();
     let rest = &s[pos..];
     let quote = rest.chars().next()?; // ' 또는 "
-    // 첫 글자가 멀티바이트(따옴표 없이 비ASCII)면 &rest[1..]가 바이트 경계 패닉 → len_utf8로 안전하게.
+                                      // 첫 글자가 멀티바이트(따옴표 없이 비ASCII)면 &rest[1..]가 바이트 경계 패닉 → len_utf8로 안전하게.
     let inner = &rest[quote.len_utf8()..];
     let end = inner.find(quote)?;
     Some(inner[..end].to_string())
@@ -87,7 +87,10 @@ mod tests {
     fn extract_href_no_panic_on_multibyte() {
         // 따옴표 없이 비ASCII로 시작하는 href(변형 피드) → 바이트 경계 패닉 없이 안전.
         assert_eq!(extract_href("href=가나다"), None); // 닫는 따옴표 없음 → None(패닉 X)
-        assert_eq!(extract_href("href='https://a.com'"), Some("https://a.com".into()));
+        assert_eq!(
+            extract_href("href='https://a.com'"),
+            Some("https://a.com".into())
+        );
         assert_eq!(extract_href("href=\"x\""), Some("x".into()));
     }
 

@@ -117,7 +117,10 @@ pub struct GroupStat {
 /// 여러 표를 머리글 기준으로 합친다(열 순서가 달라도 이름으로 맞춤).
 /// 합친 머리글 = 첫 표 머리글 + 뒤 표에만 있는 새 열. 없는 칸은 빈값.
 /// `with_source`면 맨 앞에 '출처'(각 표의 라벨) 열을 붙인다. (월별·지점별 파일 합본)
-pub fn merge_tables(named: &[(String, &Table)], with_source: bool) -> (Vec<String>, Vec<Vec<String>>) {
+pub fn merge_tables(
+    named: &[(String, &Table)],
+    with_source: bool,
+) -> (Vec<String>, Vec<Vec<String>>) {
     let mut headers: Vec<String> = Vec::new();
     for (_, t) in named {
         for h in &t.headers {
@@ -215,7 +218,10 @@ impl Table {
             return Err(anyhow!("필터에 열 이름이 없어요. 예: 지역=서울"));
         }
         let idx = self.col_index(col).ok_or_else(|| {
-            anyhow!("'{col}' 열을 찾을 수 없어요. 열: {}", self.headers.join(", "))
+            anyhow!(
+                "'{col}' 열을 찾을 수 없어요. 열: {}",
+                self.headers.join(", ")
+            )
         })?;
         let val_num = parse_num(val);
         let matches = |cell: &str| -> bool {
@@ -224,9 +230,7 @@ impl Table {
                 FilterOp::Contains => cell.contains(val),
                 FilterOp::Eq | FilterOp::Ne => {
                     let eq = cell.eq_ignore_ascii_case(val)
-                        || parse_num(cell)
-                            .zip(val_num)
-                            .map_or(false, |(a, b)| a == b);
+                        || parse_num(cell).zip(val_num).is_some_and(|(a, b)| a == b);
                     if op == FilterOp::Eq {
                         eq
                     } else {
@@ -436,7 +440,11 @@ fn load_spreadsheet(path: &str, sheet: Option<&str>) -> Result<Table> {
             .map_err(|e| anyhow!("시트를 읽을 수 없어요: {e}"))?,
         Some(s) => {
             // 1-기반 번호 우선, 아니면 이름(대소문자·공백 무시) 매칭.
-            match s.parse::<usize>().ok().filter(|n| *n >= 1 && *n <= names.len()) {
+            match s
+                .parse::<usize>()
+                .ok()
+                .filter(|n| *n >= 1 && *n <= names.len())
+            {
                 Some(n) => wb
                     .worksheet_range_at(n - 1)
                     .ok_or_else(|| anyhow!("시트가 없어요"))?
@@ -578,8 +586,7 @@ mod tests {
             headers: vec!["매출".into(), "지점".into(), "비고".into()],
             rows: vec![vec!["200".into(), "홍대".into(), "신규".into()]],
         };
-        let (headers, rows) =
-            merge_tables(&[("1월".into(), &jan), ("2월".into(), &feb)], true);
+        let (headers, rows) = merge_tables(&[("1월".into(), &jan), ("2월".into(), &feb)], true);
         // 출처 + 합집합 헤더(첫 표 순서 유지, 새 열 뒤에).
         assert_eq!(headers, vec!["출처", "지점", "매출", "비고"]);
         // 1월 행: 비고 없음 → 빈값, 이름으로 정렬됨.
@@ -602,7 +609,10 @@ mod tests {
         let recs = split_records(&csv);
         assert_eq!(parse_csv_line(&recs[0], ','), vec!["이름", "메모"]);
         assert_eq!(parse_csv_line(&recs[1], ','), vec!["철수", "서울, 강남"]);
-        assert_eq!(parse_csv_line(&recs[2], ','), vec!["영희", "말하길 \"안녕\""]);
+        assert_eq!(
+            parse_csv_line(&recs[2], ','),
+            vec!["영희", "말하길 \"안녕\""]
+        );
     }
 
     #[test]
@@ -625,7 +635,7 @@ mod tests {
         assert_eq!(t.filtered("매출>1000").unwrap().rows.len(), 2); // 3000,2000
         assert_eq!(t.filtered("매출>=2,000").unwrap().rows.len(), 2);
         assert_eq!(t.filtered("매출<1000").unwrap().rows.len(), 1); // 500
-        // 없는 열 / 형식 오류
+                                                                    // 없는 열 / 형식 오류
         assert!(t.filtered("부서=영업").is_err());
         assert!(t.filtered("지역서울").is_err());
     }

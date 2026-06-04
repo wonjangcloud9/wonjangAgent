@@ -70,8 +70,9 @@ fn ics_escape(s: &str) -> String {
 /// 디데이들을 iCalendar(.ics) 문자열로 — 구글·애플 캘린더에 '가져오기'로 넣는다.
 /// 각 디데이는 해당 날짜의 종일(all-day) 일정이 된다. `dtstamp`는 호출부에서 현재 UTC로.
 pub fn to_ics(items: &[Dday], dtstamp: &str) -> String {
-    let mut out =
-        String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//wonjang//dday//KO\r\nCALSCALE:GREGORIAN\r\n");
+    let mut out = String::from(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//wonjang//dday//KO\r\nCALSCALE:GREGORIAN\r\n",
+    );
     for d in items {
         let date = match NaiveDate::parse_from_str(&d.date, "%Y-%m-%d") {
             Ok(dt) => dt,
@@ -79,7 +80,9 @@ pub fn to_ics(items: &[Dday], dtstamp: &str) -> String {
         };
         let start = date.format("%Y%m%d").to_string();
         // 종일 일정의 DTEND는 다음 날(배타적, RFC 5545).
-        let end = (date + chrono::Duration::days(1)).format("%Y%m%d").to_string();
+        let end = (date + chrono::Duration::days(1))
+            .format("%Y%m%d")
+            .to_string();
         out.push_str("BEGIN:VEVENT\r\n");
         out.push_str(&format!("UID:dday-{}@wonjang\r\n", d.id));
         out.push_str(&format!("DTSTAMP:{dtstamp}\r\n"));

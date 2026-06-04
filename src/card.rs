@@ -478,7 +478,10 @@ mod tests {
         // 적대적 데이터: ZWJ 이모지(👨‍💻·🏃‍♂️) 든 긴 습관명·코멘트, ▲▼ 델타.
         let d = WeeklyCardData {
             title: "6/1~6/7".into(),
-            streak: Some(("👨\u{200D}💻 코딩 🏃\u{200D}♂\u{FE0F} 운동 전부 길게".into(), 130)),
+            streak: Some((
+                "👨\u{200D}💻 코딩 🏃\u{200D}♂\u{FE0F} 운동 전부 길게".into(),
+                130,
+            )),
             jandi7: vec![true, true, false, true, true, true, false],
             focus_value: "12시간 30분  ▲2시간".into(),
             expense_value: "240,000원  ▼50,000".into(),
@@ -555,10 +558,13 @@ mod tests {
         assert_eq!(disp_width("👋\u{1F3FF}"), 2); // 👋🏿 손 흔들기+피부톤
         assert_eq!(disp_width("🧑\u{1F3FD}\u{200D}💻"), 2); // 🧑🏽‍💻 피부톤+ZWJ 조합
         assert_eq!(disp_width("가💪\u{1F3FD}나"), 6); // 2+2+2
-        // 일반 텍스트·이모지와 섞여도 정확.
+                                                      // 일반 텍스트·이모지와 섞여도 정확.
         assert_eq!(disp_width("가🏃\u{200D}♂\u{FE0F}나"), 6); // 2+2+2
-        // truncate가 ZWJ 글자를 중간에 안 쪼갬: 폭4면 '가'(2)+ZWJ글자(2)=4 다 들어감.
-        assert_eq!(truncate_width("가🏃\u{200D}♂\u{FE0F}나", 4), "가🏃\u{200D}♂\u{FE0F}");
+                                                              // truncate가 ZWJ 글자를 중간에 안 쪼갬: 폭4면 '가'(2)+ZWJ글자(2)=4 다 들어감.
+        assert_eq!(
+            truncate_width("가🏃\u{200D}♂\u{FE0F}나", 4),
+            "가🏃\u{200D}♂\u{FE0F}"
+        );
     }
 
     #[test]
@@ -578,7 +584,7 @@ mod tests {
         assert_eq!(hbar(0.0, 10.0, 4), "    ");
         assert_eq!(hbar(10.0, 0.0, 4), "    "); // max≤0 가드
         assert_eq!(hbar(99.0, 10.0, 4), "████"); // 비율 1.0으로 클램프
-        // 어떤 값이든 정확히 width 표시칸(█·공백 모두 1칸).
+                                                 // 어떤 값이든 정확히 width 표시칸(█·공백 모두 1칸).
         for v in [0.0, 1.0, 3.3, 7.7, 10.0] {
             assert_eq!(disp_width(&hbar(v, 10.0, 8)), 8);
         }

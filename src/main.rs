@@ -1900,7 +1900,9 @@ async fn cmd_cron_run(eng: &Engine, cfg: &Config) -> Result<()> {
         let mut store = match cron::CronStore::load() {
             Ok(s) => s,
             Err(e) => {
-                ui::error(&format!("예약 작업 목록을 읽지 못했어요(이번 회차 건너뜀): {e:#}"));
+                ui::error(&format!(
+                    "예약 작업 목록을 읽지 못했어요(이번 회차 건너뜀): {e:#}"
+                ));
                 tokio::time::sleep(tick).await;
                 continue;
             }
@@ -2429,10 +2431,7 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 엑셀 <파일> --그룹 지점 --열 매출",
                     "분류별 묶어 집계(피벗)",
                 ),
-                (
-                    "wonjang 엑셀 <파일> --정렬 매출",
-                    "그 열로 정렬해 상위 행",
-                ),
+                ("wonjang 엑셀 <파일> --정렬 매출", "그 열로 정렬해 상위 행"),
                 (
                     "wonjang 엑셀 <파일> --필터 지역=서울",
                     "조건 행만(정렬·집계와 조합)",
@@ -3197,13 +3196,18 @@ fn cmd_excel(
         }
         let (out_headers, out_rows) = if let Some(gkey) = group {
             let gidx = table.col_index(gkey).ok_or_else(|| {
-                anyhow::anyhow!("'{gkey}' 열을 찾을 수 없어요. 열: {}", table.headers.join(", "))
+                anyhow::anyhow!(
+                    "'{gkey}' 열을 찾을 수 없어요. 열: {}",
+                    table.headers.join(", ")
+                )
             })?;
-            let vkey = column.ok_or_else(|| {
-                anyhow::anyhow!("--그룹 저장은 집계할 --열과 함께 쓰세요.")
-            })?;
+            let vkey = column
+                .ok_or_else(|| anyhow::anyhow!("--그룹 저장은 집계할 --열과 함께 쓰세요."))?;
             let vidx = table.col_index(vkey).ok_or_else(|| {
-                anyhow::anyhow!("'{vkey}' 열을 찾을 수 없어요. 열: {}", table.headers.join(", "))
+                anyhow::anyhow!(
+                    "'{vkey}' 열을 찾을 수 없어요. 열: {}",
+                    table.headers.join(", ")
+                )
             })?;
             let headers = vec![
                 table.headers[gidx].clone(),
@@ -3228,12 +3232,7 @@ fn cmd_excel(
                     } else {
                         0.0
                     };
-                    vec![
-                        g.key,
-                        raw(g.sum),
-                        raw(avg),
-                        g.row_count.to_string(),
-                    ]
+                    vec![g.key, raw(g.sum), raw(avg), g.row_count.to_string()]
                 })
                 .collect();
             (headers, rows)
@@ -3257,11 +3256,7 @@ fn cmd_excel(
         util::atomic_write(Path::new(out), csv.as_bytes())
             .map_err(|e| anyhow::anyhow!("저장 실패: {out} ({e})"))?;
         println!();
-        println!(
-            "  💾 저장: {} ({}행)",
-            out.bright_yellow(),
-            out_rows.len()
-        );
+        println!("  💾 저장: {} ({}행)", out.bright_yellow(), out_rows.len());
         println!();
         return Ok(());
     }
@@ -3317,7 +3312,10 @@ fn cmd_excel(
                 g.row_count
             );
         }
-        println!("     {}", format!("─ 전체 합계 {}", fmt_stat_num(total)).dimmed());
+        println!(
+            "     {}",
+            format!("─ 전체 합계 {}", fmt_stat_num(total)).dimmed()
+        );
         println!();
         return Ok(());
     }
@@ -3368,7 +3366,11 @@ fn cmd_excel(
         println!();
         match sort {
             Some(skey) => {
-                let dir = if ascending { "오름차순" } else { "큰 값부터" };
+                let dir = if ascending {
+                    "오름차순"
+                } else {
+                    "큰 값부터"
+                };
                 println!("  미리보기 ('{skey}' {dir} 상위 {n}행):");
             }
             None => println!("  미리보기 (상위 {n}행):"),
@@ -3439,8 +3441,7 @@ fn cmd_merge_tables(files: &[String], save: Option<&str>, source: bool) -> Resul
             .to_string();
         loaded.push((label, t));
     }
-    let refs: Vec<(String, &sheet::Table)> =
-        loaded.iter().map(|(l, t)| (l.clone(), t)).collect();
+    let refs: Vec<(String, &sheet::Table)> = loaded.iter().map(|(l, t)| (l.clone(), t)).collect();
     let (headers, rows) = sheet::merge_tables(&refs, source);
 
     println!();
@@ -5859,8 +5860,9 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         println!("     {days}일 ({weeks}주 {rest}일)");
     } else if let Some(n) = plus {
         // N일 후/전 날짜.
-        let result = datecalc::add_days(base, n)
-            .ok_or_else(|| anyhow::anyhow!("{n}일은 너무 커서 날짜 범위를 벗어나요. 더 작은 값을 쓰세요."))?;
+        let result = datecalc::add_days(base, n).ok_or_else(|| {
+            anyhow::anyhow!("{n}일은 너무 커서 날짜 범위를 벗어나요. 더 작은 값을 쓰세요.")
+        })?;
         let word = if n >= 0 { "후" } else { "전" };
         println!("  📅 {} 기준 {}일 {word}", fmt(base), n.abs());
         println!("     👉 {}", fmt(result));
@@ -6062,7 +6064,7 @@ fn cmd_amount(value: u64) -> Result<()> {
     let n = s.len();
     let mut commad = String::new();
     for (i, ch) in s.chars().enumerate() {
-        if i > 0 && (n - i) % 3 == 0 {
+        if i > 0 && (n - i).is_multiple_of(3) {
             commad.push(',');
         }
         commad.push(ch);
