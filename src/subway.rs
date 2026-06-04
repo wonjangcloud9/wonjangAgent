@@ -85,9 +85,27 @@ pub async fn arrivals(api_key: &str, station: &str, limit: usize) -> Result<Vec<
         .map(|r| Arrival {
             line: line_name(&r.subway_id),
             direction: r.train_line,
-            message: r.arvl_msg2,
+            message: clean_arvl_msg(&r.arvl_msg2),
         })
         .collect())
+}
+
+/// 서울 API의 arvlMsg2를 보기 좋게 다듬는다.
+/// API는 "[3]번째 전역 (종로5가)"처럼 역 수를 대괄호로 감싸 내려보내는데,
+/// 사용자에겐 마크업 잔재처럼 보인다. 대괄호 안이 숫자뿐일 때만 벗겨
+/// "3번째 전역 (종로5가)"로 만든다. 그 외 메시지("전역 도착", "2분 30초 후"
+/// 등)는 그대로 둔다.
+fn clean_arvl_msg(msg: &str) -> String {
+    let msg = msg.trim();
+    if let Some(rest) = msg.strip_prefix('[') {
+        if let Some(close) = rest.find(']') {
+            let (num, after) = (&rest[..close], &rest[close + 1..]);
+            if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
+                return format!("{num}{after}");
+            }
+        }
+    }
+    msg.to_string()
 }
 
 /// subwayId 코드를 호선 이름으로.
@@ -144,6 +162,23 @@ mod tests {
     fn encode_korean() {
         assert_eq!(encode("강남"), "%EA%B0%95%EB%82%A8");
         assert_eq!(encode("Seoul"), "Seoul");
+    }
+
+    #[test]
+    fn clean_arvl_msg_strips_only_numeric_brackets() {
+        // 역 수를 감싼 대괄호만 벗긴다.
+        assert_eq!(
+            clean_arvl_msg("[3]번째 전역 (종로5가)"),
+            "3번째 전역 (종로5가)"
+        );
+        assert_eq!(clean_arvl_msg("[12]번째 전역"), "12번째 전역");
+        // 그 외 메시지는 그대로.
+        assert_eq!(clean_arvl_msg("전역 도착"), "전역 도착");
+        assert_eq!(clean_arvl_msg("2분 30초 후"), "2분 30초 후");
+        assert_eq!(clean_arvl_msg("당역 도착"), "당역 도착");
+        // 대괄호 안이 숫자가 아니면 건드리지 않는다(혹시 모를 형식 변화 방어).
+        assert_eq!(clean_arvl_msg("[급행] 도착"), "[급행] 도착");
+        assert_eq!(clean_arvl_msg(""), "");
     }
 
     // 네트워크 라이브 테스트(sample 키). 실행: cargo test -- --ignored
