@@ -146,13 +146,13 @@ enum Commands {
     /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
     Skills,
     /// 약속·알림을 보거나 등록/삭제합니다.
-    #[command(aliases = ["약속", "알림"])]
+    #[command(aliases = ["약속", "알림", "리마인더"])]
     Remind {
         #[command(subcommand)]
         action: Option<RemindAction>,
     },
     /// 할 일(체크리스트)을 보거나 추가/완료합니다.
-    #[command(alias = "할일")]
+    #[command(aliases = ["할일", "투두"])]
     Todo {
         #[command(subcommand)]
         action: Option<TodoAction>,
@@ -554,7 +554,7 @@ enum Commands {
         action: Option<HabitAction>,
     },
     /// 집중(뽀모도로) 타이머. 예: wonjang 집중 25 코딩 (생략 시 오늘 요약)
-    #[command(alias = "집중")]
+    #[command(aliases = ["집중", "타이머"])]
     Focus {
         /// 집중 시간(분). 생략하면 오늘 집중 요약.
         minutes: Option<i64>,
@@ -563,7 +563,7 @@ enum Commands {
         label: Vec<String>,
     },
     /// 즐겨찾기 관리(사이트/폴더/앱 단축어).
-    #[command(alias = "즐겨찾기")]
+    #[command(aliases = ["즐겨찾기", "북마크", "즐찾"])]
     Bookmark {
         #[command(subcommand)]
         action: Option<BookmarkAction>,
@@ -7526,5 +7526,65 @@ mod calc_guard_tests {
         assert!(cmd_wage(-1.0, 40.0).is_err());
         assert!(cmd_wage(f64::NAN, 40.0).is_err());
         assert!(cmd_wage(10_030.0, 40.0).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::{Cli, Commands};
+    use clap::Parser;
+
+    fn cmd_of(args: &[&str]) -> Commands {
+        Cli::try_parse_from(args)
+            .expect("파싱 성공")
+            .command
+            .expect("서브커맨드")
+    }
+
+    // 한국인이 가장 자연스럽게 떠올리는 단어가 곧장 해당 기능으로 가야 한다.
+    // 별칭이 없으면 그 단어는 AI로 위임돼(느리고 예측 불가, 미연결 시 실패) 기능을 놓친다.
+    #[test]
+    fn loanword_aliases_resolve_to_local_commands() {
+        assert!(matches!(
+            cmd_of(&["wonjang", "북마크"]),
+            Commands::Bookmark { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "즐찾"]),
+            Commands::Bookmark { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "타이머"]),
+            Commands::Focus { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "리마인더"]),
+            Commands::Remind { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "투두"]),
+            Commands::Todo { .. }
+        ));
+    }
+
+    // 기존 별칭도 그대로 유지(회귀 방지).
+    #[test]
+    fn existing_aliases_still_work() {
+        assert!(matches!(
+            cmd_of(&["wonjang", "즐겨찾기"]),
+            Commands::Bookmark { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "집중"]),
+            Commands::Focus { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "약속"]),
+            Commands::Remind { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "할일"]),
+            Commands::Todo { .. }
+        ));
     }
 }
