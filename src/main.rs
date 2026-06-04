@@ -1510,7 +1510,16 @@ async fn run() -> Result<()> {
     };
 
     // 단발 실행 모드(직접 입력 또는 프리셋).
-    let one_shot = preset_prompt.unwrap_or_else(|| cli.prompt.join(" "));
+    // `preset run` 외에, 첫 단어가 프리셋 이름이면(예: `wonjang 일지 오늘…`) 그 프리셋으로
+    // 해석한다 — 도움말이 `일지/메모 (프리셋)`처럼 직접 호출을 암시하는데 실제로는
+    // 일반 AI로 새던 걸 메운다.
+    let one_shot = preset_prompt.unwrap_or_else(|| match resolve_bare_preset(&cli.prompt) {
+        Some((full, note)) => {
+            ui::note(&note);
+            full
+        }
+        None => cli.prompt.join(" "),
+    });
     if !one_shot.trim().is_empty() {
         messages.push(Message::user(one_shot));
         let answer = eng.run(&cfg, &ctx, &mut messages).await?;
@@ -5455,6 +5464,24 @@ fn cmd_age(birth: &str) -> Result<()> {
     Ok(())
 }
 
+/// 단발 입력의 첫 단어가 프리셋 이름/별칭이면 그 프리셋으로 해석한다.
+///
+/// 반환: `Some((최종_프롬프트, 안내문구))` 또는 일치 없으면 `None`.
+/// 클랩 서브커맨드는 이 경로에 닿기 전에 이미 처리되므로, 여기 첫 단어는 명령이 아니다
+/// (압축·날씨 등 이름이 겹치는 프리셋은 클랩 명령이 가져가 충돌하지 않는다). 첫 단어가
+/// 프리셋과 **정확히** 일치할 때만 발동해 자연어 오인을 막는다.
+fn resolve_bare_preset(prompt: &[String]) -> Option<(String, String)> {
+    let (first, rest) = prompt.split_first()?;
+    let p = preset::find(first)?;
+    let mut full = p.prompt;
+    if !rest.is_empty() {
+        full.push_str("\n\n추가 지시: ");
+        full.push_str(&rest.join(" "));
+    }
+    let note = format!("프리셋 실행: {} — {}", p.name, p.description);
+    Some((full, note))
+}
+
 /// 내보내기 파일의 기본 저장 위치를 정한다.
 ///
 /// 사용자가 `--출력` 경로를 안 주면 **다운로드 폴더**에 저장한다 — `.ics`/`.csv`는
@@ -7475,6 +7502,44 @@ mod alert_state_tests {
         // 빈 JSON·누락 필드는 기본값(None)으로 복원 — 구버전 파일 호환.
         let partial: AlertState = serde_json::from_str("{}").unwrap();
         assert_eq!(partial, AlertState::default());
+    }
+}
+
+#[cfg(test)]
+mod bare_preset_tests {
+    use super::resolve_bare_preset;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn bare_preset_name_resolves() {
+        // `wonjang 일지` → 일지 프리셋 프롬프트(옵시디언 일지 기록).
+        let (full, note) = resolve_bare_preset(&s(&["일지"])).expect("일지 프리셋");
+        assert!(full.contains("옵시디언"), "프리셋 프롬프트여야: {full}");
+        assert!(note.contains("일지"));
+    }
+
+    #[test]
+    fn extra_words_become_instruction() {
+        let (full, _) = resolve_bare_preset(&s(&["일지", "오늘", "운동함"])).expect("일지");
+        assert!(full.contains("추가 지시: 오늘 운동함"), "{full}");
+    }
+
+    #[test]
+    fn alias_resolves() {
+        // 메모의 별칭 'memo'.
+        assert!(resolve_bare_preset(&s(&["memo"])).is_some());
+    }
+
+    #[test]
+    fn non_preset_is_none() {
+        // 평범한 자연어 첫 단어는 건드리지 않는다.
+        assert!(resolve_bare_preset(&s(&["안녕하세요", "오늘", "날씨"])).is_none());
+        assert!(resolve_bare_preset(&[]).is_none());
+        // 따옴표로 묶인 한 덩어리는 정확히 일치하지 않아 자연어로.
+        assert!(resolve_bare_preset(&s(&["일지 써줘"])).is_none());
     }
 }
 
