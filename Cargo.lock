@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "wonjang"
-version = "1.24.3"
+version = "1.24.4"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

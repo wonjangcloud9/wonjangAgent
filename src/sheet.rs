@@ -469,7 +469,9 @@ fn load_spreadsheet(path: &str, sheet: Option<&str>) -> Result<Table> {
             Data::Empty => String::new(),
             Data::String(s) => s.trim().to_string(),
             Data::Float(f) => {
-                if f.fract() == 0.0 {
+                // i64 범위 밖 정수를 `as i64`로 캐스트하면 i64::MAX로 포화돼 조용히 손상되므로,
+                // 안전 범위에서만 정수로 포맷하고 그 밖(경 단위 이상·19~20자리 ID 등)은 그대로 둔다.
+                if f.fract() == 0.0 && f.abs() < 9.0e18 {
                     format!("{}", *f as i64)
                 } else {
                     f.to_string()

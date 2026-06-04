@@ -152,6 +152,8 @@ pub async fn run_telegram(eng: &Engine, cfg: &Config) -> Result<()> {
                 Ok(ans) => ans.unwrap_or_else(|| "(응답을 만들지 못했습니다)".to_string()),
                 Err(e) => format!("작업 중 오류가 발생했습니다: {e}"),
             };
+            // 채팅 기록이 무한히 커져 컨텍스트 초과로 모든 응답이 실패하는 것을 막는다.
+            trim_history(history, MAX_HISTORY);
             ui::info(&format!("▶ [{chat_id}] {}", first_line(&reply)));
             if let Err(e) = send_message(&http, &base, chat_id, &reply).await {
                 ui::error(&format!("sendMessage 오류: {e:#}"));
@@ -213,6 +215,23 @@ async fn send_message(http: &reqwest::Client, base: &str, chat_id: i64, text: &s
     Ok(())
 }
 
+/// 채팅별 대화 기록 상한(시스템 메시지 + 최근 메시지들). 무한 증가→컨텍스트 초과 방지.
+const MAX_HISTORY: usize = 30;
+
+/// 기록을 슬라이딩 윈도우로 줄인다 — 시스템 메시지(0번)는 보존하고, 나머지는 최근 것만.
+/// 자르는 자리는 `user` 메시지(깔끔한 턴 경계)로 맞춰, 도구호출/결과 짝이 깨지지 않게 한다.
+fn trim_history(history: &mut Vec<Message>, max: usize) {
+    if max < 2 || history.len() <= max {
+        return;
+    }
+    let mut drop_to = history.len() - (max - 1);
+    // 자른 자리가 user 메시지에서 시작하도록 앞으로 당긴다(도구 메시지 고아 방지).
+    while drop_to < history.len() && history[drop_to].role != "user" {
+        drop_to += 1;
+    }
+    history.drain(1..drop_to);
+}
+
 /// 긴 텍스트를 최대 길이 단위로 분할(문자 경계 안전).
 fn split_chunks(text: &str, max: usize) -> Vec<String> {
     if text.is_empty() {
@@ -257,6 +276,30 @@ mod tests {
     #[test]
     fn empty_text_yields_placeholder() {
         assert_eq!(split_chunks("", 100), vec!["(빈 응답)"]);
+    }
+
+    #[test]
+    fn trim_history_caps_growth_and_keeps_system() {
+        let mut h = vec![Message::system("규칙")];
+        for i in 0..40 {
+            h.push(Message::user(format!("u{i}")));
+            h.push(Message {
+                role: "assistant".into(),
+                content: Some(format!("a{i}")),
+                tool_calls: None,
+                tool_call_id: None,
+            });
+        }
+        // 81개(시스템1 + 80) → 10으로 트림.
+        trim_history(&mut h, 10);
+        assert!(h.len() <= 10, "상한 초과: {}", h.len());
+        assert_eq!(h[0].content.as_deref(), Some("규칙")); // 시스템 보존
+        assert_eq!(h[1].role, "user"); // 깔끔한 턴 경계에서 시작
+        assert_eq!(h.last().unwrap().content.as_deref(), Some("a39")); // 최신 보존
+                                                                       // 작은 기록은 그대로.
+        let mut small = vec![Message::system("s"), Message::user("a")];
+        trim_history(&mut small, 30);
+        assert_eq!(small.len(), 2);
     }
 
     #[test]
