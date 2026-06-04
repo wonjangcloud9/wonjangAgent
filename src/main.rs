@@ -3821,7 +3821,8 @@ fn cmd_pdf_rotate(file: &str, angle: i64, pages: Option<&str>, output: Option<&s
         }
         if let Ok(dict) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
             let current = dict.get(b"Rotate").and_then(|o| o.as_i64()).unwrap_or(0);
-            dict.set("Rotate", (current + norm) % 360);
+            // 손상/악성 PDF의 비정상 /Rotate(i64::MAX 등)와 더하면 오버플로 → 먼저 정규화.
+            dict.set("Rotate", (current.rem_euclid(360) + norm) % 360);
             rotated += 1;
         }
     }
@@ -5451,6 +5452,10 @@ fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
     if months == 0 {
         anyhow::bail!("개월 수는 1 이상이어야 해요. 예: wonjang 대출 30000 4.5 360");
     }
+    // 음수 금리·원금(`-- -4.5` 등)은 음수 이자처럼 무의미 출력을 내므로 거부.
+    if rate < 0.0 || manwon < 0.0 {
+        anyhow::bail!("원금·연이율은 0 이상이어야 해요.");
+    }
     let principal = manwon * 10_000.0;
     let ep = loan::equal_payment(principal, rate, months);
     let pp = loan::equal_principal(principal, rate, months);
@@ -5487,6 +5492,9 @@ fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
 fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<()> {
     if months == 0 {
         anyhow::bail!("개월 수는 1 이상이어야 해요. 예: wonjang 예금 1000 3.5 12");
+    }
+    if rate < 0.0 || manwon < 0.0 {
+        anyhow::bail!("원금·연이율은 0 이상이어야 해요.");
     }
     let amount = manwon * 10_000.0;
     let m = if is_savings {
@@ -6652,7 +6660,11 @@ fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
                 format!("집중 완료: {label} 🎉")
             };
             let mut rem = reminders::ReminderStore::load()?;
-            rem.add(reminders::now_unix() + m * 60, &title, None)?;
+            rem.add(
+                reminders::now_unix().saturating_add(m.saturating_mul(60)),
+                &title,
+                None,
+            )?;
 
             let what = if label.is_empty() {
                 String::new()
@@ -7023,7 +7035,7 @@ fn cmd_remind(action: &Option<RemindAction>) -> Result<()> {
             None => None,
         };
         let mut store = reminders::ReminderStore::load()?;
-        let at = now + minutes * 60;
+        let at = now.saturating_add(minutes.saturating_mul(60));
         let id = store.add(at, title, repeat)?;
         ui::note(&format!(
             "알림 #{id} 등록: '{title}' ({}{})",

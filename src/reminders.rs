@@ -94,7 +94,8 @@ impl ReminderStore {
                 Some(p) if p > 0 => {
                     let mut next = r.at_unix;
                     while next <= now {
-                        next += p;
+                        // saturating: 거대한 p에서도 오버플로 패닉/무한루프 없이 종료.
+                        next = next.saturating_add(p);
                     }
                     r.at_unix = next;
                     r.notified = false;

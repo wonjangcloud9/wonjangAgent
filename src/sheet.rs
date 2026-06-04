@@ -313,6 +313,8 @@ fn parse_num(s: &str) -> Option<f64> {
         .parse::<f64>()
         .ok()
         .map(|v| if neg { -v } else { v })
+        // f64::parse는 "inf"/"infinity"/"nan"을 받아들여 합계·평균을 오염시킨다 → 유한값만 숫자로.
+        .filter(|v| v.is_finite())
 }
 
 /// CSV(또는 TSV) 파일을 읽는다. UTF-8이 아니면 CP949(한국 엑셀·은행 CSV)로 폴백.
@@ -521,6 +523,12 @@ mod tests {
         // 진짜 텍스트는 여전히 None.
         assert_eq!(parse_num("원룸"), None);
         assert_eq!(parse_num(""), None);
+        // inf/nan(대소문자 무관)을 숫자로 받으면 합계·평균이 오염되므로 None이어야.
+        assert_eq!(parse_num("inf"), None);
+        assert_eq!(parse_num("INFINITY"), None);
+        assert_eq!(parse_num("-inf"), None);
+        assert_eq!(parse_num("nan"), None);
+        assert_eq!(parse_num("NaN"), None);
     }
 
     #[test]

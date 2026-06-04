@@ -140,11 +140,12 @@ fn parse_duration(s: &str) -> Result<Duration> {
     let n: u64 = num_part
         .parse()
         .with_context(|| format!("숫자를 해석할 수 없습니다: '{s}'"))?;
+    // 거대한 n에서 곱셈 오버플로(릴리스 wrap → 짧은 간격으로 둔갑/디버그 패닉) 방지: saturating.
     let secs = match unit.trim() {
         "s" | "sec" | "초" => n,
-        "m" | "min" | "분" => n * 60,
-        "h" | "hr" | "시간" => n * 3600,
-        "d" | "day" | "일" => n * 86400,
+        "m" | "min" | "분" => n.saturating_mul(60),
+        "h" | "hr" | "시간" => n.saturating_mul(3600),
+        "d" | "day" | "일" => n.saturating_mul(86400),
         other => bail!("알 수 없는 시간 단위: '{other}'. s/m/h/d 를 쓰세요"),
     };
     Ok(Duration::from_secs(secs))

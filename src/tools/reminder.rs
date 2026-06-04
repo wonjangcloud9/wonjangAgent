@@ -40,7 +40,7 @@ impl Tool for AddReminderTool {
             .ok_or_else(|| anyhow!("'title' 인자가 필요합니다"))?;
         let now = reminders::now_unix();
         let at = if let Some(m) = args.get("in_minutes").and_then(|v| v.as_i64()) {
-            now + m * 60
+            now.saturating_add(m.saturating_mul(60))
         } else if let Some(t) = args.get("at_unix").and_then(|v| v.as_i64()) {
             t
         } else {
@@ -49,7 +49,7 @@ impl Tool for AddReminderTool {
         let repeat = args
             .get("repeat_minutes")
             .and_then(|v| v.as_i64())
-            .map(|m| m * 60);
+            .map(|m| m.saturating_mul(60));
         let mut store = ReminderStore::load()?;
         let id = store.add(at, title, repeat)?;
         Ok(format!(

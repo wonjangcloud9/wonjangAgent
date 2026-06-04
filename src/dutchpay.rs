@@ -23,8 +23,9 @@ pub fn split(total: i64, people: i64, unit: i64) -> Option<Split> {
     let exact = total as f64 / people as f64;
     // unit 단위로 올림(div_ceil은 아직 unstable이라 수동 계산).
     let base = exact.ceil() as i64;
-    let per_person = ((base + unit - 1) / unit) * unit;
-    let collected = per_person * people;
+    // 초대형 금액에서 i64 곱셈 오버플로(걷히는 총액 음수) 방지: saturating.
+    let per_person = (base.saturating_add(unit - 1) / unit).saturating_mul(unit);
+    let collected = per_person.saturating_mul(people);
     Some(Split {
         total,
         people,
