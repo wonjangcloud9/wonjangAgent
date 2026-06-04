@@ -1051,7 +1051,7 @@ enum ExpenseAction {
     /// 모든 가계부 기록을 CSV로 내보냅니다(엑셀·wonjang 엑셀로 월별·분류별 분석). 예: wonjang 지출 내보내기
     #[command(name = "내보내기", alias = "csv")]
     Export {
-        /// 저장 경로(생략 시 가계부.csv)
+        /// 저장 경로(생략 시 다운로드 폴더의 가계부.csv)
         #[arg(long = "출력")]
         output: Option<String>,
     },
@@ -1092,7 +1092,7 @@ enum DdayAction {
     /// 디데이들을 캘린더(.ics) 파일로 — 구글·애플 캘린더에 '가져오기'로 넣습니다.
     #[command(name = "내보내기", alias = "ics")]
     Export {
-        /// 저장 경로(생략 시 디데이.ics)
+        /// 저장 경로(생략 시 다운로드 폴더의 디데이.ics)
         #[arg(long = "출력")]
         output: Option<String>,
     },
@@ -5455,6 +5455,32 @@ fn cmd_age(birth: &str) -> Result<()> {
     Ok(())
 }
 
+/// 내보내기 파일의 기본 저장 위치를 정한다.
+///
+/// 사용자가 `--출력` 경로를 안 주면 **다운로드 폴더**에 저장한다 — `.ics`/`.csv`는
+/// 받아서 더블클릭으로 캘린더·엑셀에 넣는 파일이라, 브라우저 내려받기처럼 다운로드
+/// 폴더에서 찾는 게 자연스럽다. 예전엔 현재 폴더(cwd)에 상대 이름으로 떨궈, 어디
+/// 저장됐는지 알기 어렵고 깃 저장소 같은 곳에서 실행하면 그 폴더를 어지럽혔다.
+/// 다운로드 폴더가 없으면 종전대로 현재 폴더에 저장한다.
+fn default_export_path(filename: &str) -> std::path::PathBuf {
+    // 환경 의존부(실제 다운로드 폴더 존재 확인)는 여기서, 경로 결정 로직은
+    // 순수 함수로 분리해 테스트한다.
+    let dl = dirs::download_dir().filter(|d| d.is_dir());
+    pick_export_path(dl, filename)
+}
+
+/// 다운로드 폴더(있으면)를 받아 내보내기 경로를 정한다. 폴더가 있으면 그 안에,
+/// 없으면 현재 폴더에 파일 이름만으로.
+fn pick_export_path(
+    download_dir: Option<std::path::PathBuf>,
+    filename: &str,
+) -> std::path::PathBuf {
+    match download_dir {
+        Some(dl) => dl.join(filename),
+        None => std::path::PathBuf::from(filename),
+    }
+}
+
 fn cmd_salary(manwon: f64) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
         anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
@@ -6846,7 +6872,7 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
             let csv = sheet::to_csv(&headers, &rows);
             let out_path = match output {
                 Some(o) => PathBuf::from(o),
-                None => PathBuf::from("가계부.csv"),
+                None => default_export_path("가계부.csv"),
             };
             util::atomic_write(Path::new(&out_path), csv.as_bytes())
                 .map_err(|e| anyhow::anyhow!("저장 실패: {} ({e})", out_path.display()))?;
@@ -6856,7 +6882,10 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
                 store.items.len(),
                 out_path.display().to_string().bright_yellow()
             );
-            ui::note("     분석: wonjang 엑셀 가계부.csv --그룹 분류 --열 금액");
+            ui::note(&format!(
+                "     분석: wonjang 엑셀 {} --그룹 분류 --열 금액",
+                out_path.display()
+            ));
             println!();
         }
         Some(ExpenseAction::Month) => {
@@ -6978,7 +7007,7 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             let ics = ddays::to_ics(store.all(), &stamp);
             let out_path = match output {
                 Some(o) => PathBuf::from(o),
-                None => PathBuf::from("디데이.ics"),
+                None => default_export_path("디데이.ics"),
             };
             util::atomic_write(Path::new(&out_path), ics.as_bytes())
                 .map_err(|e| anyhow::anyhow!("저장 실패: {} ({e})", out_path.display()))?;
@@ -7446,6 +7475,25 @@ mod alert_state_tests {
         // 빈 JSON·누락 필드는 기본값(None)으로 복원 — 구버전 파일 호환.
         let partial: AlertState = serde_json::from_str("{}").unwrap();
         assert_eq!(partial, AlertState::default());
+    }
+}
+
+#[cfg(test)]
+mod export_path_tests {
+    use super::pick_export_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn uses_download_dir_when_present() {
+        let p = pick_export_path(Some(PathBuf::from("/home/u/Downloads")), "디데이.ics");
+        assert_eq!(p, PathBuf::from("/home/u/Downloads/디데이.ics"));
+    }
+
+    #[test]
+    fn falls_back_to_cwd_when_absent() {
+        // 다운로드 폴더가 없으면 종전대로 현재 폴더에 파일 이름만으로.
+        let p = pick_export_path(None, "가계부.csv");
+        assert_eq!(p, PathBuf::from("가계부.csv"));
     }
 }
 
