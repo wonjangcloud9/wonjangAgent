@@ -5456,6 +5456,9 @@ fn cmd_age(birth: &str) -> Result<()> {
 }
 
 fn cmd_salary(manwon: f64) -> Result<()> {
+    if !manwon.is_finite() || manwon <= 0.0 {
+        anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
+    }
     let annual = manwon * 10_000.0;
     let p = salary::from_annual(annual);
     let w = |v: f64| expenses::won(v.round() as i64);
@@ -6170,6 +6173,9 @@ fn cmd_chars(text: &[String]) -> Result<()> {
 }
 
 fn cmd_wage(hourly: f64, weekly_hours: f64) -> Result<()> {
+    if !hourly.is_finite() || !weekly_hours.is_finite() || hourly <= 0.0 || weekly_hours <= 0.0 {
+        anyhow::bail!("시급과 주당 근무시간은 0보다 커야 해요. 예: wonjang 시급 10030 40");
+    }
     let w = |v: f64| expenses::won(v.round() as i64);
     let r = wage::calc(hourly, weekly_hours);
     println!();
@@ -6197,6 +6203,9 @@ fn cmd_wage(hourly: f64, weekly_hours: f64) -> Result<()> {
 }
 
 fn cmd_vat(amount: f64) -> Result<()> {
+    if !amount.is_finite() || amount <= 0.0 {
+        anyhow::bail!("금액은 0보다 커야 해요. 예: wonjang 부가세 11000");
+    }
     let w = |v: f64| expenses::won(v.round() as i64);
     let (s1, v1, t1) = vat::from_supply(amount);
     let (s2, v2, _t2) = vat::from_total(amount);
@@ -7437,5 +7446,37 @@ mod alert_state_tests {
         // 빈 JSON·누락 필드는 기본값(None)으로 복원 — 구버전 파일 호환.
         let partial: AlertState = serde_json::from_str("{}").unwrap();
         assert_eq!(partial, AlertState::default());
+    }
+}
+
+#[cfg(test)]
+mod calc_guard_tests {
+    use super::{cmd_salary, cmd_vat, cmd_wage};
+
+    // 0·음수·비유한 입력은 "0원" 같은 무의미 출력 대신 정직하게 거부한다(v1.23.3 원칙 확장).
+    #[test]
+    fn salary_rejects_meaningless_input() {
+        assert!(cmd_salary(0.0).is_err());
+        assert!(cmd_salary(-100.0).is_err());
+        assert!(cmd_salary(f64::INFINITY).is_err());
+        assert!(cmd_salary(f64::NAN).is_err());
+        assert!(cmd_salary(3600.0).is_ok()); // 정상은 그대로.
+    }
+
+    #[test]
+    fn vat_rejects_meaningless_input() {
+        assert!(cmd_vat(0.0).is_err());
+        assert!(cmd_vat(-1.0).is_err());
+        assert!(cmd_vat(f64::INFINITY).is_err());
+        assert!(cmd_vat(11_000.0).is_ok());
+    }
+
+    #[test]
+    fn wage_rejects_meaningless_input() {
+        assert!(cmd_wage(10_030.0, 0.0).is_err()); // 0시간.
+        assert!(cmd_wage(0.0, 40.0).is_err()); // 0시급.
+        assert!(cmd_wage(-1.0, 40.0).is_err());
+        assert!(cmd_wage(f64::NAN, 40.0).is_err());
+        assert!(cmd_wage(10_030.0, 40.0).is_ok());
     }
 }
