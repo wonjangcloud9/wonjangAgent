@@ -157,7 +157,7 @@ enum Commands {
         #[command(subcommand)]
         action: Option<TodoAction>,
     },
-    /// 설정된 채널(디스코드/텔레그램)로 메시지를 푸시합니다.
+    /// 설정된 채널(디스코드/슬랙/텔레그램/카카오)로 메시지를 푸시합니다.
     Notify {
         /// 보낼 메시지
         #[arg(trailing_var_arg = true)]
@@ -2273,8 +2273,9 @@ fn cmd_notify(cfg: &Config, message: &[String]) -> Result<()> {
     if channels.is_empty() {
         ui::error("설정된 푸시 채널이 없습니다.");
         ui::info(
-            "디스코드: WONJANG_DISCORD_WEBHOOK 에 웹훅 URL을 설정하거나,\n  \
-             텔레그램: 토큰 + telegram_allowed_ids 를 설정하세요.",
+            "디스코드: WONJANG_DISCORD_WEBHOOK 에 웹훅 URL,\n  \
+             슬랙: WONJANG_SLACK_WEBHOOK 에 Incoming Webhook URL,\n  \
+             텔레그램: 토큰 + telegram_allowed_ids 중 하나를 설정하세요.",
         );
         std::process::exit(1);
     }
@@ -2392,7 +2393,10 @@ fn cmd_guide() -> Result<()> {
         (
             "📲 알림 & 편의",
             &[
-                ("wonjang notify \"메시지\"", "카카오/디스코드/텔레그램 푸시"),
+                (
+                    "wonjang notify \"메시지\"",
+                    "카카오/디스코드/슬랙/텔레그램 푸시",
+                ),
                 ("wonjang 열기 <이름>", "즐겨찾기/URL 열기"),
                 ("wonjang 로또", "로또 자동번호"),
             ],

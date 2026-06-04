@@ -50,7 +50,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          매일=`--every @daily`, 매시간=`--every @hourly`. add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
          - 예정된 알림 확인: `{exe} remind`\n\
          - 할 일 추가/확인/완료: `{exe} todo add \"<할 일>\"`, `{exe} todo`, `{exe} todo done <id>`\n\
-         - 휴대폰으로 푸시 알림(디스코드/텔레그램): `{exe} notify \"<메시지>\"`\n\
+         - 휴대폰으로 푸시 알림(디스코드/슬랙/텔레그램): `{exe} notify \"<메시지>\"`\n\
          - 디데이(중요한 날) 등록/확인: `{exe} dday add \"<이름>\" <YYYY-MM-DD>`, `{exe} dday`. 캘린더로 내보내기: `{exe} 디데이 내보내기`(구글·애플 캘린더에 가져올 .ics 파일). \"디데이 캘린더에 넣게 내보내줘\"\n\
          - 비서 현황 한눈에: `{exe} 현황`\n\
          - 자랑 카드(회고): `{exe} 자랑`(이번 달 습관 잔디·집중·지출·D-day를 카톡에 안 깨지는 한 장 카드로), `{exe} 자랑 --주`(이번 주 + **지난주 대비 ▲▼**). 단톡방·SNS에 캡처해 자랑하기 좋음. 카톡은 `--폭 34`, 바로 복사는 `--복사`(붙여넣기만). \"이번 달 자랑 카드\"/\"이번 주 결산\"/\"카드 복사해줘\"\n\

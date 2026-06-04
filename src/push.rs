@@ -14,6 +14,9 @@ pub fn configured_channels(cfg: &Config) -> Vec<&'static str> {
     if !cfg.discord_webhook.trim().is_empty() {
         v.push("discord");
     }
+    if !cfg.slack_webhook.trim().is_empty() {
+        v.push("slack");
+    }
     if !cfg.telegram_token.trim().is_empty() && !cfg.telegram_allowed_ids.is_empty() {
         v.push("telegram");
     }
@@ -38,6 +41,12 @@ pub async fn push(cfg: &Config, message: &str) -> usize {
         && discord_send(&http, &cfg.discord_webhook, message)
             .await
             .is_ok()
+    {
+        sent += 1;
+    }
+
+    if !cfg.slack_webhook.trim().is_empty()
+        && slack_send(&http, &cfg.slack_webhook, message).await.is_ok()
     {
         sent += 1;
     }
@@ -73,6 +82,16 @@ pub fn push_blocking(cfg: &Config, message: &str) -> usize {
 async fn discord_send(http: &reqwest::Client, webhook: &str, message: &str) -> Result<()> {
     http.post(webhook)
         .json(&serde_json::json!({ "content": message }))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+/// 슬랙 Incoming Webhook으로 보낸다(POST {"text": ...}). 한국 회사에서 흔한 채널.
+async fn slack_send(http: &reqwest::Client, webhook: &str, message: &str) -> Result<()> {
+    http.post(webhook)
+        .json(&serde_json::json!({ "text": message }))
         .send()
         .await?
         .error_for_status()?;
@@ -120,13 +139,18 @@ mod tests {
         assert!(configured_channels(&cfg).is_empty());
         cfg.discord_webhook = "https://discord.com/api/webhooks/x".into();
         assert_eq!(configured_channels(&cfg), vec!["discord"]);
+        cfg.slack_webhook = "https://hooks.slack.com/services/x".into();
+        assert_eq!(configured_channels(&cfg), vec!["discord", "slack"]);
         cfg.telegram_token = "t".into();
         cfg.telegram_allowed_ids = vec![1];
-        assert_eq!(configured_channels(&cfg), vec!["discord", "telegram"]);
+        assert_eq!(
+            configured_channels(&cfg),
+            vec!["discord", "slack", "telegram"]
+        );
         cfg.kakao_access_token = "k".into();
         assert_eq!(
             configured_channels(&cfg),
-            vec!["discord", "telegram", "kakao"]
+            vec!["discord", "slack", "telegram", "kakao"]
         );
     }
 }

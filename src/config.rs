@@ -59,6 +59,10 @@ pub struct Config {
     #[serde(default)]
     pub discord_webhook: String,
 
+    /// 슬랙 Incoming Webhook URL(푸시 알림용 — 한국 회사에서 흔함). 비어 있으면 비활성.
+    #[serde(default)]
+    pub slack_webhook: String,
+
     /// 노션 통합 토큰(비밀값 — 파일에 저장하지 않고 환경 변수로만 받음).
     #[serde(default)]
     pub notion_token: String,
@@ -115,6 +119,7 @@ impl Default for Config {
             obsidian_vault: String::new(),
             briefing_time: String::new(),
             discord_webhook: String::new(),
+            slack_webhook: String::new(),
             notion_token: String::new(),
             kakao_access_token: String::new(),
             seoul_api_key: default_seoul_api_key(),
@@ -172,6 +177,11 @@ impl Config {
         if let Ok(v) = std::env::var("WONJANG_DISCORD_WEBHOOK") {
             if !v.is_empty() {
                 cfg.discord_webhook = v;
+            }
+        }
+        if let Ok(v) = std::env::var("WONJANG_SLACK_WEBHOOK") {
+            if !v.is_empty() {
+                cfg.slack_webhook = v;
             }
         }
         if let Ok(v) = std::env::var("WONJANG_NOTION_TOKEN") {
