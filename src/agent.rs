@@ -50,7 +50,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
          매일=`--every @daily`, 매시간=`--every @hourly`. add_reminder 도구가 있으면 그걸 써도 됩니다.\n\
          - 예정된 알림 확인: `{exe} remind`\n\
          - 할 일 추가/확인/완료: `{exe} todo add \"<할 일>\"`, `{exe} todo`, `{exe} todo done <id>`\n\
-         - 휴대폰으로 푸시 알림(디스코드/슬랙/텔레그램): `{exe} notify \"<메시지>\"`\n\
+         - 휴대폰으로 푸시 알림(카카오/디스코드/슬랙/텔레그램): `{exe} notify \"<메시지>\"`. \"카카오로 보내줘\"처럼 채널을 짚어도 같은 명령이면 됩니다(설정된 채널로 모두 전송)\n\
          - 디데이(중요한 날) 등록/확인: `{exe} dday add \"<이름>\" <YYYY-MM-DD>`, `{exe} dday`. 캘린더로 내보내기: `{exe} 디데이 내보내기`(구글·애플 캘린더에 가져올 .ics 파일). \"디데이 캘린더에 넣게 내보내줘\"\n\
          - 비서 현황 한눈에: `{exe} 현황`\n\
          - 자랑 카드(회고): `{exe} 자랑`(이번 달 습관 잔디·집중·지출·D-day를 카톡에 안 깨지는 한 장 카드로), `{exe} 자랑 --주`(이번 주 + **지난주 대비 ▲▼**). 단톡방·SNS에 캡처해 자랑하기 좋음. 카톡은 `--폭 34`, 바로 복사는 `--복사`(붙여넣기만). \"이번 달 자랑 카드\"/\"이번 주 결산\"/\"카드 복사해줘\"\n\
@@ -267,6 +267,16 @@ mod prompt_tests {
             "메일보내기",
         ] {
             assert!(p.contains(cmd), "시스템 프롬프트에 '{cmd}' 안내가 없습니다");
+        }
+    }
+
+    #[test]
+    fn notify_lists_all_push_channels_incl_kakao() {
+        // notify 안내는 한국 1순위 채널 카카오를 포함한 4채널을 모두 알려야 한다
+        // (configured_channels와 일치) — 안 그러면 "카카오로 보내줘"를 놓친다.
+        let p = system_prompt(None, None);
+        for ch in ["카카오", "디스코드", "슬랙", "텔레그램"] {
+            assert!(p.contains(ch), "notify 안내에 '{ch}' 채널이 없습니다");
         }
     }
 }

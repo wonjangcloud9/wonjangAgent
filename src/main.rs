@@ -2263,7 +2263,7 @@ fn check_due_reminders(cfg: &Config) {
         if reminders::should_alert(r.at_unix, now) {
             ui::note(&format!("🔔 알림: {}", r.title));
             reminders::desktop_notify("원장 알림 🔔", &r.title);
-            // 설정된 채널(디스코드/텔레그램)로도 푸시 → 외출 중에도 받음.
+            // 설정된 채널(카카오/디스코드/슬랙/텔레그램)로도 푸시 → 외출 중에도 받음.
             push::push_blocking(cfg, &format!("🔔 {}", r.title));
         }
         // 반복이면 다음 회차로 재예약, 아니면 완료 표시(스팸 방지를 위해 stale도 처리).
