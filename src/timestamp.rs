@@ -24,7 +24,12 @@ fn format_from_unix(sec: i64) -> Result<Converted> {
         .ok_or_else(|| anyhow!("타임스탬프 범위를 벗어났어요: {sec}"))?;
     Ok(Converted {
         unix_sec: sec,
-        local: local.format("%Y-%m-%d %H:%M:%S (%a)").to_string(),
+        // 요일은 한국어로(예전 `%a`는 "(Fri)" 같은 영문이라 한국어 출력에 이질적).
+        local: format!(
+            "{} ({})",
+            local.format("%Y-%m-%d %H:%M:%S"),
+            crate::datecalc::weekday_kr(local.date_naive())
+        ),
         utc: utc.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
     })
 }
@@ -103,6 +108,9 @@ mod tests {
         let c = convert("2023-11-14").unwrap();
         // 같은 날짜로 다시 변환하면 자정.
         assert!(c.local.starts_with("2023-11-14 00:00:00"));
+        // 요일은 한국어로(2023-11-14는 화요일) — 영문 "(Tue)"가 아니어야.
+        assert!(c.local.contains("(화)"), "한국어 요일이어야: {}", c.local);
+        assert!(!c.local.contains("Tue"));
     }
 
     #[test]
