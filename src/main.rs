@@ -7252,6 +7252,22 @@ fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
                     focus::fmt_minutes(total),
                     count
                 );
+                // 이번 주(최근 7일)·이번 달 누적 — 뽀모도로 유저에게 동기부여.
+                // 오늘 것만 있으면 중복이라 history가 있을 때만 보여준다.
+                let week_from = chrono::Local::now()
+                    .date_naive()
+                    .checked_sub_signed(chrono::Duration::days(6))
+                    .map(|d| d.format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|| today.clone());
+                let week = store.since_total(&week_from);
+                let month = store.month_total(&today[..7]);
+                if week > total || month > total {
+                    ui::info(&format!(
+                        "     최근 7일 {} · 이번 달 {}",
+                        focus::fmt_minutes(week),
+                        focus::fmt_minutes(month)
+                    ));
+                }
                 println!();
             }
         }

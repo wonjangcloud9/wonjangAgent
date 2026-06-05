@@ -105,6 +105,25 @@ impl FocusStore {
     pub fn today_count(&self, date: &str) -> usize {
         self.items.iter().filter(|s| s.date == date).count()
     }
+
+    /// from(YYYY-MM-DD) 이후(포함) 집중 합계 — 최근 N일 추세용. YYYY-MM-DD는
+    /// 사전순 비교가 곧 날짜순이라 문자열 `>=`로 안전하게 판정.
+    pub fn since_total(&self, from: &str) -> i64 {
+        self.items
+            .iter()
+            .filter(|s| s.date.as_str() >= from)
+            .map(|s| s.minutes)
+            .sum()
+    }
+
+    /// 특정 월(YYYY-MM) 집중 합계.
+    pub fn month_total(&self, ym: &str) -> i64 {
+        self.items
+            .iter()
+            .filter(|s| s.date.starts_with(ym))
+            .map(|s| s.minutes)
+            .sum()
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +153,24 @@ mod tests {
         });
         assert_eq!(s.today_total("2026-06-01"), 75);
         assert_eq!(s.today_count("2026-06-01"), 2);
+    }
+
+    #[test]
+    fn since_and_month_totals() {
+        let mut s = FocusStore::default();
+        for (d, m) in [("2026-05-31", 25), ("2026-06-01", 50), ("2026-06-03", 30)] {
+            s.items.push(FocusSession {
+                id: 0,
+                date: d.into(),
+                minutes: m,
+                label: "".into(),
+            });
+        }
+        // 6/01 이후(포함) = 50 + 30 = 80, 5/31은 제외.
+        assert_eq!(s.since_total("2026-06-01"), 80);
+        // 이번 달(6월) = 80, 5월 1건은 제외.
+        assert_eq!(s.month_total("2026-06"), 80);
+        assert_eq!(s.month_total("2026-05"), 25);
     }
 
     #[test]
