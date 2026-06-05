@@ -5046,10 +5046,29 @@ fn cmd_brag(
         || dday.is_some()
         || journal_count > 0;
     if !has_data {
+        // 호기심에 처음 '자랑'을 친 사람에게 텍스트만 주면 '갖고 싶다'가 안 생긴다.
+        // 예시 카드로 결과물을 먼저 보여줘 습관 등록 → 전염으로 잇는다(첫인상 전환).
         println!();
-        ui::note("아직 자랑할 게 쌓이지 않았어요. 습관 하나만 시작해봐요:");
+        ui::info("아직 쌓인 기록이 없어요 — 한 달만 채우면 이런 카드가 생겨요:");
+        let sample = card::CardData {
+            title: "예시".into(),
+            streak: Some(("운동".into(), 15)),
+            jandi: (0..28).map(|i| i % 4 != 0).collect(),
+            focus_label: Some("12시간".into()),
+            expense_label: Some("320,000원".into()),
+            dday: Some("수능 D-150".into()),
+            journal_count: 8,
+            comment: "꾸준함이 멋져요 🙌".into(),
+            footer: card::SHARE_FOOTER.into(),
+        };
+        print_card(
+            &card::render_card(&sample, width),
+            soul::active_preset_key(),
+            no_color,
+            false,
+        );
         println!("  {}", "wonjang 습관 add 운동".bright_cyan());
-        ui::info("  매일 'wonjang 습관 done 운동' 하면, 한 달 뒤 자랑할 카드가 생겨요 🌱");
+        ui::info("  매일 'wonjang 습관 done 운동' → 한 달 뒤 진짜 내 카드가 생겨요 🌱");
         println!();
         return Ok(());
     }
