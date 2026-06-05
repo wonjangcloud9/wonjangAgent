@@ -64,6 +64,7 @@ mod news;
 mod notes;
 mod notion;
 mod organize;
+mod overtime;
 mod password;
 mod pick;
 mod preset;
@@ -712,6 +713,21 @@ enum Commands {
         /// 차령(년, 생략 시 0=신차). 3년부터 경감
         #[arg(default_value_t = 0)]
         age: u32,
+    },
+    /// 야근·휴일 수당(근로기준법 가산율). 예: wonjang 야근수당 12000 --연장 3
+    #[command(aliases = ["야근수당", "수당"])]
+    Overtime {
+        /// 통상시급(원). 예: 12000
+        hourly: f64,
+        /// 연장근로 시간(×1.5)
+        #[arg(long = "연장", default_value_t = 0.0)]
+        overtime: f64,
+        /// 야간(22~06시) 근로 시간(+0.5 가산)
+        #[arg(long = "야간", default_value_t = 0.0)]
+        night: f64,
+        /// 휴일근로 시간(×1.5)
+        #[arg(long = "휴일", default_value_t = 0.0)]
+        holiday: f64,
     },
     /// 오늘 뭐 먹지? 메뉴 추천. 예: wonjang 메뉴 / wonjang 메뉴 중식
     #[command(alias = "메뉴")]
@@ -1422,6 +1438,12 @@ async fn run() -> Result<()> {
         }) => return cmd_severance(*monthly, *years, *months),
         Some(Commands::AnnualLeave { years, months }) => return cmd_annual_leave(*years, *months),
         Some(Commands::CarTax { cc, age }) => return cmd_car_tax(*cc, *age),
+        Some(Commands::Overtime {
+            hourly,
+            overtime,
+            night,
+            holiday,
+        }) => return cmd_overtime(*hourly, *overtime, *night, *holiday),
         Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
         Some(Commands::Dutch {
             total,
@@ -2499,6 +2521,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 퇴직금 <월급> <근속년> [개월]", "법정 퇴직금 추정"),
                 ("wonjang 연차 <근속년> [개월]", "연차 휴가 일수(근로기준법)"),
                 ("wonjang 자동차세 <cc> [차령]", "자동차세(비영업 승용)"),
+                ("wonjang 야근수당 <시급> --연장 N", "연장·야간·휴일 수당"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
                 ("wonjang 나이 <YYYY-MM-DD>", "만 나이·살아온 날·기념일"),
@@ -5833,6 +5856,38 @@ fn cmd_car_tax(cc: u32, age: u32) -> Result<()> {
     if age < 3 {
         ui::info("     ※ 차령 3년부터 매년 5%씩 경감(최대 50%).");
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_overtime(hourly: f64, ot: f64, night: f64, holiday: f64) -> Result<()> {
+    if !hourly.is_finite() || hourly <= 0.0 {
+        anyhow::bail!("통상시급은 0보다 커야 해요. 예: wonjang 야근수당 12000 --연장 3");
+    }
+    for (label, h) in [("연장", ot), ("야간", night), ("휴일", holiday)] {
+        if !h.is_finite() || h < 0.0 {
+            anyhow::bail!("{label} 시간은 0 이상이어야 해요.");
+        }
+    }
+    if ot == 0.0 && night == 0.0 && holiday == 0.0 {
+        anyhow::bail!("근로 시간을 넣어주세요. 예: wonjang 야근수당 12000 --연장 3 --야간 2");
+    }
+    let a = overtime::calc(hourly, ot, night, holiday);
+    let won = |v: f64| expenses::won(v.round() as i64);
+    println!();
+    println!("  🌙 야근·휴일 수당 (통상시급 {})", won(hourly));
+    if ot > 0.0 {
+        println!("     연장근로 {ot}시간   {}  (1.5배)", won(a.overtime));
+    }
+    if night > 0.0 {
+        println!("     야간근로 {night}시간   {}  (0.5배 가산)", won(a.night));
+    }
+    if holiday > 0.0 {
+        println!("     휴일근로 {holiday}시간   {}  (1.5배)", won(a.holiday));
+    }
+    println!("     ───────────────");
+    println!("     수당 합계        {}", won(a.total()));
+    ui::info("     ※ 연장이 야간과 겹치면 둘 다 가산(1.5+0.5=2.0배). 통상시급 기준.");
     println!();
     Ok(())
 }
