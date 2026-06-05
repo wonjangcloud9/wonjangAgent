@@ -76,6 +76,7 @@ mod safety;
 mod salary;
 mod search;
 mod session;
+mod severance;
 mod sheet;
 mod skill;
 mod sleepcalc;
@@ -680,6 +681,17 @@ enum Commands {
         /// 월세 보증금(만 원, 생략 시 0=순수 월세)
         #[arg(default_value_t = 0.0)]
         deposit: f64,
+    },
+    /// 법정 퇴직금 추정(근로기준법). 예: wonjang 퇴직금 300 3 6
+    #[command(alias = "퇴직금")]
+    Severance {
+        /// 월 평균임금(만 원 단위). 예: 300 = 300만 원
+        monthly: f64,
+        /// 근속 연수. 예: 3
+        years: u32,
+        /// 근속 개월(0~11, 생략 시 0)
+        #[arg(default_value_t = 0)]
+        months: u32,
     },
     /// 오늘 뭐 먹지? 메뉴 추천. 예: wonjang 메뉴 / wonjang 메뉴 중식
     #[command(alias = "메뉴")]
@@ -1383,6 +1395,11 @@ async fn run() -> Result<()> {
             rate,
             deposit,
         }) => return cmd_jeonse(*jeonse, *rate, *deposit),
+        Some(Commands::Severance {
+            monthly,
+            years,
+            months,
+        }) => return cmd_severance(*monthly, *years, *months),
         Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
         Some(Commands::Dutch {
             total,
@@ -2457,6 +2474,7 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 전월세 <전세금> <전환율%> [보증금]",
                     "전세→월세 전환",
                 ),
+                ("wonjang 퇴직금 <월급> <근속년> [개월]", "법정 퇴직금 추정"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
                 ("wonjang 나이 <YYYY-MM-DD>", "만 나이·살아온 날·기념일"),
@@ -5718,6 +5736,33 @@ fn cmd_jeonse(jeonse_manwon: f64, rate_pct: f64, deposit_manwon: f64) -> Result<
     }
     println!("     순수 월세(보증금 0) → {:.1}만원 ({})", full, won(full));
     ui::info("     ※ 법정 상한 = 한국은행 기준금리 + 2%");
+    println!();
+    Ok(())
+}
+
+fn cmd_severance(monthly_manwon: f64, years: u32, months: u32) -> Result<()> {
+    if !monthly_manwon.is_finite() || monthly_manwon <= 0.0 {
+        anyhow::bail!("월 평균임금은 0보다 커야 해요. 예: wonjang 퇴직금 300 3 (만원·근속년)");
+    }
+    if months >= 12 {
+        anyhow::bail!("개월은 0~11로 넣어주세요(연수는 첫 숫자). 예: 3년 6개월 → 퇴직금 300 3 6");
+    }
+    let days = severance::service_days(years, months);
+    println!();
+    println!(
+        "  💼 퇴직금 추정 (월 평균임금 {}만원 · 근속 {years}년 {months}개월)",
+        monthly_manwon as i64
+    );
+    if days < 365 {
+        ui::info("     근속 1년 미만은 법정 퇴직금 대상이 아니에요(1년 이상부터).");
+        println!();
+        return Ok(());
+    }
+    let sev = severance::severance_manwon(monthly_manwon, days);
+    let won = expenses::won((sev * 10_000.0).round() as i64);
+    println!("     예상 퇴직금   약 {:.0}만원 ({won})", sev);
+    ui::info("     ※ 1일 평균임금 × 30일 × (재직일수/365). 평균임금엔 상여·연차수당이");
+    ui::info("       더해지므로 실제 퇴직금은 이보다 많을 수 있어요(추정치).");
     println!();
     Ok(())
 }
