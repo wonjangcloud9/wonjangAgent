@@ -30,6 +30,12 @@ pub fn year_age(birth: NaiveDate, today: NaiveDate) -> i32 {
     today.year() - birth.year()
 }
 
+/// 세는나이(한국식): 태어나면 1세, 해 바뀔 때 +1 = 현재 연도 − 출생 연도 + 1.
+/// 2023년 '만 나이 통일법'으로 공식 폐지됐지만 일상 대화("우리 나이로 몇 살")에선 여전히 쓰인다.
+pub fn counting_age(birth: NaiveDate, today: NaiveDate) -> i32 {
+    today.year() - birth.year() + 1
+}
+
 /// 출생 연도의 십이지 띠.
 pub fn zodiac_animal(year: i32) -> &'static str {
     const ANIMALS: [&str; 12] = [
@@ -120,6 +126,14 @@ mod tests {
     #[test]
     fn year_age_ignores_month() {
         assert_eq!(year_age(d(1990, 12, 31), d(2026, 1, 1)), 36);
+    }
+
+    #[test]
+    fn counting_age_is_year_age_plus_one() {
+        // 1990년생, 2026년 → 세는나이 37(= 연나이 36 + 1).
+        assert_eq!(counting_age(d(1990, 5, 15), d(2026, 6, 1)), 37);
+        // 생일 전이어도 세는나이는 같음(연도 기준).
+        assert_eq!(counting_age(d(1990, 12, 31), d(2026, 1, 1)), 37);
     }
 
     #[test]

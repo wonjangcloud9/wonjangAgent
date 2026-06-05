@@ -5618,7 +5618,9 @@ fn cmd_age(birth: &str) -> Result<()> {
         chrono::Datelike::day(&birth),
     );
     println!("  🎂 나이 계산 ({})", birth.format("%Y년 %m월 %d일생"));
+    let counting = age::counting_age(birth, today);
     println!("     만 나이: {man}세");
+    println!("     세는나이: {counting}세  (옛 한국식 — 2023 폐지, 일상선 여전히)");
     println!("     연 나이: {yeon}세  (현재 연도 − 출생 연도)");
     println!("     띠: {animal}띠   별자리: {sign}");
     // 살아온 날수 + 다음 1000일 마디(한국에서 챙기는 '날수' 기념 — "나 1만일!" 자랑거리).
