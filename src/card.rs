@@ -163,8 +163,8 @@ pub struct CardData {
     pub title: String,
     pub streak: Option<(String, i64)>,
     pub jandi: Vec<bool>,
-    pub focus_label: String,
-    pub expense_label: String,
+    pub focus_label: Option<String>,
+    pub expense_label: Option<String>,
     pub dday: Option<String>,
     pub journal_count: usize,
     pub comment: String,
@@ -214,17 +214,25 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
             inner,
         ));
     }
-    lines.push(row("🍅 이번 달 집중", &d.focus_label, inner, col));
-    lines.push(row("💰 이번 달 지출", &d.expense_label, inner, col));
+    // 자랑 카드는 '성취'만 보여준다 — 0인 항목(집중 0분·지출 0원·일기 0번)은 줄을 빼
+    // 카드를 깔끔하고 자랑할 맛 나게(streak·잔디·dday와 같은 조건부 패턴).
+    if let Some(focus) = &d.focus_label {
+        lines.push(row("🍅 이번 달 집중", focus, inner, col));
+    }
+    if let Some(expense) = &d.expense_label {
+        lines.push(row("💰 이번 달 지출", expense, inner, col));
+    }
     if let Some(dday) = &d.dday {
         lines.push(row("📅 다가오는 날", dday, inner, col));
     }
-    lines.push(row(
-        "✍️ 이번 달 일기",
-        &format!("{}번", d.journal_count),
-        inner,
-        col,
-    ));
+    if d.journal_count > 0 {
+        lines.push(row(
+            "✍️ 이번 달 일기",
+            &format!("{}번", d.journal_count),
+            inner,
+            col,
+        ));
+    }
     lines.push(rule('├', '┤', "", inner));
     lines.push(content(&format!("💬 {}", d.comment), inner));
     lines.push(rule('╰', '╯', &d.footer, inner));
@@ -400,8 +408,8 @@ mod tests {
             title: "2026년 6월".into(),
             streak: Some(("★독서♥".into(), 13)),
             jandi: (0..28).map(|i| i % 2 == 0).collect(),
-            focus_label: "3시간".into(),
-            expense_label: "1,000원".into(),
+            focus_label: Some("3시간".into()),
+            expense_label: Some("1,000원".into()),
             dday: None,
             journal_count: 2,
             comment: "꾸준하네 ☎".into(),
@@ -420,8 +428,8 @@ mod tests {
             streak: Some(("운동".into(), 100)), // 마일스톤(🏆 뱃지) 포함해 폭 불변식 검증
 
             jandi: (0..28).map(|i| i % 3 != 0).collect(),
-            focus_label: "42시간 30분".into(),
-            expense_label: "1,240,000원".into(),
+            focus_label: Some("42시간 30분".into()),
+            expense_label: Some("1,240,000원".into()),
             dday: Some("토익 D-3".into()),
             journal_count: 9,
             comment: "운동 13일 연속, 너 좀 멋진데? 🙌".into(),
@@ -449,6 +457,32 @@ mod tests {
     }
 
     #[test]
+    fn zero_value_rows_are_hidden() {
+        // 자랑 카드는 '성취'만 — 0 항목(집중 0분·지출 0원·일기 0번)은 줄이 빠진다.
+        let d = CardData {
+            title: "2026년 6월".into(),
+            streak: Some(("운동".into(), 5)),
+            jandi: (0..28).map(|i| i % 2 == 0).collect(),
+            focus_label: None,
+            expense_label: None,
+            dday: None,
+            journal_count: 0,
+            comment: "오늘 한 칸부터 채워봐요.".into(),
+            footer: SHARE_FOOTER.into(),
+        };
+        let joined = render_card(&d, 40).join("\n");
+        assert!(!joined.contains("이번 달 집중"), "0분 집중 줄이 보임");
+        assert!(!joined.contains("이번 달 지출"), "0원 지출 줄이 보임");
+        assert!(!joined.contains("이번 달 일기"), "0번 일기 줄이 보임");
+        // 가진 성취(연속)는 그대로.
+        assert!(joined.contains("가장 긴 연속"));
+        // 줄을 빼도 박스 폭 불변식은 유지.
+        for line in render_card(&d, 40) {
+            assert_eq!(disp_width(&line), 40, "줄 폭 불일치: {line:?}");
+        }
+    }
+
+    #[test]
     fn narrow_jandi_keeps_newest_days() {
         // 최신 날(맨 뒤)만 ▓, 나머지 ░ → 좁은 폭에서 잘려도 최신 ▓가 보존돼야.
         let mut jandi = vec![false; 28];
@@ -457,8 +491,8 @@ mod tests {
             title: "t".into(),
             streak: None,
             jandi,
-            focus_label: "1시간".into(),
-            expense_label: "0원".into(),
+            focus_label: Some("1시간".into()),
+            expense_label: None,
             dday: None,
             journal_count: 0,
             comment: "x".into(),
