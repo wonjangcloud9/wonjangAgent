@@ -5991,6 +5991,23 @@ fn cmd_holiday(year: Option<i32>) -> Result<()> {
                 wd(end)
             );
         }
+        // 연차 하나로 만드는 황금연휴(징검다리) — 한국에서 연말마다 가장 많이 공유되는 정보.
+        let golden = holidays::golden_leaves(&holidays, today, 4, 3);
+        if !golden.is_empty() {
+            let wd = |d: chrono::NaiveDate| {
+                format!("{}({})", d.format("%m-%d"), datecalc::weekday_kr(d))
+            };
+            println!("  💡 연차 하나로 황금연휴:");
+            for g in &golden {
+                println!(
+                    "     {} 연차 → {}일 연휴 ({}~{})",
+                    wd(g.leave),
+                    g.len,
+                    wd(g.start),
+                    wd(g.end)
+                );
+            }
+        }
     }
     println!();
     Ok(())
