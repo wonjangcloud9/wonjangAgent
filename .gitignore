@@ -8,3 +8,7 @@ npm/bin/wonjang
 npm/bin/wonjang.exe
 npm/node_modules/
 npm/*.tgz
+
+# Claude Code 세션 스케줄러(durable 자동 발전 루프) — 레포에 커밋하지 않음
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
