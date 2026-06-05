@@ -87,6 +87,34 @@ pub fn tool_result(summary: &str) {
 
 /// 환영 배너. `label`은 백엔드 표기("Claude Code"/"Codex"/"API (...)").
 /// `ready`는 그 백엔드를 지금 바로 쓸 수 있는지(CLI 백엔드면 바이너리 설치 여부).
+/// 날마다 도는 기능 발견 팁. 35개+ 기능을 한 줄씩 자연스럽게 알린다(같은 날 같은 팁).
+const TIPS: &[&str] = &[
+    "💡 오늘의 팁: 다음 연휴·연차 꿀팁 → wonjang 공휴일",
+    "💡 오늘의 팁: 우리 사귄 지 며칠? → wonjang 기념일 2024-01-01 우리",
+    "💡 오늘의 팁: 여권 영문이름 → wonjang 로마자 홍길동",
+    "💡 오늘의 팁: 내 퇴직금 얼마? → wonjang 퇴직금 300 3",
+    "💡 오늘의 팁: 자소서 1000자 맞추기 → wonjang 글자수 \"...\" --제한 1000",
+    "💡 오늘의 팁: 금 5돈 몇 g? → wonjang 변환 5 돈",
+    "💡 오늘의 팁: 수능 D-day 카드 → wonjang 디데이 카드",
+    "💡 오늘의 팁: 내 차 자동차세 → wonjang 자동차세 1998",
+    "💡 오늘의 팁: 전세 월세로 돌리면? → wonjang 전월세 30000 5.5 10000",
+    "💡 오늘의 팁: 야근수당 제대로 받나? → wonjang 야근수당 12000 --연장 3",
+    "💡 오늘의 팁: 내 연차 며칠? → wonjang 연차 5",
+    "💡 오늘의 팁: 살아온 날수·다음 기념일 → wonjang 나이 1990-05-15",
+    "💡 오늘의 팁: 이불 7자 몇 cm? → wonjang 변환 7 자",
+    "💡 오늘의 팁: 이번 달 자랑 카드 → wonjang 자랑 (카톡엔 --폭 34)",
+];
+
+/// 연중 일수로 오늘의 팁을 고른다(결정론적 — 테스트 가능, 매일 바뀜).
+fn tip_for_day(ordinal: u32) -> &'static str {
+    TIPS[(ordinal as usize) % TIPS.len()]
+}
+
+fn daily_tip() -> &'static str {
+    use chrono::Datelike;
+    tip_for_day(chrono::Local::now().date_naive().ordinal())
+}
+
 pub fn banner(label: &str, ready: bool) {
     let version = env!("CARGO_PKG_VERSION");
     let keyless = !label.starts_with("API");
@@ -123,6 +151,8 @@ pub fn banner(label: &str, ready: bool) {
     );
     // '수집→자랑' 루프를 첫 화면에 각인: 오늘까지의 미니 잔디 한 줄.
     println!("  {}", habit_strip());
+    // 날마다 도는 기능 발견 팁 — 풍부한 기능을 자연스럽게 알린다.
+    println!("  {}", daily_tip().dimmed());
     println!(
         "  {}",
         "무엇이든 한국어로 시켜보세요.  /help · /성격 · /자랑 · /exit".dimmed()
@@ -207,4 +237,23 @@ pub fn onboarding_if_first() {
         std::fs::create_dir_all(parent).ok();
     }
     std::fs::write(&marker, "1").ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_tip_rotates_and_valid() {
+        // 모든 날에 유효한 팁(빈 문자열 아님), 매일 바뀜.
+        for d in 1..=366u32 {
+            assert!(tip_for_day(d).contains("오늘의 팁"), "day {d}");
+        }
+        // 연속한 날은 다른 팁(개수>1이라 회전).
+        assert_ne!(tip_for_day(1), tip_for_day(2));
+        // 결정론적: 같은 날 같은 팁.
+        assert_eq!(tip_for_day(100), tip_for_day(100));
+        // 인덱스가 개수를 넘어도 안전(모듈로).
+        assert_eq!(tip_for_day(0), TIPS[0]);
+    }
 }
