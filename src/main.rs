@@ -5937,6 +5937,26 @@ fn cmd_holiday(year: Option<i32>) -> Result<()> {
             println!("  👉 다음 공휴일: {} 까지 D-{}", next.name, dday);
         }
     }
+
+    // 다음 연휴(주말+공휴일이 3일 이상 연속) — "추석 며칠 쉬어?"를 한 줄로(올해 한정).
+    if year == chrono::Datelike::year(&today) {
+        if let Some((start, end, len)) = holidays::next_long_break(&holidays, today, 3) {
+            let wd = |d: chrono::NaiveDate| {
+                format!("{}({})", d.format("%m-%d"), datecalc::weekday_kr(d))
+            };
+            let dday = datecalc::days_between(today, start);
+            let when = if dday <= 0 {
+                "지금".to_string()
+            } else {
+                format!("D-{dday}")
+            };
+            println!(
+                "  🏖️ 다음 연휴: {}~{} {len}일 연속 ({when})",
+                wd(start),
+                wd(end)
+            );
+        }
+    }
     println!();
     Ok(())
 }
