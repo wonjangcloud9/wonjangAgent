@@ -6,7 +6,7 @@
 //! 저장 위치: `~/.local/share/wonjang/habits.json`
 
 use anyhow::{Context, Result};
-use chrono::{Duration, Local, NaiveDate};
+use chrono::{Datelike, Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -63,6 +63,48 @@ pub fn streak(dates: &HashSet<String>, today: NaiveDate) -> i64 {
         day -= Duration::days(1);
     }
     count
+}
+
+/// 습관 통계(달성률·최장 연속·요일 패턴).
+pub struct Stats {
+    pub total: usize,           // 총 완료 일수
+    pub span: i64,              // 첫 완료일~오늘(일)
+    pub longest: i64,           // 가장 긴 연속
+    pub by_weekday: [usize; 7], // 월~일 완료 횟수
+}
+
+/// 완료 날짜 집합으로 통계를 낸다. 완료 기록이 없으면 None.
+pub fn stats(dates: &HashSet<String>, today: NaiveDate) -> Option<Stats> {
+    let mut days: Vec<NaiveDate> = dates
+        .iter()
+        .filter_map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .collect();
+    days.sort();
+    let first = *days.first()?;
+    let span = (today - first).num_days() + 1;
+    // 가장 긴 연속.
+    let (mut longest, mut run) = (1i64, 1i64);
+    for w in days.windows(2) {
+        match (w[1] - w[0]).num_days() {
+            1 => {
+                run += 1;
+                longest = longest.max(run);
+            }
+            0 => {}
+            _ => run = 1,
+        }
+    }
+    // 요일별(월=0 … 일=6).
+    let mut by_weekday = [0usize; 7];
+    for d in &days {
+        by_weekday[d.weekday().num_days_from_monday() as usize] += 1;
+    }
+    Some(Stats {
+        total: days.len(),
+        span,
+        longest,
+        by_weekday,
+    })
 }
 
 impl Habit {
@@ -185,6 +227,22 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 6, 5).unwrap();
         let s = set(&["2026-06-03", "2026-06-04", "2026-06-05"]);
         assert_eq!(streak(&s, today), 3);
+    }
+
+    #[test]
+    fn stats_computes_rate_longest_and_weekday() {
+        // 06-01(월)·02(화)·03(수)·05(금) 완료, 오늘 06-06(토).
+        let s = set(&["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-05"]);
+        let st = stats(&s, NaiveDate::from_ymd_opt(2026, 6, 6).unwrap()).unwrap();
+        assert_eq!(st.total, 4);
+        assert_eq!(st.span, 6); // 06-01~06-06
+        assert_eq!(st.longest, 3); // 01·02·03
+        assert_eq!(st.by_weekday[0], 1); // 월
+        assert_eq!(st.by_weekday[2], 1); // 수
+        assert_eq!(st.by_weekday[4], 1); // 금
+        assert_eq!(st.by_weekday[5], 0); // 토
+                                         // 완료 없으면 None.
+        assert!(stats(&set(&[]), NaiveDate::from_ymd_opt(2026, 6, 6).unwrap()).is_none());
     }
 
     #[test]

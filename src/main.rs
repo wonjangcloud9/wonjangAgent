@@ -1113,6 +1113,12 @@ enum HabitAction {
         /// 삭제할 습관 id
         id: u64,
     },
+    /// 습관 통계(달성률·최장 연속·요일 패턴). 예: wonjang 습관 통계 운동
+    #[command(name = "통계", alias = "stat")]
+    Stat {
+        /// 습관 이름 또는 id
+        habit: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2523,6 +2529,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 지출 add <금액> <분류>", "가계부"),
                 ("wonjang 지출 내보내기", "가계부를 CSV로(엑셀 분석)"),
                 ("wonjang 습관 done <이름>", "습관 트래커(연속일수)"),
+                ("wonjang 습관 통계 <이름>", "달성률·최장연속·요일패턴"),
                 ("wonjang 일기 \"<내용>\"", "간단 일기(월별 저장)"),
                 ("wonjang 일지/메모 (프리셋)", "옵시디언 노트"),
                 ("wonjang notion search \"...\"", "노션 검색/기록"),
@@ -7281,6 +7288,59 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
             } else {
                 ui::error(&format!("습관 #{id}을(를) 찾을 수 없습니다."));
             }
+        }
+        Some(HabitAction::Stat { habit }) => {
+            let today = habits::today();
+            let h = store
+                .items
+                .iter()
+                .find(|h| h.name == *habit || h.id.to_string() == *habit);
+            let Some(h) = h else {
+                ui::error(&format!(
+                    "'{habit}' 습관을 찾을 수 없어요. 목록: wonjang 습관"
+                ));
+                return Ok(());
+            };
+            let Some(s) = habits::stats(&h.date_set(), today) else {
+                ui::info(&format!(
+                    "'{}' 아직 완료 기록이 없어요. wonjang 습관 done {}",
+                    h.name, h.name
+                ));
+                return Ok(());
+            };
+            let rate = (s.total as f64 / s.span as f64 * 100.0).round();
+            println!();
+            println!("  📊 {} 통계", h.name);
+            println!(
+                "     달성률      {}/{}일 ({rate:.0}%)  {}",
+                s.total,
+                s.span,
+                card::hbar(s.total as f64, s.span as f64, 12)
+            );
+            println!(
+                "     가장 긴 연속  {}일   현재 {}일",
+                s.longest,
+                h.streak(today)
+            );
+            // 요일별 패턴 + 가장 꾸준한 요일.
+            let labels = ["월", "화", "수", "목", "금", "토", "일"];
+            let week: String = labels
+                .iter()
+                .zip(s.by_weekday.iter())
+                .map(|(l, c)| format!("{l}{c}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!("     요일별      {week}");
+            if let Some((bi, bc)) = s
+                .by_weekday
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| **c > 0)
+                .max_by_key(|(_, c)| **c)
+            {
+                ui::info(&format!("     {}요일에 가장 꾸준해요 ({bc}번)", labels[bi]));
+            }
+            println!();
         }
         None | Some(HabitAction::List) => {
             if store.items.is_empty() {
