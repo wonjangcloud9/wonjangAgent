@@ -75,6 +75,7 @@ mod radix;
 mod reminders;
 mod rename;
 mod roman;
+mod romanize;
 mod safety;
 mod salary;
 mod search;
@@ -850,6 +851,12 @@ enum Commands {
         /// 정수(1~3999) 또는 로마 숫자
         value: String,
     },
+    /// 한글 이름 → 로마자(여권 영문이름). 예: wonjang 로마자 홍길동
+    #[command(aliases = ["로마자", "영문이름"])]
+    Romanize {
+        /// 한글 이름(성+이름)
+        name: Vec<String>,
+    },
     /// 세계 시간(주요 도시 현재 시각, DST 반영). 예: wonjang 세계시간 [뉴욕]
     #[command(alias = "세계시간")]
     Worldtime {
@@ -1486,6 +1493,7 @@ async fn run() -> Result<()> {
         Some(Commands::Time { items }) => return cmd_time(items),
         Some(Commands::Radix { value }) => return cmd_radix(value),
         Some(Commands::Roman { value }) => return cmd_roman(value),
+        Some(Commands::Romanize { name }) => return cmd_romanize(name),
         Some(Commands::Worldtime { city }) => return cmd_worldtime(city.as_deref()),
         Some(Commands::Tzconv { time, from, to }) => return cmd_tzconv(time, from, to),
         Some(Commands::Timestamp { value }) => return cmd_timestamp(value.as_deref()),
@@ -2580,6 +2588,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 진법 255", "2/8/10/16진수 변환"),
                 ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
                 ("wonjang 로마 2024", "로마 숫자 ↔ 숫자"),
+                ("wonjang 로마자 <한글이름>", "여권 영문이름 표기"),
                 ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
                 ("wonjang 비번 [길이] --기호", "안전한 비밀번호 생성"),
                 ("wonjang uuid [-n N]", "UUID v4 생성"),
@@ -6461,6 +6470,46 @@ fn cmd_roman(value: &str) -> Result<()> {
             n.to_string().bright_cyan().bold()
         );
     }
+    println!();
+    Ok(())
+}
+
+fn cmd_romanize(name: &[String]) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let joined: String = name.join("").replace(' ', "");
+    let chars: Vec<char> = joined.chars().collect();
+    if chars.is_empty() {
+        anyhow::bail!("한글 이름을 입력하세요. 예: wonjang 로마자 홍길동");
+    }
+    // 성/이름 분리: 흔한 복성이면 2글자, 아니면 첫 글자.
+    let sur_len = if chars.len() >= 2 && romanize::is_compound_surname(chars[0], chars[1]) {
+        2
+    } else {
+        1
+    };
+    let sur: String = chars[..sur_len].iter().collect();
+    let given: String = chars[sur_len..].iter().collect();
+    // 성: 관용 표기 우선(한 글자 성만), 없으면 표준 로마자.
+    let sur_roman = if sur_len == 1 {
+        romanize::surname(chars[0])
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| romanize::capitalize(&romanize::romanize(&sur)))
+    } else {
+        romanize::capitalize(&romanize::romanize(&sur))
+    };
+    let given_roman = romanize::capitalize(&romanize::romanize(&given));
+    println!();
+    println!("  🔤 로마자 표기 ({joined})");
+    if given.is_empty() {
+        println!("     {}", sur_roman.bright_cyan());
+    } else {
+        println!(
+            "     {} {}",
+            sur_roman.bright_cyan(),
+            given_roman.bright_cyan()
+        );
+    }
+    ui::info("     성은 흔히 쓰는 관용 표기, 이름은 표준 로마자예요(개인 선택 가능).");
     println!();
     Ok(())
 }
