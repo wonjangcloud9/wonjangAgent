@@ -46,6 +46,7 @@ mod habits;
 mod hangul;
 mod hash;
 mod holidays;
+mod jeonse;
 mod journal;
 mod jsontool;
 mod keyboard;
@@ -668,6 +669,17 @@ enum Commands {
         rate: f64,
         /// 납입 개월 수. 예: 24
         months: u32,
+    },
+    /// 전월세 전환 계산(전세→반월세 월세). 예: wonjang 전월세 30000 5.5 10000
+    #[command(aliases = ["전월세", "반전세"])]
+    Jeonse {
+        /// 전세보증금(만 원 단위). 예: 30000 = 3억
+        jeonse: f64,
+        /// 전월세전환율(%, 법정 상한=기준금리+2%). 예: 5.5
+        rate: f64,
+        /// 월세 보증금(만 원, 생략 시 0=순수 월세)
+        #[arg(default_value_t = 0.0)]
+        deposit: f64,
     },
     /// 오늘 뭐 먹지? 메뉴 추천. 예: wonjang 메뉴 / wonjang 메뉴 중식
     #[command(alias = "메뉴")]
@@ -1366,6 +1378,11 @@ async fn run() -> Result<()> {
             rate,
             months,
         }) => return cmd_deposit(*manwon, *rate, *months, true),
+        Some(Commands::Jeonse {
+            jeonse,
+            rate,
+            deposit,
+        }) => return cmd_jeonse(*jeonse, *rate, *deposit),
         Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
         Some(Commands::Dutch {
             total,
@@ -2436,6 +2453,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
                 ("wonjang 예금/적금 <...>", "예적금 만기(세후)"),
+                (
+                    "wonjang 전월세 <전세금> <전환율%> [보증금]",
+                    "전세→월세 전환",
+                ),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
                 ("wonjang 나이 <YYYY-MM-DD>", "만 나이·살아온 날·기념일"),
@@ -5665,6 +5686,38 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!("     세후 이자      {}", w(m.interest_aftertax));
     println!("     ───────────────");
     println!("     만기 수령액    {}", w(m.total));
+    println!();
+    Ok(())
+}
+
+fn cmd_jeonse(jeonse_manwon: f64, rate_pct: f64, deposit_manwon: f64) -> Result<()> {
+    if !jeonse_manwon.is_finite() || jeonse_manwon <= 0.0 {
+        anyhow::bail!("전세보증금은 0보다 커야 해요. 예: wonjang 전월세 30000 5.5 (만원 단위)");
+    }
+    if !rate_pct.is_finite() || rate_pct < 0.0 {
+        anyhow::bail!("전환율은 0 이상이어야 해요(법정 상한=기준금리+2%).");
+    }
+    if !deposit_manwon.is_finite() || deposit_manwon < 0.0 || deposit_manwon > jeonse_manwon {
+        anyhow::bail!("월세 보증금은 0~전세금 사이여야 해요.");
+    }
+    let won = |man: f64| expenses::won((man * 10_000.0).round() as i64);
+    let monthly = jeonse::monthly_rent(jeonse_manwon, deposit_manwon, rate_pct);
+    let full = jeonse::monthly_rent(jeonse_manwon, 0.0, rate_pct);
+    println!();
+    println!(
+        "  🏠 전월세 전환 (전세 {} · 전환율 {rate_pct}%)",
+        jeonse::fmt_eok(jeonse_manwon)
+    );
+    if deposit_manwon > 0.0 {
+        println!(
+            "     보증금 {} → 월세 약 {:.1}만원 ({})",
+            jeonse::fmt_eok(deposit_manwon),
+            monthly,
+            won(monthly)
+        );
+    }
+    println!("     순수 월세(보증금 0) → {:.1}만원 ({})", full, won(full));
+    ui::info("     ※ 법정 상한 = 한국은행 기준금리 + 2%");
     println!();
     Ok(())
 }
