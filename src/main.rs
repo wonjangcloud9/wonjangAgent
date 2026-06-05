@@ -733,11 +733,14 @@ enum Commands {
         /// 금액(원)
         amount: f64,
     },
-    /// 글자수 세기(공백 포함/제외). 예: wonjang 글자수 "자기소개서 내용"
+    /// 글자수 세기(공백 포함/제외, 자소서 제한 체크). 예: wonjang 글자수 "자소서" --제한 1000
     #[command(alias = "글자수")]
     Chars {
         /// 셀 텍스트(여러 단어면 공백으로 이어 붙여 셈)
         text: Vec<String>,
+        /// 글자수 제한(자소서 등) — 남은/초과 글자를 함께 표시
+        #[arg(long = "제한")]
+        limit: Option<usize>,
     },
     /// 한글 초성 추출(초성 퀴즈·검색). 예: wonjang 초성 "안녕하세요"
     #[command(alias = "초성")]
@@ -1380,7 +1383,7 @@ async fn run() -> Result<()> {
         }) => return cmd_calorie(sex, *age, *height, *weight),
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
-        Some(Commands::Chars { text }) => return cmd_chars(text),
+        Some(Commands::Chars { text, limit }) => return cmd_chars(text, *limit),
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
         Some(Commands::Keystroke { text }) => return cmd_keystroke(text),
         Some(Commands::Hanstroke { text }) => return cmd_hanstroke(text),
@@ -2454,7 +2457,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 더치 <총액> <인원>", "더치페이(n빵)"),
                 ("wonjang 뽑기 <후보들>", "제비뽑기/추첨"),
                 ("wonjang 메뉴 [카테고리]", "오늘 뭐 먹지?"),
-                ("wonjang 글자수 \"<텍스트>\"", "자소서·SNS 글자수"),
+                (
+                    "wonjang 글자수 \"<텍스트>\" [--제한 N]",
+                    "자소서 글자수·제한 대비 남은 글자",
+                ),
                 ("wonjang 초성 \"<텍스트>\"", "한글 초성 추출"),
                 ("wonjang 영타 \"<한글>\"", "한글→영문 타자(dkssud)"),
                 ("wonjang 한타 <영문>", "영문→한글 복원(잘못 친 글자)"),
@@ -6307,7 +6313,16 @@ fn cmd_choseong(text: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn cmd_chars(text: &[String]) -> Result<()> {
+/// 글자수 제한 대비 안내 문구. 딱 맞으면(=제한) "0자 남음". 순수.
+fn char_limit_note(count: usize, limit: Option<usize>) -> String {
+    match limit {
+        Some(lim) if count <= lim => format!("  (제한 {lim} → {}자 남음)", lim - count),
+        Some(lim) => format!("  (제한 {lim} → {}자 초과 ⚠️)", count - lim),
+        None => String::new(),
+    }
+}
+
+fn cmd_chars(text: &[String], limit: Option<usize>) -> Result<()> {
     println!();
     if text.is_empty() {
         println!("  셀 텍스트를 입력하세요. 예: wonjang 글자수 \"자기소개서 내용\"");
@@ -6316,9 +6331,19 @@ fn cmd_chars(text: &[String]) -> Result<()> {
     }
     let joined = text.join(" ");
     let c = charcount::count(&joined);
+    // 자소서 제한이 주어지면 남은/초과 글자를 함께(포털마다 공백 포함/제외 기준이 달라 둘 다).
+    let note = |count: usize| char_limit_note(count, limit);
     println!("  ✍️  글자수 세기");
-    println!("     공백 포함      {}자", c.chars_with_space);
-    println!("     공백 제외      {}자", c.chars_without_space);
+    println!(
+        "     공백 포함      {}자{}",
+        c.chars_with_space,
+        note(c.chars_with_space)
+    );
+    println!(
+        "     공백 제외      {}자{}",
+        c.chars_without_space,
+        note(c.chars_without_space)
+    );
     println!("     단어 수        {}개", c.words);
     println!("     줄 수          {}줄", c.lines);
     println!("     바이트         {}B", c.bytes);
@@ -7750,6 +7775,25 @@ mod calc_guard_tests {
         assert!(cmd_wage(-1.0, 40.0).is_err());
         assert!(cmd_wage(f64::NAN, 40.0).is_err());
         assert!(cmd_wage(10_030.0, 40.0).is_ok());
+    }
+
+    #[test]
+    fn char_limit_note_boundaries() {
+        use super::char_limit_note;
+        assert_eq!(
+            char_limit_note(936, Some(1000)),
+            "  (제한 1000 → 64자 남음)"
+        );
+        // 딱 제한이면 초과가 아니라 0자 남음.
+        assert_eq!(
+            char_limit_note(1000, Some(1000)),
+            "  (제한 1000 → 0자 남음)"
+        );
+        assert_eq!(
+            char_limit_note(1050, Some(1000)),
+            "  (제한 1000 → 50자 초과 ⚠️)"
+        );
+        assert_eq!(char_limit_note(50, None), "");
     }
 }
 
