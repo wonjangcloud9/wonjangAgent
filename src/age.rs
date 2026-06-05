@@ -83,6 +83,22 @@ pub fn days_to_birthday(birth: NaiveDate, today: NaiveDate) -> i64 {
     (next - today).num_days()
 }
 
+/// 태어난 지 며칠(살아온 날수). 백일·천일처럼 한국에서 챙기는 '날수' 기념의 토대.
+pub fn days_lived(birth: NaiveDate, today: NaiveDate) -> i64 {
+    (today - birth).num_days()
+}
+
+/// 다음 1000일 단위 기념일: `(그 날수, 양력 날짜)`. 살아온 날이 음수거나 범위를 벗어나면 None.
+pub fn next_day_milestone(birth: NaiveDate, today: NaiveDate) -> Option<(i64, NaiveDate)> {
+    let lived = days_lived(birth, today);
+    if lived < 0 {
+        return None;
+    }
+    let next = (lived / 1000 + 1) * 1000;
+    let date = birth.checked_add_days(chrono::Days::new(next as u64))?;
+    Some((next, date))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +142,25 @@ mod tests {
         assert_eq!(star_sign(1, 19), "염소자리");
         assert_eq!(star_sign(1, 20), "물병자리");
         assert_eq!(star_sign(12, 25), "염소자리");
+    }
+
+    #[test]
+    fn lived_and_milestone() {
+        let birth = d(1990, 5, 15);
+        let today = d(2026, 6, 6);
+        let lived = days_lived(birth, today);
+        assert!((13000..13300).contains(&lived), "lived={lived}");
+        let (mark, date) = next_day_milestone(birth, today).unwrap();
+        assert_eq!(mark % 1000, 0);
+        assert!(mark > lived && mark - lived <= 1000); // 다음 마디는 한 1000일 안쪽
+                                                       // 마디 날짜 = 생일 + mark일.
+        assert_eq!(
+            date,
+            birth
+                .checked_add_days(chrono::Days::new(mark as u64))
+                .unwrap()
+        );
+        // 미래 생일은 None(살아온 날 음수).
+        assert!(next_day_milestone(d(2030, 1, 1), today).is_none());
     }
 }

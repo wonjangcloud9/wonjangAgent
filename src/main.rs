@@ -2419,7 +2419,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 예금/적금 <...>", "예적금 만기(세후)"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
-                ("wonjang 나이 <YYYY-MM-DD>", "만 나이·연 나이"),
+                ("wonjang 나이 <YYYY-MM-DD>", "만 나이·살아온 날·기념일"),
                 (
                     "wonjang 날짜 <날짜> [날짜2]",
                     "며칠째·기념일·D-day·두 날짜 사이",
@@ -5461,8 +5461,19 @@ fn cmd_age(birth: &str) -> Result<()> {
     println!("     만 나이: {man}세");
     println!("     연 나이: {yeon}세  (현재 연도 − 출생 연도)");
     println!("     띠: {animal}띠   별자리: {sign}");
+    // 살아온 날수 + 다음 1000일 마디(한국에서 챙기는 '날수' 기념 — "나 1만일!" 자랑거리).
+    let lived = age::days_lived(birth, today);
+    println!("     🗓️ 살아온 날: {}일", exchange::comma(lived as f64, 0));
+    if let Some((mark, date)) = age::next_day_milestone(birth, today) {
+        let to = (date - today).num_days();
+        println!(
+            "     🎉 {}일까지 D-{to}  ({})",
+            exchange::comma(mark as f64, 0),
+            date.format("%Y-%m-%d")
+        );
+    }
     if dday == 0 {
-        println!("     🎉 오늘이 생일이에요!");
+        println!("     🎂 오늘이 생일이에요!");
     } else {
         println!("     다음 생일까지 {dday}일 남았어요");
     }
