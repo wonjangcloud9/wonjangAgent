@@ -6478,7 +6478,7 @@ fn cmd_romanize(name: &[String]) -> Result<()> {
     use owo_colors::OwoColorize;
     let joined: String = name.join("").replace(' ', "");
     let chars: Vec<char> = joined.chars().collect();
-    if chars.is_empty() {
+    if !chars.iter().any(|c| ('가'..='힣').contains(c)) {
         anyhow::bail!("한글 이름을 입력하세요. 예: wonjang 로마자 홍길동");
     }
     // 성/이름 분리: 흔한 복성이면 2글자, 아니면 첫 글자.

@@ -14,9 +14,9 @@ pub fn annual_tax(cc: u32, age_years: u32) -> (i64, i64) {
         200
     };
     let base = cc as i64 * per_cc;
-    // 차령 경감: 3년차부터 5%/년, 상한 50%.
+    // 차령 경감: 3년차부터 5%/년, 상한 50%(차령 12년). 곱하기 전에 10으로 캡 → 거대 입력 오버플로 방지.
     let discount = if age_years >= 3 {
-        ((age_years - 2) * 5).min(50) as i64
+        ((age_years - 2).min(10) * 5) as i64
     } else {
         0
     };
@@ -46,5 +46,6 @@ mod tests {
         assert_eq!(annual_tax(2000, 20).0, 200_000); // 상한 유지
         assert_eq!(annual_tax(2000, 2).0, 400_000); // 2년 이하 경감 없음
         assert_eq!(annual_tax(2000, 3).0, 380_000); // 3년차 5%
+        assert_eq!(annual_tax(2000, u32::MAX).0, 200_000); // 거대 차령도 오버플로 없이 상한
     }
 }
