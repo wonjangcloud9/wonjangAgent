@@ -884,7 +884,7 @@ enum Commands {
         /// 대여소 이름 검색어(예: 강남역, 망원역)
         query: Option<String>,
     },
-    /// 날짜 계산(두 날짜 사이 일수 / N일 후). 예: wonjang 날짜 2026-01-01 2026-12-31
+    /// 날짜 계산(며칠째·기념일 / D-day / 두 날짜 사이 / N일 후). 예: wonjang 날짜 2024-01-01
     #[command(alias = "날짜")]
     Date {
         /// 기준 날짜(YYYY-MM-DD). 생략 시 오늘
@@ -2420,7 +2420,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
                 ("wonjang 나이 <YYYY-MM-DD>", "만 나이·연 나이"),
-                ("wonjang 날짜 <날짜> [날짜2]", "두 날짜 사이 일수"),
+                (
+                    "wonjang 날짜 <날짜> [날짜2]",
+                    "며칠째·기념일·D-day·두 날짜 사이",
+                ),
                 ("wonjang 평 <숫자>", "평↔㎡ 변환"),
                 (
                     "wonjang 변환 <값> <단위>",
@@ -5954,12 +5957,24 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
         println!("  📅 {} 기준 {}일 {word}", fmt(base), n.abs());
         println!("     👉 {}", fmt(result));
     } else {
-        // 인자가 today 하나뿐이면 오늘(또는 그 날짜) 정보.
-        let day_of_year = chrono::Datelike::ordinal(&base);
+        // 날짜 하나만: 오늘 기준 관계를 알려준다.
+        // 과거면 '며칠째 + 다가오는 기념일'(사귄 날·기념일 계산), 미래면 D-day, 오늘이면 오늘.
         println!("  📅 {}", fmt(base));
-        println!("     올해 {day_of_year}번째 날");
-        if from.is_none() {
-            println!("     (오늘)");
+        let diff = datecalc::days_between(today, base); // base가 미래면 +, 과거면 -
+        if diff > 0 {
+            println!("     D-{diff}  ({diff}일 남음)");
+        } else if diff < 0 {
+            let s = datecalc::days_since(base, today);
+            println!(
+                "     오늘로 {}일째  ({}일 전 · 사귄 날·기념일 계산)",
+                s.nth_day, s.days_ago
+            );
+            for (mark, date, dday) in &s.milestones {
+                println!("     🎉 {mark}일 → {} (D-{dday})", fmt(*date));
+            }
+        } else {
+            let day_of_year = chrono::Datelike::ordinal(&base);
+            println!("     올해 {day_of_year}번째 날 (오늘)");
         }
     }
     println!();

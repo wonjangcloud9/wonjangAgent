@@ -39,6 +39,44 @@ pub fn add_days(base: NaiveDate, n: i64) -> Option<NaiveDate> {
     }
 }
 
+/// '며칠째'와 다가오는 기념일(사귄 날·기념일 계산용).
+pub struct DaysSince {
+    pub nth_day: i64,  // 오늘로 N일째(시작일 당일 = 1일째, 한국식)
+    pub days_ago: i64, // M일 전
+    /// 다가오는 기념일들: (기념일 일수, 그날의 양력 날짜, 오늘로부터 D-day).
+    pub milestones: Vec<(i64, NaiveDate, i64)>,
+}
+
+/// `start`(과거)부터 `today`까지 며칠째인지와, 커플·기념일에서 챙기는 다가오는 마디 2개.
+///
+/// 한국식 카운팅: **시작일 당일이 1일째**(그래서 100일은 시작일+99일). 100·1년 등
+/// 다음 마디의 양력 날짜를 미리 알려줘 "100일 언제야?"를 한 번에 답한다.
+pub fn days_since(start: NaiveDate, today: NaiveDate) -> DaysSince {
+    let days_ago = days_between(start, today).max(0);
+    let nth_day = days_ago + 1;
+    // 100단위 + 해마다(1~10년) 마디를 오름차순으로.
+    const MARKS: &[i64] = &[
+        100, 200, 300, 365, 500, 730, 1000, 1095, 1460, 1825, 2000, 3000, 3650,
+    ];
+    let mut milestones = Vec::new();
+    for &m in MARKS {
+        if m > nth_day {
+            // m일째 = 시작일 + (m-1)일.
+            if let Some(date) = add_days(start, m - 1) {
+                milestones.push((m, date, days_between(today, date)));
+                if milestones.len() == 2 {
+                    break;
+                }
+            }
+        }
+    }
+    DaysSince {
+        nth_day,
+        days_ago,
+        milestones,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,5 +103,29 @@ mod tests {
     fn weekday_korean() {
         // 2026-06-01은 월요일.
         assert_eq!(weekday_kr(d(2026, 6, 1)), "월");
+    }
+
+    #[test]
+    fn days_since_korean_counting() {
+        // 2024-01-01 ~ 2026-06-05 = 886일 전, 시작일=1일째 → 887일째.
+        let s = days_since(d(2024, 1, 1), d(2026, 6, 5));
+        assert_eq!(s.days_ago, 886);
+        assert_eq!(s.nth_day, 887);
+        // 다가오는 마디 2개: 1000일, 1095일(3년).
+        assert_eq!(s.milestones.len(), 2);
+        assert_eq!(s.milestones[0].0, 1000);
+        assert_eq!(s.milestones[1].0, 1095);
+        // 1000일째 = 시작일 + 999일, D-day는 양수(미래).
+        assert_eq!(s.milestones[0].1, add_days(d(2024, 1, 1), 999).unwrap());
+        assert!(s.milestones[0].2 > 0);
+    }
+
+    #[test]
+    fn days_since_100day_couple() {
+        // 6/1 시작, 6/5 = 5일째. 다음 마디 100일 = 시작일 + 99일.
+        let s = days_since(d(2026, 6, 1), d(2026, 6, 5));
+        assert_eq!(s.nth_day, 5);
+        assert_eq!(s.milestones[0].0, 100);
+        assert_eq!(s.milestones[0].1, add_days(d(2026, 6, 1), 99).unwrap());
     }
 }
