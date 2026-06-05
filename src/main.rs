@@ -7285,10 +7285,26 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
             }
             let today = habits::today();
             let today_s = habits::today_str();
-            println!("습관:\n");
+            println!("습관:  (최근 7일 ▓=완료)\n");
             for h in &store.items {
                 let mark = if h.done_today(&today_s) { "✓" } else { "·" };
-                println!("  {} #{}  {}  🔥{}일", mark, h.id, h.name, h.streak(today));
+                // 최근 7일 잔디(오래된→오늘) — 진척이 한눈에.
+                let set = h.date_set();
+                let bools: Vec<bool> = (0..7)
+                    .rev()
+                    .map(|i| {
+                        let d = today - chrono::Duration::days(i);
+                        set.contains(&d.format("%Y-%m-%d").to_string())
+                    })
+                    .collect();
+                println!(
+                    "  {} #{}  {}  {}  🔥{}일",
+                    mark,
+                    h.id,
+                    card::truncate_pad(&h.name, 12),
+                    card::render_jandi(&bools),
+                    h.streak(today)
+                );
             }
             println!();
             ui::info("완료: wonjang 습관 done <이름>   |   추가: wonjang 습관 add \"<이름>\"");
