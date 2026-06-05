@@ -5440,10 +5440,14 @@ fn cmd_status() -> Result<()> {
     if !dd.all().is_empty() {
         println!("  📅 디데이");
         for d in dd.all().iter().take(3) {
-            let label = ddays::parse_date(&d.date)
-                .map(|dt| ddays::dday_label(ddays::days_until(dt, today)))
-                .unwrap_or_else(|_| "?".to_string());
-            println!("     {} {}", label.bright_yellow(), d.label);
+            let (label, wd) = match ddays::parse_date(&d.date) {
+                Ok(dt) => (
+                    ddays::dday_label(ddays::days_until(dt, today)),
+                    format!(" ({})", datecalc::weekday_kr(dt)),
+                ),
+                Err(_) => ("?".to_string(), String::new()),
+            };
+            println!("     {} {}{}", label.bright_yellow(), d.label, wd.dimmed());
         }
     }
 
@@ -7591,10 +7595,15 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             let today = ddays::today();
             println!("디데이:\n");
             for d in store.all() {
-                let label = ddays::parse_date(&d.date)
-                    .map(|dt| ddays::dday_label(ddays::days_until(dt, today)))
-                    .unwrap_or_else(|_| "?".to_string());
-                println!("  {:>7}  {}  ({})", label, d.label, d.date);
+                // 날짜에 요일까지(무슨 요일인지가 계획에 중요 — 카드와 일관).
+                let (label, datestr) = match ddays::parse_date(&d.date) {
+                    Ok(dt) => (
+                        ddays::dday_label(ddays::days_until(dt, today)),
+                        format!("{} {}", d.date, datecalc::weekday_kr(dt)),
+                    ),
+                    Err(_) => ("?".to_string(), d.date.clone()),
+                };
+                println!("  {:>7}  {}  ({})", label, d.label, datestr);
             }
             println!();
         }
