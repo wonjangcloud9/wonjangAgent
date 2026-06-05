@@ -15,6 +15,7 @@ mod bmr;
 mod bookmarks;
 mod briefing;
 mod calc;
+mod car_tax;
 mod card;
 mod charcount;
 mod cli_backend;
@@ -702,6 +703,15 @@ enum Commands {
         /// 근속 개월(0~11, 1년 미만일 때만 의미, 생략 시 0)
         #[arg(default_value_t = 0)]
         months: u32,
+    },
+    /// 자동차세 계산(비영업 승용). 예: wonjang 자동차세 1998 3
+    #[command(alias = "자동차세")]
+    CarTax {
+        /// 배기량(cc). 예: 1998
+        cc: u32,
+        /// 차령(년, 생략 시 0=신차). 3년부터 경감
+        #[arg(default_value_t = 0)]
+        age: u32,
     },
     /// 오늘 뭐 먹지? 메뉴 추천. 예: wonjang 메뉴 / wonjang 메뉴 중식
     #[command(alias = "메뉴")]
@@ -1411,6 +1421,7 @@ async fn run() -> Result<()> {
             months,
         }) => return cmd_severance(*monthly, *years, *months),
         Some(Commands::AnnualLeave { years, months }) => return cmd_annual_leave(*years, *months),
+        Some(Commands::CarTax { cc, age }) => return cmd_car_tax(*cc, *age),
         Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
         Some(Commands::Dutch {
             total,
@@ -2487,6 +2498,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 퇴직금 <월급> <근속년> [개월]", "법정 퇴직금 추정"),
                 ("wonjang 연차 <근속년> [개월]", "연차 휴가 일수(근로기준법)"),
+                ("wonjang 자동차세 <cc> [차령]", "자동차세(비영업 승용)"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
                 ("wonjang 나이 <YYYY-MM-DD>", "만 나이·살아온 날·기념일"),
@@ -5796,6 +5808,30 @@ fn cmd_annual_leave(years: u32, months: u32) -> Result<()> {
             )),
             None => ui::info("     법정 상한(25일)에 도달했어요."),
         }
+    }
+    println!();
+    Ok(())
+}
+
+fn cmd_car_tax(cc: u32, age: u32) -> Result<()> {
+    if cc == 0 {
+        anyhow::bail!("배기량(cc)을 입력하세요. 예: wonjang 자동차세 1998 [차령]");
+    }
+    let (tax, edu) = car_tax::annual_tax(cc, age);
+    let total = tax + edu;
+    let won = |v: i64| expenses::won(v);
+    println!();
+    println!("  🚗 자동차세 (비영업 승용 {cc}cc · 차령 {age}년)");
+    println!("     자동차세      {}", won(tax));
+    println!("     지방교육세    {}  (자동차세의 30%)", won(edu));
+    println!("     ───────────────");
+    println!("     연 세액       {}", won(total));
+    ui::info(&format!(
+        "     6월·12월 각 {} 납부(연납 신청 시 일부 공제).",
+        won(total / 2)
+    ));
+    if age < 3 {
+        ui::info("     ※ 차령 3년부터 매년 5%씩 경감(최대 50%).");
     }
     println!();
     Ok(())
