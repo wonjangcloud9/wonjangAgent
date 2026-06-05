@@ -150,9 +150,24 @@ impl ExpenseStore {
     }
 }
 
+/// 이번 달 `(일평균, 월말 예상)`. 현 페이스가 유지된다는 가정의 추정.
+/// total=이번 달 누적, day=경과 일수, days_in_month=이번 달 총 일수.
+pub fn pace(total: i64, day: i64, days_in_month: i64) -> (i64, i64) {
+    let day = day.max(1);
+    (total / day, total * days_in_month / day)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pace_projects_at_current_rate() {
+        // 6일까지 146,500원 쓴 6월(30일) → 일평균 24,416, 월말 예상 732,500.
+        assert_eq!(pace(146_500, 6, 30), (24_416, 732_500));
+        // day=0이면 1로 보정(0 나눗셈 방지).
+        assert_eq!(pace(10_000, 0, 31).0, 10_000);
+    }
 
     fn mk() -> ExpenseStore {
         let mut s = ExpenseStore::default();

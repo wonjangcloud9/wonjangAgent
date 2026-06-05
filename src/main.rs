@@ -7468,10 +7468,30 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
                 "  💰 오늘({today}) 지출: {}",
                 expenses::won(store.total_on(&today))
             );
-            println!(
-                "     이번 달({ym}) 지출: {}",
-                expenses::won(store.total_in_month(&ym))
-            );
+            let month_total = store.total_in_month(&ym);
+            println!("     이번 달({ym}) 지출: {}", expenses::won(month_total));
+            // 일평균 + 월말 예상(현 페이스 유지 가정) — 예산 관리 awareness.
+            if month_total > 0 {
+                use chrono::Datelike;
+                let now = chrono::Local::now().date_naive();
+                let dim = {
+                    let (y, m) = (now.year(), now.month());
+                    let next = if m == 12 {
+                        chrono::NaiveDate::from_ymd_opt(y + 1, 1, 1)
+                    } else {
+                        chrono::NaiveDate::from_ymd_opt(y, m + 1, 1)
+                    };
+                    next.and_then(|d| d.pred_opt())
+                        .map(|d| d.day() as i64)
+                        .unwrap_or(30)
+                };
+                let (avg, projected) = expenses::pace(month_total, now.day() as i64, dim);
+                ui::info(&format!(
+                    "     일 평균 {} · 이 페이스면 월말 약 {}",
+                    expenses::won(avg),
+                    expenses::won(projected)
+                ));
+            }
             // 이번 달 분류별 상위 항목(한눈에) — 막대로 비중을 바로 보이게.
             let by = store.by_category_in_month(&ym);
             if !by.is_empty() {
