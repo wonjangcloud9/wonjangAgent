@@ -111,6 +111,18 @@ pub fn convert(value: f64, unit: &str) -> Option<Conversion> {
             let l = value * 18.0;
             format!("{value}말 = {l:.1}L  (1말=10되=18L)")
         }
+        // 한국 전통 단위(길이) — 옷감·이불·커튼·한복에서 쓴다("킹 이불 7자").
+        "자" => {
+            let cm = value * 30.3;
+            format!(
+                "{value}자 = {cm:.1}cm ({:.2}m)  (옷감·한복 기준, 1자=30.3cm)",
+                cm / 100.0
+            )
+        }
+        "치" => {
+            let cm = value * 3.03;
+            format!("{value}치 = {cm:.2}cm  (1자=10치, 1치=3.03cm)")
+        }
         _ => return None,
     };
     Some(Conversion { label })
@@ -118,7 +130,7 @@ pub fn convert(value: f64, unit: &str) -> Option<Conversion> {
 
 /// 지원하는 입력 단위 안내.
 pub fn supported() -> &'static str {
-    "c/f(온도) · kg/lb(무게) · cm/inch · km/mile(길이) · kmh/mph(속도) · l/gal(부피) · sqm/sqft(넓이) · 돈/근/관·g(한국 단위) · 되/말(부피)"
+    "c/f(온도) · kg/lb(무게) · cm/inch · km/mile(길이) · kmh/mph(속도) · l/gal(부피) · sqm/sqft(넓이) · 돈/근/관·g·되/말·자/치(한국 단위)"
 }
 
 #[cfg(test)]
@@ -175,5 +187,13 @@ mod tests {
     fn korean_traditional_volume() {
         assert!(convert(1.0, "되").unwrap().label.contains("1.80L"));
         assert!(convert(1.0, "말").unwrap().label.contains("18.0L"));
+    }
+
+    #[test]
+    fn korean_traditional_length() {
+        // 옷감·이불: 7자 = 212.1cm.
+        assert!(convert(7.0, "자").unwrap().label.contains("212.1cm"));
+        assert!(convert(1.0, "자").unwrap().label.contains("30.3cm"));
+        assert!(convert(1.0, "치").unwrap().label.contains("3.03cm"));
     }
 }
