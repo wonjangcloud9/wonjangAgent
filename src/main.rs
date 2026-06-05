@@ -1096,6 +1096,21 @@ enum DdayAction {
         #[arg(long = "출력")]
         output: Option<String>,
     },
+    /// 디데이를 공유용 카드 한 장으로(카톡·SNS 캡처). 예: wonjang 디데이 카드 수능
+    #[command(name = "카드", alias = "card")]
+    Card {
+        /// 디데이 이름(생략 시 가장 가까운 디데이)
+        name: Option<String>,
+        /// 박스 폭(기본 40, 카톡엔 34 권장)
+        #[arg(long = "폭", default_value_t = 40)]
+        width: usize,
+        /// 색 없이 출력(파이프·복붙용)
+        #[arg(long = "no-color")]
+        no_color: bool,
+        /// 카드를 클립보드에 복사(카톡·메모에 바로 붙여넣기)
+        #[arg(long = "복사")]
+        copy: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2384,6 +2399,7 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 할일 / todo", "할 일 체크리스트"),
                 ("wonjang dday add \"수능\" <날짜>", "디데이"),
+                ("wonjang 디데이 카드 [이름]", "D-day 공유 카드(카톡 캡처)"),
                 ("wonjang 디데이 내보내기", "디데이를 캘린더(.ics)로"),
                 ("wonjang 집중 <분> [무엇]", "뽀모도로 타이머"),
             ],
@@ -7054,6 +7070,17 @@ fn cmd_notion(cfg: &Config, action: &NotionAction) -> Result<()> {
     Ok(())
 }
 
+/// D-day 카드 하단 한마디(남은 일수에 따라). 순수.
+fn dday_card_comment(days: i64) -> String {
+    match days {
+        0 => "오늘이다! 끝까지 가보자 🎯".to_string(),
+        d if (1..=7).contains(&d) => "막판 스퍼트! 💪".to_string(),
+        d if (8..=30).contains(&d) => "한 발씩, 거의 왔어요 🔥".to_string(),
+        d if d > 30 => "차근차근 준비해봐요 🌱".to_string(),
+        d => format!("D+{}, 그동안 고생 많았어요 👏", -d),
+    }
+}
+
 fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
     let mut store = ddays::DdayStore::load()?;
     match action {
@@ -7095,6 +7122,53 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             );
             ui::note("     이 파일을 열면(더블클릭) 구글·애플 캘린더에 종일 일정으로 들어가요.");
             println!();
+        }
+        Some(DdayAction::Card {
+            name,
+            width,
+            no_color,
+            copy,
+        }) => {
+            let today = ddays::today();
+            let all = store.all();
+            if all.is_empty() {
+                ui::info("등록된 디데이가 없어요. 추가: wonjang dday add \"수능\" 2026-11-19");
+                return Ok(());
+            }
+            // 이름이 주어지면 부분 일치, 아니면 가장 가까운 다가오는(없으면 가장 가까운) 디데이.
+            let with_days: Vec<(&ddays::Dday, i64)> = all
+                .iter()
+                .filter_map(|d| {
+                    ddays::parse_date(&d.date)
+                        .ok()
+                        .map(|dt| (d, ddays::days_until(dt, today)))
+                })
+                .collect();
+            let chosen = match name {
+                Some(n) => with_days.iter().find(|(d, _)| d.label.contains(n.as_str())),
+                None => with_days
+                    .iter()
+                    .filter(|(_, days)| *days >= 0)
+                    .min_by_key(|(_, days)| *days)
+                    .or_else(|| with_days.iter().min_by_key(|(_, days)| days.abs())),
+            };
+            let Some((d, days)) = chosen.copied() else {
+                ui::error(&format!(
+                    "'{}' 디데이를 찾지 못했어요. 목록: wonjang 디데이",
+                    name.as_deref().unwrap_or("")
+                ));
+                return Ok(());
+            };
+            let date = ddays::parse_date(&d.date)?;
+            let date_line = format!("📅 {} ({})", d.date, datecalc::weekday_kr(date));
+            let lines = card::render_dday_card(
+                &d.label,
+                &ddays::dday_label(days),
+                &date_line,
+                &dday_card_comment(days),
+                *width,
+            );
+            print_card(&lines, soul::active_preset_key(), *no_color, *copy);
         }
         None | Some(DdayAction::List) => {
             if store.all().is_empty() {
