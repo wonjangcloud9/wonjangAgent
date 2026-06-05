@@ -73,6 +73,44 @@ pub fn convert(value: f64, unit: &str) -> Option<Conversion> {
             let sqm = value / 10.763_910_4;
             format!("{value:.2}ft² = {sqm:.2}㎡")
         }
+        // 한국 전통 단위(무게) — 금은방·정육점에서 매일 쓰는데 GPT는 근=600g/375g을 자주 헷갈린다.
+        "돈" => {
+            // 금·은 무게. 1돈 = 3.75g.
+            let g = value * 3.75;
+            format!("{value}돈 = {g:.2}g  (금·은 기준, 1돈=3.75g)")
+        }
+        "근" => {
+            // 고기·채소. 1근 = 600g(정육점 표준).
+            let g = value * 600.0;
+            if g >= 1000.0 {
+                format!(
+                    "{value}근 = {:.2}kg ({g:.0}g)  (고기·채소 기준, 1근=600g)",
+                    g / 1000.0
+                )
+            } else {
+                format!("{value}근 = {g:.0}g  (고기·채소 기준, 1근=600g)")
+            }
+        }
+        "관" => {
+            // 1관 = 3.75kg = 1000돈. 도매·농수산물.
+            let kg = value * 3.75;
+            format!("{value}관 = {kg:.2}kg  (1관=3.75kg=1000돈)")
+        }
+        "그램" | "g" => {
+            // 그램 → 돈·근 역환산(금 시세·고기 살 때 둘 다 자주 묻는다).
+            let don = value / 3.75;
+            let geun = value / 600.0;
+            format!("{value}g = {don:.2}돈 = {geun:.3}근")
+        }
+        // 한국 전통 단위(부피) — 쌀·곡식.
+        "되" => {
+            let l = value * 1.8;
+            format!("{value}되 = {l:.2}L  (쌀·곡식, 1되≈1.8L)")
+        }
+        "말" => {
+            let l = value * 18.0;
+            format!("{value}말 = {l:.1}L  (1말=10되=18L)")
+        }
         _ => return None,
     };
     Some(Conversion { label })
@@ -80,7 +118,7 @@ pub fn convert(value: f64, unit: &str) -> Option<Conversion> {
 
 /// 지원하는 입력 단위 안내.
 pub fn supported() -> &'static str {
-    "c/f(온도) · kg/lb(무게) · cm/inch · km/mile(길이) · kmh/mph(속도) · l/gal(부피) · sqm/sqft(넓이)"
+    "c/f(온도) · kg/lb(무게) · cm/inch · km/mile(길이) · kmh/mph(속도) · l/gal(부피) · sqm/sqft(넓이) · 돈/근/관·g(한국 단위) · 되/말(부피)"
 }
 
 #[cfg(test)]
@@ -115,5 +153,27 @@ mod tests {
         assert!(convert(100.0, "kmh").unwrap().label.contains("62.1mph"));
         assert!(convert(1.0, "gal").unwrap().label.contains("3.79L"));
         assert!(convert(1.0, "sqm").unwrap().label.contains("10.76ft²"));
+    }
+
+    #[test]
+    fn korean_traditional_weight() {
+        // 금 5돈 = 18.75g(금은방).
+        assert!(convert(5.0, "돈").unwrap().label.contains("18.75g"));
+        // 고기 2근 = 1.20kg(정육점, 600g 기준).
+        let geun = convert(2.0, "근").unwrap().label;
+        assert!(geun.contains("1.20kg") && geun.contains("600g"), "{geun}");
+        // 1근(=600g)은 kg 미만이라 g로.
+        assert!(convert(1.0, "근").unwrap().label.contains("600g"));
+        // 1관 = 3.75kg.
+        assert!(convert(1.0, "관").unwrap().label.contains("3.75kg"));
+        // 그램 역환산: 600g = 1근.
+        let g = convert(600.0, "g").unwrap().label;
+        assert!(g.contains("160.00돈") && g.contains("1.000근"), "{g}");
+    }
+
+    #[test]
+    fn korean_traditional_volume() {
+        assert!(convert(1.0, "되").unwrap().label.contains("1.80L"));
+        assert!(convert(1.0, "말").unwrap().label.contains("18.0L"));
     }
 }
