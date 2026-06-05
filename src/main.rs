@@ -7392,12 +7392,18 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
                 "     이번 달({ym}) 지출: {}",
                 expenses::won(store.total_in_month(&ym))
             );
-            // 이번 달 분류별 상위 항목(한눈에).
+            // 이번 달 분류별 상위 항목(한눈에) — 막대로 비중을 바로 보이게.
             let by = store.by_category_in_month(&ym);
             if !by.is_empty() {
                 println!("\n  이번 달 분류별:");
+                let max = by.iter().map(|(_, a)| *a).max().unwrap_or(1).max(1) as f64;
                 for (cat, amt) in by.iter().take(5) {
-                    println!("     {cat:<8} {}", expenses::won(*amt));
+                    let bar = card::hbar(*amt as f64, max, 10);
+                    println!(
+                        "     {} {bar}  {}",
+                        card::truncate_pad(cat, 8),
+                        expenses::won(*amt)
+                    );
                 }
             }
             let recent = store.recent(5);
