@@ -252,10 +252,12 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
     lines
 }
 
-/// 단일 D-day를 공유용 박스 카드로 — "수능 D-100"을 캡처해 자랑하기 좋게(자랑 카드와 같은 폭 불변식).
-pub fn render_dday_card(
-    name: &str,
-    dday: &str,
+/// 공유용 이벤트 박스 카드(자랑 카드와 같은 폭 불변식). D-day·기념일 등에 공용.
+/// `headline`은 아이콘 포함 한 줄(예: "🎯 수능", "💕 우리"), `big`은 가운데 큰 글자.
+pub fn render_event_card(
+    title: &str,
+    headline: &str,
+    big: &str,
     date_line: &str,
     comment: &str,
     width: usize,
@@ -263,10 +265,10 @@ pub fn render_dday_card(
     let w = width.clamp(30, 80);
     let inner = w - 2;
     vec![
-        rule('╭', '╮', "원장 D-day", inner),
-        centered(&format!("🎯 {name}"), inner),
+        rule('╭', '╮', title, inner),
+        centered(headline, inner),
         content("", inner),
-        centered(dday, inner),
+        centered(big, inner),
         content("", inner),
         centered(date_line, inner),
         rule('├', '┤', "", inner),
@@ -493,11 +495,12 @@ mod tests {
     }
 
     #[test]
-    fn dday_card_every_line_exact_width() {
-        // 공유 D-day 카드도 자랑 카드와 같은 폭 불변식 — 카톡(34)·좁은 폭·이모지·긴 이름.
+    fn event_card_every_line_exact_width() {
+        // 공유 이벤트 카드(D-day·기념일)도 자랑 카드와 같은 폭 불변식 — 카톡(34)·좁은 폭·이모지·긴 이름.
         for w in [30usize, 32, 34, 40, 46, 52] {
-            for line in render_dday_card(
-                "정보처리기사 실기",
+            for line in render_event_card(
+                "원장 D-day",
+                "🎯 정보처리기사 실기",
                 "D-166",
                 "📅 2026-11-19 (목)",
                 "끝까지 가보자! 💪",
@@ -505,9 +508,27 @@ mod tests {
             ) {
                 assert_eq!(disp_width(&line), w, "width={w} 줄 폭 불일치: {line:?}");
             }
+            // 기념일 카드(💕·일째)도 동일 불변식.
+            for line in render_event_card(
+                "원장 기념일",
+                "💕 우리",
+                "1000일째",
+                "📅 2024-01-01부터",
+                "다음 1100일까지 D-13",
+                w,
+            ) {
+                assert_eq!(disp_width(&line), w, "기념일 width={w}: {line:?}");
+            }
         }
         // 카톡 폭(34)에서 전염성 풋터 설치명 보존.
-        let kakao = render_dday_card("수능", "D-DAY", "📅 2026-11-19 (목)", "오늘이다! 🎯", 34);
+        let kakao = render_event_card(
+            "원장 D-day",
+            "🎯 수능",
+            "D-DAY",
+            "📅 2026-11-19 (목)",
+            "오늘이다! 🎯",
+            34,
+        );
         assert!(kakao.last().unwrap().contains("wonjang-agent"));
     }
 

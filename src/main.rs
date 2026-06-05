@@ -958,6 +958,22 @@ enum Commands {
         #[arg(long, allow_hyphen_values = true)]
         plus: Option<i64>,
     },
+    /// 기념일 공유 카드(사귄 날·금연일 등 N일째). 예: wonjang 기념일 2024-01-01 우리
+    #[command(alias = "기념일")]
+    Anniversary {
+        /// 시작 날짜(YYYY-MM-DD)
+        date: String,
+        /// 이름(생략 시 "우리")
+        name: Option<String>,
+        /// 박스 폭(기본 40, 카톡엔 34)
+        #[arg(long = "폭", default_value_t = 40)]
+        width: usize,
+        #[arg(long = "no-color")]
+        no_color: bool,
+        /// 클립보드에 복사(카톡에 바로 붙여넣기)
+        #[arg(long = "복사")]
+        copy: bool,
+    },
     /// 색상 변환(HEX↔RGB↔HSL). 예: wonjang 색 #ff5733 / wonjang 색 255 87 51
     #[command(alias = "색")]
     Color {
@@ -1498,6 +1514,13 @@ async fn run() -> Result<()> {
         Some(Commands::Date { from, to, plus }) => {
             return cmd_date(from.as_deref(), to.as_deref(), *plus)
         }
+        Some(Commands::Anniversary {
+            date,
+            name,
+            width,
+            no_color,
+            copy,
+        }) => return cmd_anniversary(date, name.as_deref(), *width, *no_color, *copy),
         Some(Commands::Color { input }) => return cmd_color(input),
         Some(Commands::Uuid { count }) => return cmd_uuid(*count),
         Some(Commands::Password {
@@ -2481,6 +2504,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 할일 / todo", "할 일 체크리스트"),
                 ("wonjang dday add \"수능\" <날짜>", "디데이"),
                 ("wonjang 디데이 카드 [이름]", "D-day 공유 카드(카톡 캡처)"),
+                ("wonjang 기념일 <사귄날> [이름]", "기념일 N일째 공유 카드"),
                 ("wonjang 디데이 내보내기", "디데이를 캘린더(.ics)로"),
                 ("wonjang 집중 <분> [무엇]", "뽀모도로 타이머"),
             ],
@@ -6293,6 +6317,37 @@ fn cmd_date(from: Option<&str>, to: Option<&str>, plus: Option<i64>) -> Result<(
     Ok(())
 }
 
+fn cmd_anniversary(
+    date: &str,
+    name: Option<&str>,
+    width: usize,
+    no_color: bool,
+    copy: bool,
+) -> Result<()> {
+    let start = datecalc::parse(date)?;
+    let today = chrono::Local::now().date_naive();
+    if start > today {
+        anyhow::bail!("미래 날짜예요 — 시작 날짜를 확인해 주세요(예: 사귄 날).");
+    }
+    let name = name.unwrap_or("우리");
+    let s = datecalc::days_since(start, today);
+    // 카드 하단: 다음 기념일 안내(있으면), 없으면 따뜻한 한마디.
+    let comment = match s.milestones.first() {
+        Some((mark, _, dday)) => format!("다음 {mark}일까지 D-{dday} 🎉"),
+        None => "오래오래 함께해요 💞".to_string(),
+    };
+    let lines = card::render_event_card(
+        "원장 기념일",
+        &format!("💕 {name}"),
+        &format!("{}일째", s.nth_day),
+        &format!("📅 {date}부터"),
+        &comment,
+        width,
+    );
+    print_card(&lines, soul::active_preset_key(), no_color, copy);
+    Ok(())
+}
+
 fn cmd_encode(method: &str, text: &[String], decode: bool) -> Result<()> {
     use owo_colors::OwoColorize;
     if text.is_empty() {
@@ -7445,8 +7500,9 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             };
             let date = ddays::parse_date(&d.date)?;
             let date_line = format!("📅 {} ({})", d.date, datecalc::weekday_kr(date));
-            let lines = card::render_dday_card(
-                &d.label,
+            let lines = card::render_event_card(
+                "원장 D-day",
+                &format!("🎯 {}", d.label),
                 &ddays::dday_label(days),
                 &date_line,
                 &dday_card_comment(days),
