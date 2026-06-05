@@ -6,6 +6,7 @@
 mod age;
 mod agent;
 mod airquality;
+mod annual_leave;
 mod archive;
 mod backup;
 mod bike;
@@ -690,6 +691,15 @@ enum Commands {
         /// 근속 연수. 예: 3
         years: u32,
         /// 근속 개월(0~11, 생략 시 0)
+        #[arg(default_value_t = 0)]
+        months: u32,
+    },
+    /// 연차 휴가 일수(근로기준법). 예: wonjang 연차 5
+    #[command(alias = "연차")]
+    AnnualLeave {
+        /// 근속 연수. 예: 5
+        years: u32,
+        /// 근속 개월(0~11, 1년 미만일 때만 의미, 생략 시 0)
         #[arg(default_value_t = 0)]
         months: u32,
     },
@@ -1400,6 +1410,7 @@ async fn run() -> Result<()> {
             years,
             months,
         }) => return cmd_severance(*monthly, *years, *months),
+        Some(Commands::AnnualLeave { years, months }) => return cmd_annual_leave(*years, *months),
         Some(Commands::Menu { category }) => return cmd_menu(category.as_deref()),
         Some(Commands::Dutch {
             total,
@@ -2475,6 +2486,7 @@ fn cmd_guide() -> Result<()> {
                     "전세→월세 전환",
                 ),
                 ("wonjang 퇴직금 <월급> <근속년> [개월]", "법정 퇴직금 추정"),
+                ("wonjang 연차 <근속년> [개월]", "연차 휴가 일수(근로기준법)"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
                 ("wonjang 나이 <YYYY-MM-DD>", "만 나이·살아온 날·기념일"),
@@ -5767,6 +5779,28 @@ fn cmd_severance(monthly_manwon: f64, years: u32, months: u32) -> Result<()> {
     Ok(())
 }
 
+fn cmd_annual_leave(years: u32, months: u32) -> Result<()> {
+    if months >= 12 {
+        anyhow::bail!("개월은 0~11로 넣어주세요(연수는 첫 숫자). 예: 1년 6개월 → 연차 1 6");
+    }
+    let days = annual_leave::annual_leave_days(years, months);
+    println!();
+    println!("  🌴 연차 휴가 (근속 {years}년 {months}개월)");
+    println!("     발생 연차   {days}일");
+    if years == 0 {
+        ui::info("     1개월 개근당 1일(최대 11일). 만 1년이 되면 15일로 새로 발생해요.");
+    } else {
+        match annual_leave::next_increase(years) {
+            Some((yr, d)) => ui::info(&format!(
+                "     {yr}년차에 {d}일로 늘어요(3년부터 매 2년 +1일, 최대 25일)."
+            )),
+            None => ui::info("     법정 상한(25일)에 도달했어요."),
+        }
+    }
+    println!();
+    Ok(())
+}
+
 fn cmd_bike(cfg: &Config, query: Option<&str>) -> Result<()> {
     use owo_colors::OwoColorize;
     let key = cfg.seoul_api_key.clone();
@@ -7901,10 +7935,21 @@ mod alias_tests {
     use clap::Parser;
 
     fn cmd_of(args: &[&str]) -> Commands {
-        Cli::try_parse_from(args)
-            .expect("파싱 성공")
-            .command
-            .expect("서브커맨드")
+        // clap-derive가 만드는 command() 빌더는 서브커맨드가 늘수록 디버그 스택 프레임이
+        // 커져 기본 2MB 테스트 스레드 스택을 넘긴다(릴리스 바이너리 메인 스레드 8MB는 정상).
+        // 바이너리와 같은 크기의 스택에서 파싱한다.
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                Cli::try_parse_from(&owned)
+                    .expect("파싱 성공")
+                    .command
+                    .expect("서브커맨드")
+            })
+            .expect("스레드 생성")
+            .join()
+            .expect("파싱 스레드")
     }
 
     // 한국인이 가장 자연스럽게 떠올리는 단어가 곧장 해당 기능으로 가야 한다.
