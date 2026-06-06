@@ -61,6 +61,7 @@ mod limitation;
 mod llm;
 mod loan;
 mod lotto;
+mod maxinterest;
 mod mcp;
 mod memory;
 mod menu;
@@ -720,6 +721,16 @@ enum Commands {
         /// 관계(배우자·자녀·미성년·부모·기타·타인, 기본 성년 자녀)
         #[arg(default_value = "자녀")]
         relation: String,
+    },
+    /// 법정 최고금리 체크(이자제한법 20%). 예: wonjang 최고금리 100만 5만 1
+    #[command(name = "최고금리", aliases = ["이자제한", "사채", "법정이자"])]
+    MaxInterest {
+        /// 원금. 한국식 OK: 100만 · 1000만
+        principal: String,
+        /// 이자 총액(그 기간 동안). 한국식 OK
+        interest: String,
+        /// 기간(개월). 예: 1 · 12 · 0.5
+        months: f64,
     },
     /// 소멸시효 완성일(채권 종류별). 예: wonjang 소멸시효 2020-01-01 상사
     #[command(name = "소멸시효", aliases = ["시효", "채권시효"])]
@@ -1769,6 +1780,11 @@ async fn run() -> Result<()> {
             etc,
         }) => return cmd_withholding(amount, *reverse, *etc),
         Some(Commands::GiftTax { amount, relation }) => return cmd_gift_tax(amount, relation),
+        Some(Commands::MaxInterest {
+            principal,
+            interest,
+            months,
+        }) => return cmd_max_interest(principal, interest, *months),
         Some(Commands::Limitation { date, kind }) => return cmd_limitation(date, kind),
         Some(Commands::Inheritance {
             estate,
@@ -3151,6 +3167,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 소멸시효 <발생일> [종류]",
                     "채권 소멸시효 완성일(3·5·10년)",
+                ),
+                (
+                    "wonjang 최고금리 <원금> <이자> <개월>",
+                    "이자 합법 체크(이자제한법 20%)",
                 ),
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
@@ -6749,6 +6769,51 @@ fn cmd_gift_tax(amount_in: &str, relation_in: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_max_interest(principal_in: &str, interest_in: &str, months: f64) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let principal = expenses::parse_won(principal_in).map_err(|e| anyhow::anyhow!(e))?;
+    let interest = expenses::parse_won(interest_in).map_err(|e| anyhow::anyhow!(e))?;
+    if principal <= 0 {
+        anyhow::bail!("원금은 1원 이상이어야 해요. 예: wonjang 최고금리 100만 5만 1");
+    }
+    if !months.is_finite() || months <= 0.0 {
+        anyhow::bail!("기간(개월)은 0보다 커야 해요. 예: wonjang 최고금리 100만 5만 1");
+    }
+    let c = maxinterest::check(principal, interest, months);
+    let m = expenses::won;
+    println!();
+    println!(
+        "  ⚖️ 법정 최고금리 체크 (한도 연 {:.0}%)",
+        maxinterest::LEGAL_MAX_PERCENT
+    );
+    println!("     원금         {}", m(principal));
+    println!("     이자         {}  ({}개월)", m(interest), months);
+    println!("     환산 연이율  {:.1}%", c.annual_rate);
+    println!("     ───────────────");
+    if c.legal {
+        println!(
+            "     {}  (한도 연 20% 이하)",
+            "합법 ✅".bright_green().bold()
+        );
+    } else {
+        println!(
+            "     {}  (한도 연 20% 초과)",
+            "불법 의심 ❌".bright_red().bold()
+        );
+        println!(
+            "     같은 기간 합법 최대 이자: {} (초과분은 무효)",
+            m(c.max_interest).bright_cyan()
+        );
+    }
+    println!();
+    println!(
+        "  ※ 단리 연환산 기준. 복리·수수료·선이자는 별도. 이자제한법/대부업법 연 20%(2021.7~)."
+    );
+    println!("     불법 의심 시 금융감독원(1332)·법률 상담.");
+    println!();
+    Ok(())
+}
+
 fn cmd_limitation(date_in: &str, kind_in: &str) -> Result<()> {
     use owo_colors::OwoColorize;
     let start = ddays::parse_date(date_in)?;
@@ -9733,6 +9798,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "소멸시효", "2020-01-01", "상사"]),
             Commands::Limitation { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "최고금리", "100만", "5만", "1"]),
+            Commands::MaxInterest { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
