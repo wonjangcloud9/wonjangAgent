@@ -37,12 +37,19 @@ impl Tool for AddDdayTool {
             .get("date")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("'date' 인자가 필요합니다"))?;
+        let annual = args
+            .get("annual")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let mut store = DdayStore::load()?;
-        let id = store.add(label, date)?;
-        let days = ddays::days_until(ddays::parse_date(date)?, ddays::today());
+        let id = store.add(label, date, annual)?;
+        let today = ddays::today();
+        let eff = ddays::effective_date(ddays::parse_date(date)?, annual, today);
         Ok(format!(
-            "디데이 #{id} 등록: {label} ({date}, {})",
-            ddays::dday_label(days)
+            "디데이 #{id} 등록: {label}{} ({}, {})",
+            if annual { " 🔁매년" } else { "" },
+            eff.format("%Y-%m-%d"),
+            ddays::dday_label(ddays::days_until(eff, today))
         ))
     }
 }
@@ -70,10 +77,21 @@ impl Tool for ListDdaysTool {
         let today = ddays::today();
         let mut out = String::new();
         for d in store.all() {
-            let label = ddays::parse_date(&d.date)
-                .map(|dt| ddays::dday_label(ddays::days_until(dt, today)))
-                .unwrap_or_else(|_| "?".to_string());
-            out.push_str(&format!("#{}  {}  {} ({})\n", d.id, label, d.label, d.date));
+            let (label, datestr) = match ddays::parse_date(&d.date) {
+                Ok(dt) => {
+                    let eff = ddays::effective_date(dt, d.annual, today);
+                    (
+                        ddays::dday_label(ddays::days_until(eff, today)),
+                        eff.format("%Y-%m-%d").to_string(),
+                    )
+                }
+                Err(_) => ("?".to_string(), d.date.clone()),
+            };
+            let tag = if d.annual { " 🔁" } else { "" };
+            out.push_str(&format!(
+                "#{}  {}  {}{tag} ({datestr})\n",
+                d.id, label, d.label
+            ));
         }
         Ok(out)
     }

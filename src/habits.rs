@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(h.dates.len(), before - 1);
         assert!(!h.dates.iter().any(|d| d == "2026-06-06"));
         assert!(h.dates.iter().any(|d| d == "2026-06-05")); // 다른 날은 유지
-        // 오늘 취소 후에도 어제(06-05)가 남아 '어제까지 연속'은 살아있다(=1).
+                                                            // 오늘 취소 후에도 어제(06-05)가 남아 '어제까지 연속'은 살아있다(=1).
         assert_eq!(streak(&h.date_set(), today), 1);
     }
 

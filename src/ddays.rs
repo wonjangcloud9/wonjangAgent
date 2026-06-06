@@ -14,8 +14,34 @@ use std::path::PathBuf;
 pub struct Dday {
     pub id: u64,
     pub label: String,
-    /// 목표 날짜(YYYY-MM-DD).
+    /// 목표 날짜(YYYY-MM-DD). 매년 반복이면 '첫' 발생일(연도는 참고용).
     pub date: String,
+    /// 매년 반복(생신·결혼기념일 등) — 지나도 다음 해로 굴러간다.
+    #[serde(default)]
+    pub annual: bool,
+}
+
+/// 디데이의 '유효 날짜'. 매년 반복이면 오늘(포함) 이후 가장 가까운 그 월/일,
+/// 아니면 저장된 날짜 그대로. 2/29는 평년이면 2/28로 클램프.
+pub fn effective_date(base: NaiveDate, annual: bool, today: NaiveDate) -> NaiveDate {
+    use chrono::Datelike;
+    if !annual {
+        return base;
+    }
+    let (m, day) = (base.month(), base.day());
+    let this = clamp_md(today.year(), m, day);
+    if this >= today {
+        this
+    } else {
+        clamp_md(today.year() + 1, m, day)
+    }
+}
+
+fn clamp_md(year: i32, m: u32, day: u32) -> NaiveDate {
+    use chrono::Datelike;
+    NaiveDate::from_ymd_opt(year, m, day)
+        .or_else(|| NaiveDate::from_ymd_opt(year, m, 28)) // 2/29 평년 → 2/28
+        .unwrap_or_else(|| today().with_day(1).unwrap())
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -112,8 +138,8 @@ impl DdayStore {
         Ok(())
     }
 
-    /// 디데이를 추가한다(날짜 유효성 검증).
-    pub fn add(&mut self, label: &str, date: &str) -> Result<u64> {
+    /// 디데이를 추가한다(날짜 유효성 검증). `annual`이면 매년 반복.
+    pub fn add(&mut self, label: &str, date: &str, annual: bool) -> Result<u64> {
         let label = label.trim();
         if label.is_empty() {
             bail!("디데이 이름이 필요합니다");
@@ -132,6 +158,7 @@ impl DdayStore {
             id,
             label: label.to_string(),
             date: parsed.format("%Y-%m-%d").to_string(),
+            annual,
         });
         self.sort();
         self.save()?;
@@ -153,7 +180,7 @@ impl DdayStore {
         let today = today();
         self.items.sort_by_key(|d| {
             let days = parse_date(&d.date)
-                .map(|dt| days_until(dt, today))
+                .map(|dt| days_until(effective_date(dt, d.annual, today), today))
                 .unwrap_or(i64::MAX);
             // 미래(>=0)를 먼저, 그다음 과거. 같은 부호면 가까운 순.
             if days >= 0 {
@@ -190,16 +217,19 @@ mod tests {
                 id: 1,
                 label: "수능".into(),
                 date: "2026-11-19".into(),
+                annual: false,
             },
             Dday {
                 id: 2,
                 label: "회의, 발표".into(), // 콤마 이스케이프
                 date: "2026-07-15".into(),
+                annual: false,
             },
             Dday {
                 id: 3,
                 label: "깨진날짜".into(),
                 date: "엉망".into(), // 건너뜀
+                annual: false,
             },
         ];
         let ics = to_ics(&items, "20260604T000000Z");
@@ -247,13 +277,30 @@ mod tests {
             id: 1,
             label: "지난거".into(),
             date: "2000-01-01".into(),
+            annual: false,
         });
         s.items.push(Dday {
             id: 2,
             label: "미래".into(),
             date: "2999-01-01".into(),
+            annual: false,
         });
         s.sort();
         assert_eq!(s.items[0].label, "미래"); // 미래가 먼저
+
+        // 매년 반복: 지난 월/일이어도 다음 발생으로 굴러가 '지남'이 안 된다.
+        let today = NaiveDate::from_ymd_opt(2026, 6, 6).unwrap();
+        let base = parse_date("2000-05-20").unwrap(); // 과거지만 매년
+        let eff = effective_date(base, true, today);
+        assert!(eff >= today); // 다음 발생(2027-05-20)
+        assert_eq!(eff, NaiveDate::from_ymd_opt(2027, 5, 20).unwrap());
+        // 비반복은 그대로.
+        assert_eq!(effective_date(base, false, today), base);
+        // 2/29 매년 → 평년(2027)이면 2/28로.
+        let leap = parse_date("2024-02-29").unwrap();
+        assert_eq!(
+            effective_date(leap, true, NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()),
+            NaiveDate::from_ymd_opt(2027, 2, 28).unwrap()
+        );
     }
 }

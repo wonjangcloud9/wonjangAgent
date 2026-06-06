@@ -1212,13 +1212,16 @@ enum NotionAction {
 enum DdayAction {
     /// 디데이 목록(기본).
     List,
-    /// 디데이 추가. 예: wonjang 디데이 추가 "수능" 2026-11-19
+    /// 디데이 추가. 예: wonjang 디데이 추가 "수능" 2026-11-19 (매년 반복은 --매년)
     #[command(alias = "추가")]
     Add {
         /// 디데이 이름(여러 단어면 따옴표)
         label: String,
         /// 목표 날짜 YYYY-MM-DD
         date: String,
+        /// 매년 반복(생신·결혼기념일 등) — 지나도 다음 해로 굴러가요
+        #[arg(long = "매년", alias = "annual")]
+        annual: bool,
     },
     /// id로 디데이 삭제.
     #[command(alias = "삭제")]
@@ -5501,9 +5504,10 @@ fn cmd_brag(
         .all()
         .iter()
         .filter_map(|d| {
-            ddays::parse_date(&d.date)
-                .ok()
-                .map(|dt| (ddays::days_until(dt, td), d.label.clone()))
+            ddays::parse_date(&d.date).ok().map(|dt| {
+                let eff = ddays::effective_date(dt, d.annual, td);
+                (ddays::days_until(eff, td), d.label.clone())
+            })
         })
         .filter(|(days, _)| *days >= 0)
         .min_by_key(|(days, _)| *days)
@@ -5731,9 +5735,10 @@ fn cmd_status() -> Result<()> {
         .all()
         .iter()
         .filter_map(|d| {
-            ddays::parse_date(&d.date)
-                .ok()
-                .map(|dt| (ddays::days_until(dt, today), d.label.clone()))
+            ddays::parse_date(&d.date).ok().map(|dt| {
+                let eff = ddays::effective_date(dt, d.annual, today);
+                (ddays::days_until(eff, today), d.label.clone())
+            })
         })
         .filter(|(days, _)| *days >= 0)
         .min_by_key(|(days, _)| *days);
@@ -5793,13 +5798,22 @@ fn cmd_status() -> Result<()> {
         println!("  📅 디데이");
         for d in dd.all().iter().take(3) {
             let (label, wd) = match ddays::parse_date(&d.date) {
-                Ok(dt) => (
-                    ddays::dday_label(ddays::days_until(dt, today)),
-                    format!(" ({})", datecalc::weekday_kr(dt)),
-                ),
+                Ok(dt) => {
+                    let eff = ddays::effective_date(dt, d.annual, today);
+                    (
+                        ddays::dday_label(ddays::days_until(eff, today)),
+                        format!(" ({})", datecalc::weekday_kr(eff)),
+                    )
+                }
                 Err(_) => ("?".to_string(), String::new()),
             };
-            println!("     {} {}{}", label.bright_yellow(), d.label, wd.dimmed());
+            let tag = if d.annual { " 🔁" } else { "" };
+            println!(
+                "     {} {}{tag}{}",
+                label.bright_yellow(),
+                d.label,
+                wd.dimmed()
+            );
         }
     }
 
@@ -8106,13 +8120,19 @@ fn dday_card_comment(days: i64) -> String {
 fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
     let mut store = ddays::DdayStore::load()?;
     match action {
-        Some(DdayAction::Add { label, date }) => {
-            let id = store.add(label, date)?;
-            let parsed = ddays::parse_date(date)?;
-            let days = ddays::days_until(parsed, ddays::today());
+        Some(DdayAction::Add {
+            label,
+            date,
+            annual,
+        }) => {
+            let id = store.add(label, date, *annual)?;
+            let today = ddays::today();
+            let eff = ddays::effective_date(ddays::parse_date(date)?, *annual, today);
+            let days = ddays::days_until(eff, today);
+            let tag = if *annual { " 🔁매년" } else { "" };
             ui::note(&format!(
-                "디데이 #{id} 등록: {label} ({}, {})",
-                parsed.format("%Y-%m-%d"),
+                "디데이 #{id} 등록: {label}{tag} ({}, {})",
+                eff.format("%Y-%m-%d"),
                 ddays::dday_label(days)
             ));
         }
@@ -8163,9 +8183,10 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             let with_days: Vec<(&ddays::Dday, i64)> = all
                 .iter()
                 .filter_map(|d| {
-                    ddays::parse_date(&d.date)
-                        .ok()
-                        .map(|dt| (d, ddays::days_until(dt, today)))
+                    ddays::parse_date(&d.date).ok().map(|dt| {
+                        let eff = ddays::effective_date(dt, d.annual, today);
+                        (d, ddays::days_until(eff, today))
+                    })
                 })
                 .collect();
             let chosen = match name {
@@ -8183,11 +8204,20 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
                 ));
                 return Ok(());
             };
-            let date = ddays::parse_date(&d.date)?;
-            let date_line = format!("📅 {} ({})", d.date, datecalc::weekday_kr(date));
+            let eff = ddays::effective_date(ddays::parse_date(&d.date)?, d.annual, today);
+            let date_line = format!(
+                "📅 {} ({})",
+                eff.format("%Y-%m-%d"),
+                datecalc::weekday_kr(eff)
+            );
+            let headline = if d.annual {
+                format!("🎯 {} 🔁", d.label)
+            } else {
+                format!("🎯 {}", d.label)
+            };
             let lines = card::render_event_card(
                 "원장 D-day",
-                &format!("🎯 {}", d.label),
+                &headline,
                 &ddays::dday_label(days),
                 &date_line,
                 &dday_card_comment(days),
@@ -8203,15 +8233,19 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             let today = ddays::today();
             println!("디데이:\n");
             for d in store.all() {
-                // 날짜에 요일까지(무슨 요일인지가 계획에 중요 — 카드와 일관).
+                // 매년 반복은 다음 발생일 기준. 날짜에 요일까지(카드와 일관).
                 let (label, datestr) = match ddays::parse_date(&d.date) {
-                    Ok(dt) => (
-                        ddays::dday_label(ddays::days_until(dt, today)),
-                        format!("{} {}", d.date, datecalc::weekday_kr(dt)),
-                    ),
+                    Ok(dt) => {
+                        let eff = ddays::effective_date(dt, d.annual, today);
+                        (
+                            ddays::dday_label(ddays::days_until(eff, today)),
+                            format!("{} {}", eff.format("%Y-%m-%d"), datecalc::weekday_kr(eff)),
+                        )
+                    }
                     Err(_) => ("?".to_string(), d.date.clone()),
                 };
-                println!("  {:>7}  {}  ({})", label, d.label, datestr);
+                let tag = if d.annual { " 🔁" } else { "" };
+                println!("  {:>7}  {}{tag}  ({})", label, d.label, datestr);
             }
             println!();
         }
