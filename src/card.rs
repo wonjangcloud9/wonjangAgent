@@ -455,6 +455,15 @@ pub fn card_comment(persona_key: &str, streak: i64, habit: &str) -> String {
             "발랄" => format!("우와 {habit} {streak}일 연속이라니!! 최고✨"),
             _ => format!("{habit} {streak}일 연속, 잘 쌓고 있어요."),
         }
+    } else if streak == 1 {
+        // 오늘 막 한 칸 채운 사람(첫날·재시작 모두) — '시작도 안 한 사람' 톤은 맥 빠진다.
+        match persona_key {
+            "친구" => format!("{habit} 오늘 채웠다! 💪"),
+            "집사" => format!("{habit} 오늘 기록하셨어요, 주인님."),
+            "선배" => "오늘 했네. 내일도.".to_string(),
+            "발랄" => format!("{habit} 오늘 한 칸 채웠다!✨"),
+            _ => format!("{habit} 오늘 채웠어요! 🌱"),
+        }
     } else {
         match persona_key {
             "친구" => "이번 달도 한 칸씩 채워보자 💪".to_string(),
@@ -720,8 +729,12 @@ mod tests {
     fn comment_varies_by_persona() {
         assert!(card_comment("친구", 13, "운동").contains("멋진데"));
         assert!(card_comment("집사", 5, "독서").contains("주인님"));
-        // streak<2면 격려.
+        // streak 0(아직 안 함)은 '시작' 격려.
         assert!(card_comment("기본", 0, "운동").contains("채워"));
+        // streak 1(오늘 막 채움)은 '시작'이 아니라 '오늘 했다' 격려여야 한다(부조화 방지).
+        let one = card_comment("기본", 1, "운동");
+        assert!(one.contains("오늘"), "streak1 코멘트: {one}");
+        assert_ne!(one, card_comment("기본", 0, "운동"));
     }
 
     #[test]
