@@ -1829,7 +1829,7 @@ mod repl_local_tests {
 /// 자연어(에이전트) 입력만 백엔드 연결을 안내한다.
 async fn repl_local_only(_cfg: &Config) -> Result<()> {
     ui::banner("Claude Code", false); // 백엔드 연결 전(정직한 안내) 배너
-    ui::onboarding_if_first();
+    ui::onboarding_if_first(false);
     loop {
         print!("{}", ui::prompt());
         io::stdout().flush()?;
@@ -1895,7 +1895,7 @@ async fn repl(
     sess: &session::Session,
 ) -> Result<()> {
     ui::banner(&eng.label(cfg), eng.backend_ready());
-    ui::onboarding_if_first();
+    ui::onboarding_if_first(eng.backend_ready());
 
     loop {
         print!("{}", ui::prompt());

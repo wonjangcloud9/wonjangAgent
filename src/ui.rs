@@ -203,7 +203,8 @@ fn habit_strip() -> String {
 }
 
 /// 처음 쓰는 사용자에게 한 번만 보여주는 따뜻한 안내.
-pub fn onboarding_if_first() {
+/// `backend_ready`면 자연어(AI)를, 아니면 키 없이 바로 되는 로컬 명령을 권한다.
+pub fn onboarding_if_first(backend_ready: bool) {
     let marker = match dirs::data_dir() {
         Some(d) => d.join("wonjang").join(".welcomed"),
         None => return,
@@ -211,27 +212,53 @@ pub fn onboarding_if_first() {
     if marker.exists() {
         return;
     }
-    println!(
-        "  {} 처음 오셨네요! 무엇이든 한국어로 시키면 제가 알아서 해드려요.",
-        "👋".bold()
-    );
-    println!(
-        "     {}",
-        "예) \"오늘 서울 날씨\"  ·  \"다운로드 폴더 정리해줘\"".dimmed()
-    );
-    println!(
-        "     {} {}",
-        "🌱 오늘부터 한 가지만 쌓아봐요:".dimmed(),
-        "wonjang 습관 추가 운동".bright_cyan()
-    );
-    println!(
-        "     {}",
-        "   매일 한 칸씩 채우면, 한 달 뒤 자랑할 카드가 생겨요 →  wonjang 자랑".dimmed()
-    );
-    println!(
-        "     {}",
-        "💡 말투 바꾸기: /성격 친구   ·   📋 전체 기능: wonjang 도움".dimmed()
-    );
+    if backend_ready {
+        println!(
+            "  {} 처음 오셨네요! 무엇이든 한국어로 시키면 제가 알아서 해드려요.",
+            "👋".bold()
+        );
+        println!(
+            "     {}",
+            "예) \"오늘 서울 날씨\"  ·  \"다운로드 폴더 정리해줘\"".dimmed()
+        );
+        println!(
+            "     {} {}",
+            "🌱 오늘부터 한 가지만 쌓아봐요:".dimmed(),
+            "wonjang 습관 추가 운동".bright_cyan()
+        );
+        println!(
+            "     {}",
+            "   매일 한 칸씩 채우면, 한 달 뒤 자랑할 카드가 생겨요 →  wonjang 자랑".dimmed()
+        );
+        println!(
+            "     {}",
+            "💡 말투 바꾸기: /성격 친구   ·   📋 전체 기능: wonjang 도움".dimmed()
+        );
+    } else {
+        // 백엔드(AI) 없이도 바로 되는 명령을 권한다 — 작동 안 하는 자연어를 권하지 않는다.
+        println!(
+            "  {} 처음 오셨네요! 키 없이 바로 돼요 — 이렇게 입력해 보세요:",
+            "👋".bold()
+        );
+        println!(
+            "     {}",
+            "자랑  ·  지출 추가 5만 식비  ·  디데이 추가 수능 2026-11-19  ·  연봉 3600"
+                .bright_cyan()
+        );
+        println!(
+            "     {} {}",
+            "🌱 오늘부터 한 가지만:".dimmed(),
+            "습관 추가 운동".bright_cyan()
+        );
+        println!(
+            "     {}",
+            "   매일 한 칸씩 채우면, 한 달 뒤 '자랑' 카드가 생겨요".dimmed()
+        );
+        println!(
+            "     {}",
+            "💡 전체 기능: 도움   ·   자연어(AI)까지 쓰려면 claude 로그인 또는 API 키".dimmed()
+        );
+    }
     println!();
     if let Some(parent) = marker.parent() {
         std::fs::create_dir_all(parent).ok();
