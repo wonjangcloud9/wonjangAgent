@@ -185,6 +185,12 @@ pub fn parse_won(s: &str) -> Result<i64, String> {
     Ok(won as i64)
 }
 
+/// `parse_won`의 f64판 — 원 단위를 f64로 받는 입력 필드(부가세·할인 등)용.
+/// 원(KRW)은 정수라 i64로 파싱 후 f64로 넘긴다(소수 원은 반올림).
+pub fn parse_won_f64(s: &str) -> Result<f64, String> {
+    parse_won(s).map(|w| w as f64)
+}
+
 /// 이번 달 `(일평균, 월말 예상)`. 현 페이스가 유지된다는 가정의 추정.
 /// total=이번 달 누적, day=경과 일수, days_in_month=이번 달 총 일수.
 pub fn pace(total: i64, day: i64, days_in_month: i64) -> (i64, i64) {

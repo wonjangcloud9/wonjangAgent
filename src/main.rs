@@ -781,18 +781,20 @@ enum Commands {
         /// 몸무게(kg)
         weight: f64,
     },
-    /// 할인가 계산(중복 할인 가능). 예: wonjang 할인 30000 20 10
+    /// 할인가 계산(중복 할인 가능). 예: wonjang 할인 30000 20 10 (5만·50,000도 OK)
     #[command(alias = "할인")]
     Discount {
-        /// 원가(원)
+        /// 원가(원). 5만·50,000 같은 한국식 표기도 OK
+        #[arg(value_parser = expenses::parse_won_f64)]
         price: f64,
         /// 할인율(%) 목록. 여러 개면 순차 적용. 예: 20 10
         rates: Vec<f64>,
     },
-    /// 부가세(VAT 10%) 계산. 예: wonjang 부가세 100000
+    /// 부가세(VAT 10%) 계산. 예: wonjang 부가세 100000 (5만·1억도 OK)
     #[command(alias = "부가세")]
     Vat {
-        /// 금액(원)
+        /// 금액(원). 5만·1억·50,000 같은 한국식 표기도 OK
+        #[arg(value_parser = expenses::parse_won_f64)]
         amount: f64,
     },
     /// 글자수 세기(공백 포함/제외, 자소서 제한 체크). 예: wonjang 글자수 "자소서" --제한 1000
