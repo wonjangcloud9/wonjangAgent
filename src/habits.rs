@@ -73,6 +73,22 @@ pub struct Stats {
     pub by_weekday: [usize; 7], // 월~일 완료 횟수
 }
 
+impl Stats {
+    /// '가장 꾸준한 요일' — **유일한 1등**일 때만 `Some((요일 index 0=월, 횟수))`.
+    /// 동률(여러 요일이 똑같이 최다)이면 패턴이 뚜렷하지 않으니 None(단정하지 않음).
+    pub fn dominant_weekday(&self) -> Option<(usize, usize)> {
+        let max = *self.by_weekday.iter().max()?;
+        if max == 0 {
+            return None;
+        }
+        let leaders: Vec<usize> = (0..7).filter(|&i| self.by_weekday[i] == max).collect();
+        match leaders.as_slice() {
+            [only] => Some((*only, max)),
+            _ => None, // 동률 → 생략
+        }
+    }
+}
+
 /// 완료 날짜 집합으로 통계를 낸다. 완료 기록이 없으면 None.
 pub fn stats(dates: &HashSet<String>, today: NaiveDate) -> Option<Stats> {
     let mut days: Vec<NaiveDate> = dates
@@ -243,6 +259,18 @@ mod tests {
         assert_eq!(st.by_weekday[5], 0); // 토
                                          // 완료 없으면 None.
         assert!(stats(&set(&[]), NaiveDate::from_ymd_opt(2026, 6, 6).unwrap()).is_none());
+    }
+
+    #[test]
+    fn dominant_weekday_only_on_unique_winner() {
+        // 월이 유일한 1등(2번) → Some(월).
+        let s = set(&["2026-06-01", "2026-06-08", "2026-06-02"]); // 월·월·화
+        let st = stats(&s, NaiveDate::from_ymd_opt(2026, 6, 9).unwrap()).unwrap();
+        assert_eq!(st.dominant_weekday(), Some((0, 2)));
+        // 월·화·수 각 1번(동률) → None(단정하지 않음).
+        let s = set(&["2026-06-01", "2026-06-02", "2026-06-03"]);
+        let st = stats(&s, NaiveDate::from_ymd_opt(2026, 6, 6).unwrap()).unwrap();
+        assert_eq!(st.dominant_weekday(), None);
     }
 
     #[test]

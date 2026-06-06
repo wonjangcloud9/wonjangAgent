@@ -7748,13 +7748,8 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
                 .collect::<Vec<_>>()
                 .join(" ");
             println!("     요일별      {week}");
-            if let Some((bi, bc)) = s
-                .by_weekday
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| **c > 0)
-                .max_by_key(|(_, c)| **c)
-            {
+            // '가장 꾸준한 요일'은 유일한 1등일 때만(동률이면 단정하지 않고 생략).
+            if let Some((bi, bc)) = s.dominant_weekday() {
                 ui::info(&format!("     {}요일에 가장 꾸준해요 ({bc}번)", labels[bi]));
             }
             println!();
