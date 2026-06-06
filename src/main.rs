@@ -5725,7 +5725,7 @@ fn cmd_salary(manwon: f64) -> Result<()> {
     let p = salary::from_annual(annual);
     let w = |v: f64| expenses::won(v.round() as i64);
     println!();
-    println!("  💰 연봉 실수령액 ({}만 원)", manwon as i64);
+    println!("  💰 연봉 실수령액 ({})", jeonse::fmt_eok(manwon));
     println!("     월 세전        {}", w(p.gross_monthly));
     println!("     ─ 국민연금     -{}", w(p.national_pension));
     println!("     ─ 건강보험     -{}", w(p.health));
@@ -5765,8 +5765,8 @@ fn cmd_loan(manwon: f64, rate: f64, months: u32) -> Result<()> {
     };
     println!();
     println!(
-        "  🏦 대출 상환 ({}만 원 · 연 {rate}% · {term})",
-        manwon as i64
+        "  🏦 대출 상환 ({} · 연 {rate}% · {term})",
+        jeonse::fmt_eok(manwon)
     );
     println!();
     println!("  [원리금균등] 매달 같은 금액");
@@ -5800,14 +5800,14 @@ fn cmd_deposit(manwon: f64, rate: f64, months: u32, is_savings: bool) -> Result<
     println!();
     if is_savings {
         println!(
-            "  🐷 정기적금 ({}만 원/월 · 연 {rate}% · {months}개월)",
-            manwon as i64
+            "  🐷 정기적금 ({}/월 · 연 {rate}% · {months}개월)",
+            jeonse::fmt_eok(manwon)
         );
         println!("     원금 합계      {}", w(m.principal));
     } else {
         println!(
-            "  🏦 정기예금 ({}만 원 · 연 {rate}% · {months}개월)",
-            manwon as i64
+            "  🏦 정기예금 ({} · 연 {rate}% · {months}개월)",
+            jeonse::fmt_eok(manwon)
         );
         println!("     예치 원금      {}", w(m.principal));
     }
