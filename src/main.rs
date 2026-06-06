@@ -6076,6 +6076,13 @@ fn cmd_payday(day: &str) -> Result<()> {
         println!("  💰 월급날 {}", format!("D-{dleft}").bright_cyan().bold());
         println!("     다음 월급날: {} ({wd})", next.format("%Y-%m-%d"));
     }
+    // 월급날이 주말이면 보통 앞 영업일(금)에 입금 — 정직하게 '보통'으로 안내.
+    if let Some(friday) = payday::weekend_early_payday(next) {
+        println!(
+            "     💡 주말이라 보통 {}(금)에 들어와요",
+            friday.format("%m-%d")
+        );
+    }
     println!("     {comment}");
     println!();
     Ok(())

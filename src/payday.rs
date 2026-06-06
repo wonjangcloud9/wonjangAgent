@@ -59,6 +59,17 @@ pub fn next_payday(spec: &Payday, today: NaiveDate) -> NaiveDate {
     payday_in_month(spec, y, m)
 }
 
+/// 월급날이 주말이면 보통 앞 영업일(금)에 지급된다 — 그 금요일을 돌려준다(평일이면 None).
+/// 공휴일은 별도 데이터가 필요해 여기선 주말만 본다(안내는 '보통'으로 단정하지 않음).
+pub fn weekend_early_payday(date: NaiveDate) -> Option<NaiveDate> {
+    use chrono::Weekday;
+    match date.weekday() {
+        Weekday::Sat => Some(date - Duration::days(1)),
+        Weekday::Sun => Some(date - Duration::days(2)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +129,15 @@ mod tests {
     fn last_day_payday() {
         assert_eq!(next_payday(&Payday::LastDay, d(2026, 6, 6)), d(2026, 6, 30));
         assert_eq!(next_payday(&Payday::LastDay, d(2026, 2, 1)), d(2026, 2, 28));
+    }
+
+    #[test]
+    fn weekend_payday_points_to_friday() {
+        // 2026-06-27은 토요일 → 앞 금요일 06-26.
+        assert_eq!(weekend_early_payday(d(2026, 6, 27)), Some(d(2026, 6, 26)));
+        // 2026-06-28은 일요일 → 앞 금요일 06-26.
+        assert_eq!(weekend_early_payday(d(2026, 6, 28)), Some(d(2026, 6, 26)));
+        // 평일(목요일 06-25)이면 None.
+        assert_eq!(weekend_early_payday(d(2026, 6, 25)), None);
     }
 }
