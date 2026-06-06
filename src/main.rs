@@ -6,6 +6,7 @@
 mod age;
 mod agent;
 mod airquality;
+mod animgif;
 mod annual_leave;
 mod archive;
 mod backup;
@@ -393,6 +394,22 @@ enum Commands {
         #[arg(long = "가로")]
         horizontal: bool,
         /// 저장 경로(생략 시 이어붙임.png)
+        #[arg(long = "출력")]
+        output: Option<String>,
+    },
+    /// 여러 이미지를 움짤(GIF)로. 예: wonjang 움짤 1.png 2.png 3.png --초 0.5
+    #[command(name = "움짤", aliases = ["움짤만들기", "gif만들기", "지프"])]
+    AnimGif {
+        /// 순서대로 넣을 이미지들(2장 이상)
+        #[arg(required = true, num_args = 1..)]
+        files: Vec<String>,
+        /// 프레임 간격(초). 기본 0.5
+        #[arg(long = "초", default_value_t = 0.5)]
+        seconds: f64,
+        /// 가로 폭(px). 기본은 첫 이미지 기준(최대 1280)
+        #[arg(long = "폭")]
+        width: Option<u32>,
+        /// 저장 경로(생략 시 움짤.gif)
         #[arg(long = "출력")]
         output: Option<String>,
     },
@@ -1695,6 +1712,12 @@ async fn run() -> Result<()> {
             // --세로(명시)는 기본이므로 --가로만 가로로. 둘 다면 --세로 우선.
             return cmd_image_stitch(files, *horizontal && !*vertical, output.as_deref());
         }
+        Some(Commands::AnimGif {
+            files,
+            seconds,
+            width,
+            output,
+        }) => return cmd_anim_gif(files, *seconds, *width, output.as_deref()),
         Some(Commands::PdfMerge { files, output }) => {
             return cmd_pdf_merge(files, output.as_deref())
         }
@@ -3294,6 +3317,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 이미지이어붙이기 1.png 2.png --세로",
                     "여러 이미지를 한 장으로(긴 캡처·영수증)",
+                ),
+                (
+                    "wonjang 움짤 1.png 2.png 3.png --초 0.5",
+                    "여러 이미지를 움짤(GIF)로",
                 ),
                 (
                     "wonjang pdf합치기 a.pdf b.pdf",
@@ -5081,6 +5108,72 @@ fn cmd_photos_pdf(files: &[String], output: Option<&str>) -> Result<()> {
 
 /// 여러 이미지를 한 장으로 이어붙인다(세로 쌓기 기본, --가로면 나란히). EXIF 방향 적용.
 /// GPT가 못 하는 일: 내 컴퓨터의 캡처·영수증 사진들을 실제로 합쳐 한 장으로.
+fn cmd_anim_gif(
+    files: &[String],
+    seconds: f64,
+    width: Option<u32>,
+    output: Option<&str>,
+) -> Result<()> {
+    use owo_colors::OwoColorize;
+    use std::path::{Path, PathBuf};
+
+    if files.len() < 2 {
+        anyhow::bail!("움짤은 이미지가 2장 이상이어야 해요. 예: wonjang 움짤 1.png 2.png --초 0.5");
+    }
+    if !seconds.is_finite() || seconds <= 0.0 || seconds > 60.0 {
+        anyhow::bail!("프레임 간격(--초)은 0보다 크고 60 이하여야 해요. 예: --초 0.5");
+    }
+    // 로드(EXIF 방향 적용).
+    let mut imgs: Vec<image::RgbaImage> = Vec::new();
+    for f in files {
+        if !Path::new(f).exists() {
+            anyhow::bail!("파일을 찾을 수 없어요: {f}");
+        }
+        imgs.push(open_image_oriented(Path::new(f))?.to_rgba8());
+    }
+    // 목표 크기: 첫 이미지 기준(폭은 --폭 또는 최대 1280으로 제한), 비율 유지.
+    let (fw, fh) = imgs[0].dimensions();
+    let target_w = width.unwrap_or(fw).clamp(1, 1280);
+    let target_h = ((fh as f64) * (target_w as f64 / fw.max(1) as f64)).round() as u32;
+    let target_h = target_h.max(1);
+    // OOM·용량 가드(픽셀 × 프레임).
+    if target_w as u64 * target_h as u64 * imgs.len() as u64 > 200_000_000 {
+        anyhow::bail!(
+            "너무 커요({target_w}×{target_h}, {}장). --폭으로 줄여보세요.",
+            imgs.len()
+        );
+    }
+    let frames: Vec<image::RgbaImage> = imgs
+        .iter()
+        .map(|img| animgif::fit_on_white(img, target_w, target_h))
+        .collect();
+    let bytes = animgif::encode(&frames, (seconds * 1000.0).round() as u32)?;
+
+    let out_path = match output {
+        Some(o) => PathBuf::from(o),
+        None => PathBuf::from("움짤.gif"),
+    };
+    if files.iter().any(|f| Path::new(f) == out_path) {
+        anyhow::bail!("원본을 덮어쓸 수 없어요. 다른 출력 경로를 쓰세요(--출력).");
+    }
+    std::fs::write(&out_path, &bytes).map_err(|e| anyhow::anyhow!("저장 실패: {e}"))?;
+    println!();
+    println!(
+        "  🎞️ 이미지 {}장으로 움짤을 만들었어요 (프레임 {}초)",
+        files.len(),
+        seconds
+    );
+    println!(
+        "     저장  {}  ({}×{}, {})",
+        out_path.display().to_string().bright_yellow(),
+        target_w,
+        target_h,
+        human_bytes(bytes.len() as u64)
+    );
+    println!();
+    Ok(())
+}
+
 fn cmd_image_stitch(files: &[String], horizontal: bool, output: Option<&str>) -> Result<()> {
     use owo_colors::OwoColorize;
     use std::path::{Path, PathBuf};
@@ -9802,6 +9895,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "최고금리", "100만", "5만", "1"]),
             Commands::MaxInterest { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "움짤", "1.png", "2.png"]),
+            Commands::AnimGif { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
