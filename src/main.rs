@@ -634,11 +634,23 @@ enum Commands {
         /// 변환할 숫자
         value: f64,
     },
-    /// 만 나이 계산(만 나이 통일법 기준). 예: wonjang 나이 1990-03-15
+    /// 만 나이 계산(만 나이 통일법 기준). 예: wonjang 나이 1990-03-15 (공유 카드는 --카드)
     #[command(aliases = ["나이", "만나이", "세는나이", "나이계산"])]
     Age {
         /// 생일 (YYYY-MM-DD)
         birth: String,
+        /// 살아온 날·마디를 공유 카드 한 장으로(카톡 캡처)
+        #[arg(long = "카드", alias = "card")]
+        card: bool,
+        /// 박스 폭(기본 40, 카톡엔 34 권장)
+        #[arg(long = "폭", default_value_t = 40)]
+        width: usize,
+        /// 색 없이 출력(파이프·복붙용)
+        #[arg(long = "no-color")]
+        no_color: bool,
+        /// 카드를 클립보드에 복사
+        #[arg(long = "복사")]
+        copy: bool,
     },
     /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600
     #[command(aliases = ["실수령", "연봉"])]
@@ -1508,7 +1520,13 @@ async fn run() -> Result<()> {
         Some(Commands::News { query }) => return cmd_news(query),
         Some(Commands::Lotto { games }) => return cmd_lotto(*games),
         Some(Commands::Pyeong { value }) => return cmd_pyeong(*value),
-        Some(Commands::Age { birth }) => return cmd_age(birth),
+        Some(Commands::Age {
+            birth,
+            card,
+            width,
+            no_color,
+            copy,
+        }) => return cmd_age(birth, *card, *width, *no_color, *copy),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::Loan {
             manwon,
@@ -5897,8 +5915,8 @@ fn cmd_pyeong(value: f64) -> Result<()> {
     Ok(())
 }
 
-fn cmd_age(birth: &str) -> Result<()> {
-    let birth = age::parse_birth(birth)?;
+fn cmd_age(birth_in: &str, card: bool, width: usize, no_color: bool, copy: bool) -> Result<()> {
+    let birth = age::parse_birth(birth_in)?;
     let today = chrono::Local::now().date_naive();
     if birth > today {
         anyhow::bail!(
@@ -5908,21 +5926,44 @@ fn cmd_age(birth: &str) -> Result<()> {
     }
     let man = age::korean_age(birth, today);
     let yeon = age::year_age(birth, today);
+    let counting = age::counting_age(birth, today);
     let dday = age::days_to_birthday(birth, today);
-    println!();
     let animal = age::zodiac_animal(chrono::Datelike::year(&birth));
     let sign = age::star_sign(
         chrono::Datelike::month(&birth),
         chrono::Datelike::day(&birth),
     );
+    let lived = age::days_lived(birth, today);
+
+    if card {
+        // 공유 카드 — '살아온 N일'이 주인공(보편적이라 디데이·기념일보다 자랑하기 쉽다).
+        let headline = format!("🎂 만 {man}세 · {animal}띠 {sign}");
+        let big = format!("{}일", exchange::comma(lived as f64, 0));
+        let date_line = match age::next_day_milestone(birth, today) {
+            Some((mark, date)) => {
+                let to = (date - today).num_days();
+                format!("🎉 {}일까지 D-{to}", exchange::comma(mark as f64, 0))
+            }
+            None => birth.format("📅 %Y-%m-%d 출생").to_string(),
+        };
+        let comment = if dday == 0 {
+            "오늘 생일 축하해요! 🎉".to_string()
+        } else {
+            format!("다음 생일까지 {dday}일")
+        };
+        let lines =
+            card::render_event_card("원장 나이", &headline, &big, &date_line, &comment, width);
+        print_card(&lines, soul::active_preset_key(), no_color, copy);
+        return Ok(());
+    }
+
+    println!();
     println!("  🎂 나이 계산 ({})", birth.format("%Y년 %m월 %d일생"));
-    let counting = age::counting_age(birth, today);
     println!("     만 나이: {man}세");
     println!("     세는나이: {counting}세  (옛 한국식 — 2023 폐지, 일상선 여전히)");
     println!("     연 나이: {yeon}세  (현재 연도 − 출생 연도)");
     println!("     띠: {animal}띠   별자리: {sign}");
     // 살아온 날수 + 다음 1000일 마디(한국에서 챙기는 '날수' 기념 — "나 1만일!" 자랑거리).
-    let lived = age::days_lived(birth, today);
     println!("     🗓️ 살아온 날: {}일", exchange::comma(lived as f64, 0));
     if let Some((mark, date)) = age::next_day_milestone(birth, today) {
         let to = (date - today).num_days();
@@ -5937,6 +5978,7 @@ fn cmd_age(birth: &str) -> Result<()> {
     } else {
         println!("     다음 생일까지 {dday}일 남았어요");
     }
+    ui::info(&format!("     공유 카드: wonjang 나이 {birth_in} --카드"));
     println!();
     Ok(())
 }
