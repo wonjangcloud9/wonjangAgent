@@ -1098,17 +1098,20 @@ enum BookmarkAction {
 enum HabitAction {
     /// 습관 목록(오늘 여부 + 연속 일수). 기본.
     List,
-    /// 습관 추가. 예: wonjang 습관 add "운동"
+    /// 습관 추가. 예: wonjang 습관 추가 "운동"
+    #[command(alias = "추가")]
     Add {
         /// 습관 이름
         name: String,
     },
-    /// 오늘 습관 완료. 예: wonjang 습관 done 운동
+    /// 오늘 습관 완료. 예: wonjang 습관 완료 운동
+    #[command(alias = "완료")]
     Done {
         /// 습관 이름 또는 id
         habit: String,
     },
     /// id로 습관 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 습관 id
         id: u64,
@@ -1123,7 +1126,8 @@ enum HabitAction {
 
 #[derive(Subcommand)]
 enum ExpenseAction {
-    /// 오늘 지출 추가. 예: wonjang 지출 add 8000 식비 점심
+    /// 오늘 지출 추가. 예: wonjang 지출 추가 8000 식비 점심
+    #[command(alias = "추가")]
     Add {
         /// 금액(원)
         amount: i64,
@@ -1134,8 +1138,10 @@ enum ExpenseAction {
         note: Vec<String>,
     },
     /// 이번 달 분류별 지출.
+    #[command(alias = "이번달")]
     Month,
     /// id로 지출 기록 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 지출 id
         id: u64,
@@ -1169,7 +1175,8 @@ enum NotionAction {
 enum DdayAction {
     /// 디데이 목록(기본).
     List,
-    /// 디데이 추가. 예: wonjang dday add "수능" 2026-11-19
+    /// 디데이 추가. 예: wonjang 디데이 추가 "수능" 2026-11-19
+    #[command(alias = "추가")]
     Add {
         /// 디데이 이름(여러 단어면 따옴표)
         label: String,
@@ -1177,6 +1184,7 @@ enum DdayAction {
         date: String,
     },
     /// id로 디데이 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 디데이 id
         id: u64,
@@ -1209,22 +1217,26 @@ enum DdayAction {
 enum TodoAction {
     /// 할 일 목록(기본).
     List,
-    /// 할 일 추가. 예: wonjang todo add "장보기"
+    /// 할 일 추가. 예: wonjang 할일 추가 "장보기"
+    #[command(alias = "추가")]
     Add {
         /// 할 일 내용(여러 단어면 따옴표)
         text: String,
     },
     /// id로 할 일 완료 처리.
+    #[command(alias = "완료")]
     Done {
         /// 완료할 할 일 id
         id: u64,
     },
     /// id로 할 일 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 할 일 id
         id: u64,
     },
     /// 완료된 할 일을 모두 정리.
+    #[command(alias = "정리")]
     Clear,
 }
 
@@ -2516,7 +2528,7 @@ fn cmd_guide() -> Result<()> {
                     "약속·알림(반복 --every)",
                 ),
                 ("wonjang 할일 / todo", "할 일 체크리스트"),
-                ("wonjang dday add \"수능\" <날짜>", "디데이"),
+                ("wonjang 디데이 추가 \"수능\" <날짜>", "디데이"),
                 ("wonjang 디데이 카드 [이름]", "D-day 공유 카드(카톡 캡처)"),
                 ("wonjang 기념일 <사귄날> [이름]", "기념일 N일째 공유 카드"),
                 ("wonjang 디데이 내보내기", "디데이를 캘린더(.ics)로"),
@@ -2526,9 +2538,9 @@ fn cmd_guide() -> Result<()> {
         (
             "📒 기록 & 지식",
             &[
-                ("wonjang 지출 add <금액> <분류>", "가계부"),
+                ("wonjang 지출 추가 <금액> <분류>", "가계부"),
                 ("wonjang 지출 내보내기", "가계부를 CSV로(엑셀 분석)"),
-                ("wonjang 습관 done <이름>", "습관 트래커(연속일수)"),
+                ("wonjang 습관 완료 <이름>", "습관 트래커(연속일수)"),
                 ("wonjang 습관 통계 <이름>", "달성률·최장연속·요일패턴"),
                 ("wonjang 일기 \"<내용>\"", "간단 일기(월별 저장)"),
                 ("wonjang 일지/메모 (프리셋)", "옵시디언 노트"),
@@ -5199,8 +5211,8 @@ fn cmd_brag(
             no_color,
             false,
         );
-        println!("  {}", "wonjang 습관 add 운동".bright_cyan());
-        ui::info("  매일 'wonjang 습관 done 운동' → 한 달 뒤 진짜 내 카드가 생겨요 🌱");
+        println!("  {}", "wonjang 습관 추가 운동".bright_cyan());
+        ui::info("  매일 'wonjang 습관 완료 운동' → 한 달 뒤 진짜 내 카드가 생겨요 🌱");
         println!();
         return Ok(());
     }
@@ -5302,7 +5314,7 @@ fn cmd_brag_weekly(width: usize, no_color: bool, copy: bool) -> Result<()> {
     if !has_data {
         println!();
         ui::note("이번 주 자랑할 게 아직 없어요. 습관 하나만 시작해봐요:");
-        println!("  {}", "wonjang 습관 add 운동".bright_cyan());
+        println!("  {}", "wonjang 습관 추가 운동".bright_cyan());
         println!();
         return Ok(());
     }
@@ -7319,7 +7331,7 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
             };
             let Some(s) = habits::stats(&h.date_set(), today) else {
                 ui::info(&format!(
-                    "'{}' 아직 완료 기록이 없어요. wonjang 습관 done {}",
+                    "'{}' 아직 완료 기록이 없어요. wonjang 습관 완료 {}",
                     h.name, h.name
                 ));
                 return Ok(());
@@ -7360,7 +7372,7 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
         }
         None | Some(HabitAction::List) => {
             if store.items.is_empty() {
-                ui::info("등록된 습관이 없어요. 추가: wonjang 습관 add \"운동\"");
+                ui::info("등록된 습관이 없어요. 추가: wonjang 습관 추가 \"운동\"");
                 return Ok(());
             }
             let today = habits::today();
@@ -7387,7 +7399,7 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
                 );
             }
             println!();
-            ui::info("완료: wonjang 습관 done <이름>   |   추가: wonjang 습관 add \"<이름>\"");
+            ui::info("완료: wonjang 습관 완료 <이름>   |   추가: wonjang 습관 추가 \"<이름>\"");
         }
     }
     Ok(())
@@ -7542,7 +7554,7 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
             }
             println!();
             ui::info(
-                "기록: wonjang 지출 add <금액> <분류> [메모]   |   이번달: wonjang 지출 month",
+                "기록: wonjang 지출 추가 <금액> <분류> [메모]   |   이번달: wonjang 지출 이번달",
             );
         }
     }
@@ -7615,7 +7627,7 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             use owo_colors::OwoColorize;
             use std::path::{Path, PathBuf};
             if store.all().is_empty() {
-                ui::info("내보낼 디데이가 없어요. 추가: wonjang 디데이 add \"수능\" 2026-11-19");
+                ui::info("내보낼 디데이가 없어요. 추가: wonjang 디데이 추가 \"수능\" 2026-11-19");
                 return Ok(());
             }
             let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
@@ -7644,7 +7656,7 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             let today = ddays::today();
             let all = store.all();
             if all.is_empty() {
-                ui::info("등록된 디데이가 없어요. 추가: wonjang dday add \"수능\" 2026-11-19");
+                ui::info("등록된 디데이가 없어요. 추가: wonjang 디데이 추가 \"수능\" 2026-11-19");
                 return Ok(());
             }
             // 이름이 주어지면 부분 일치, 아니면 가장 가까운 다가오는(없으면 가장 가까운) 디데이.
@@ -7685,7 +7697,7 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
         }
         None | Some(DdayAction::List) => {
             if store.all().is_empty() {
-                ui::info("등록된 디데이가 없습니다. 추가: wonjang dday add \"수능\" 2026-11-19");
+                ui::info("등록된 디데이가 없습니다. 추가: wonjang 디데이 추가 \"수능\" 2026-11-19");
                 return Ok(());
             }
             let today = ddays::today();
@@ -7712,7 +7724,7 @@ fn cmd_todo(action: &Option<TodoAction>) -> Result<()> {
     match action {
         Some(TodoAction::Add { text }) => {
             if text.trim().is_empty() {
-                ui::error("할 일 내용이 필요합니다. 예: wonjang todo add \"장보기\"");
+                ui::error("할 일 내용이 필요합니다. 예: wonjang 할일 추가 \"장보기\"");
                 std::process::exit(1);
             }
             let id = store.add(text)?;
@@ -7739,7 +7751,7 @@ fn cmd_todo(action: &Option<TodoAction>) -> Result<()> {
         None | Some(TodoAction::List) => {
             let pending = store.pending();
             if pending.is_empty() {
-                ui::info("할 일이 없습니다. 깔끔하네요! 추가: wonjang todo add \"할 일\"");
+                ui::info("할 일이 없습니다. 깔끔하네요! 추가: wonjang 할일 추가 \"할 일\"");
                 return Ok(());
             }
             println!("할 일:\n");
@@ -7747,7 +7759,7 @@ fn cmd_todo(action: &Option<TodoAction>) -> Result<()> {
                 println!("  ☐ #{}  {}", t.id, t.text);
             }
             println!();
-            ui::info("완료: wonjang todo done <id>   |   정리: wonjang todo clear");
+            ui::info("완료: wonjang 할일 완료 <id>   |   정리: wonjang 할일 정리");
         }
     }
     Ok(())
@@ -8321,6 +8333,68 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "할일"]),
             Commands::Todo { .. }
+        ));
+    }
+
+    // 핵심 트래커의 입력 동사도 자연스러운 한국어로 받아야 한다(한국어 우선).
+    // 영문(add/done/…)도 그대로 유지하므로 회귀 없이 둘 다 동작.
+    #[test]
+    fn korean_action_verbs_resolve() {
+        use super::{DdayAction, ExpenseAction, HabitAction, TodoAction};
+        assert!(matches!(
+            cmd_of(&["wonjang", "습관", "추가", "운동"]),
+            Commands::Habit {
+                action: Some(HabitAction::Add { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "습관", "완료", "운동"]),
+            Commands::Habit {
+                action: Some(HabitAction::Done { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "지출", "추가", "8000", "식비"]),
+            Commands::Expense {
+                action: Some(ExpenseAction::Add { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "지출", "이번달"]),
+            Commands::Expense {
+                action: Some(ExpenseAction::Month)
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "할일", "추가", "장보기"]),
+            Commands::Todo {
+                action: Some(TodoAction::Add { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "할일", "완료", "1"]),
+            Commands::Todo {
+                action: Some(TodoAction::Done { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "할일", "정리"]),
+            Commands::Todo {
+                action: Some(TodoAction::Clear)
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "디데이", "추가", "수능", "2026-11-19"]),
+            Commands::Dday {
+                action: Some(DdayAction::Add { .. })
+            }
+        ));
+        // 영문 동사 회귀 방지.
+        assert!(matches!(
+            cmd_of(&["wonjang", "습관", "done", "운동"]),
+            Commands::Habit {
+                action: Some(HabitAction::Done { .. })
+            }
         ));
     }
 }
