@@ -6563,7 +6563,19 @@ fn cmd_holiday(year: Option<i32>) -> Result<()> {
         } else {
             "지남".dimmed().to_string()
         };
-        println!("     {:<14} {}  {}", date_str, start.name.bold(), dlabel);
+        // 제헌절처럼 국경일이지만 쉬는 날이 아닌 항목은 명시(휴가 계획 오해 방지).
+        let off_note = if holidays::is_day_off(start) {
+            String::new()
+        } else {
+            "  (쉬는 날 아님)".dimmed().to_string()
+        };
+        println!(
+            "     {:<14} {}  {}{}",
+            date_str,
+            start.name.bold(),
+            dlabel,
+            off_note
+        );
         i = j;
     }
 

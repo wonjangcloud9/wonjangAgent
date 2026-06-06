@@ -56,14 +56,20 @@ pub fn next_after(holidays: &[Holiday], today: NaiveDate) -> Option<&Holiday> {
     holidays.iter().find(|h| h.date >= today)
 }
 
-/// 실제로 '쉬는 날'인 공휴일 날짜 집합.
+/// 실제로 '쉬는 날(휴무일)'인 공휴일인가.
 ///
-/// 제헌절은 국경일이지만 2008년부터 쉬는 날이 아니다 — 연휴 계산에서 제외해야
-/// 가짜 연휴를 만들지 않는다(Nager API는 다른 공휴일과 똑같이 Public으로 줌).
+/// 제헌절은 국경일이지만 2008년부터 쉬는 날이 아니다 — 연휴 계산에서 제외하고
+/// 목록에선 '쉬는 날 아님'으로 표시해 가짜 연휴·오해를 막는다(Nager API는 다른
+/// 공휴일과 똑같이 Public으로 준다).
+pub fn is_day_off(h: &Holiday) -> bool {
+    h.name != "제헌절"
+}
+
+/// 실제로 '쉬는 날'인 공휴일 날짜 집합.
 fn off_holiday_set(holidays: &[Holiday]) -> std::collections::HashSet<NaiveDate> {
     holidays
         .iter()
-        .filter(|h| h.name != "제헌절")
+        .filter(|h| is_day_off(h))
         .map(|h| h.date)
         .collect()
 }
@@ -179,6 +185,20 @@ mod tests {
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
+    }
+
+    #[test]
+    fn jeheonjeol_is_not_a_day_off() {
+        let off = Holiday {
+            date: d(2026, 8, 15),
+            name: "광복절".into(),
+        };
+        let not_off = Holiday {
+            date: d(2026, 7, 17),
+            name: "제헌절".into(),
+        };
+        assert!(is_day_off(&off));
+        assert!(!is_day_off(&not_off)); // 2008년부터 휴무 아님
     }
 
     #[test]
