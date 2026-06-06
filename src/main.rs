@@ -7417,19 +7417,11 @@ fn cmd_color(input: &[String]) -> Result<()> {
         println!();
         return Ok(());
     }
-    // RGB 3개 숫자인지, 헥스인지 판별.
-    let rgb = if input.len() == 3 && input.iter().all(|s| s.parse::<u16>().is_ok()) {
-        let n: Vec<u16> = input.iter().map(|s| s.parse().unwrap()).collect();
-        if n.iter().any(|&v| v > 255) {
-            return Err(anyhow::anyhow!("RGB 값은 0~255 사이여야 해요"));
-        }
-        color::Rgb {
-            r: n[0] as u8,
-            g: n[1] as u8,
-            b: n[2] as u8,
-        }
-    } else {
-        color::parse_hex(&input.join(""))?
+    // RGB(rgb(...)·콤마·공백 3개)면 그걸로, 아니면 헥스로.
+    let joined = input.join(" ");
+    let rgb = match color::parse_rgb(&joined) {
+        Some(c) => c,
+        None => color::parse_hex(&input.join(""))?,
     };
     let (h, s, l) = color::to_hsl(rgb);
     println!();

@@ -33,6 +33,31 @@ pub fn parse_hex(s: &str) -> Result<Rgb> {
     })
 }
 
+/// 유연한 RGB 입력을 파싱한다 — `rgb(255,87,51)`·`255,87,51`·`255 87 51`(CSS·디자인툴 복붙).
+/// 0~255 정수 정확히 3개일 때만 Some.
+pub fn parse_rgb(s: &str) -> Option<Rgb> {
+    let cleaned = s
+        .trim()
+        .trim_start_matches("rgb")
+        .trim_start_matches("RGB")
+        .replace(['(', ')'], "");
+    let nums: Vec<u16> = cleaned
+        .split([',', ' '])
+        .filter(|t| !t.trim().is_empty())
+        .map(|t| t.trim().parse())
+        .collect::<std::result::Result<_, _>>()
+        .ok()?;
+    if nums.len() == 3 && nums.iter().all(|&v| v <= 255) {
+        Some(Rgb {
+            r: nums[0] as u8,
+            g: nums[1] as u8,
+            b: nums[2] as u8,
+        })
+    } else {
+        None
+    }
+}
+
 /// RGB를 헥스 문자열로.
 pub fn to_hex(c: Rgb) -> String {
     format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b)
@@ -83,6 +108,25 @@ mod tests {
         assert_eq!((c2.r, c2.g, c2.b), (255, 85, 51));
         // # 없이.
         assert!(parse_hex("00ff00").is_ok());
+    }
+
+    #[test]
+    fn parse_rgb_flexible_formats() {
+        let expect = (255, 87, 51);
+        for s in [
+            "rgb(255,87,51)",
+            "rgb(255, 87, 51)",
+            "255,87,51",
+            "255 87 51",
+            "RGB(255 87 51)",
+        ] {
+            let c = parse_rgb(s).unwrap_or_else(|| panic!("실패: {s}"));
+            assert_eq!((c.r, c.g, c.b), expect, "입력: {s}");
+        }
+        // 범위 초과·개수 불일치·헥스는 None(헥스 경로로 가게).
+        assert!(parse_rgb("256,0,0").is_none());
+        assert!(parse_rgb("255,87").is_none());
+        assert!(parse_rgb("#ff5733").is_none());
     }
 
     #[test]
