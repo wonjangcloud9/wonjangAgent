@@ -1416,23 +1416,26 @@ mod friendly_error_tests {
     }
 }
 
-/// clap의 영문 인자 에러(필수값 누락·형식 오류·모르는 옵션 등)를 한국어로 출력한다.
-/// 도움말·버전(`--help`/`--version`)은 clap 기본 출력을 그대로 둔다(정상 정보).
-/// 알 수 없는 입력은 `prompt`(trailing_var_arg)로 잡혀 여기 오지 않으므로 AI 경로엔 영향 없다.
+/// 문제된 인자 이름을 짧게(영문 placeholder는 떼고). 예: "--폭 <WIDTH>" → "--폭".
+fn clap_invalid_arg_label(e: &clap::Error) -> Option<String> {
+    e.get(clap::error::ContextKind::InvalidArg).map(|v| {
+        let s = v.to_string();
+        s.split(" <").next().unwrap_or(&s).trim().to_string()
+    })
+}
+
 /// clap 에러 종류를 한국어 한 줄로(인자 부족·형식 오류·모르는 옵션 등).
 fn clap_error_headline(e: &clap::Error) -> String {
-    use clap::error::{ContextKind, ErrorKind};
+    use clap::error::ErrorKind;
     match e.kind() {
         ErrorKind::MissingRequiredArgument
         | ErrorKind::MissingSubcommand
         | ErrorKind::TooFewValues => "필요한 값이 빠졌어요".to_string(),
-        ErrorKind::InvalidValue | ErrorKind::ValueValidation => {
-            match e.get(ContextKind::InvalidArg) {
-                Some(a) => format!("값 형식이 올바르지 않아요 ({a})"),
-                None => "값 형식이 올바르지 않아요".to_string(),
-            }
-        }
-        ErrorKind::UnknownArgument | ErrorKind::NoEquals => match e.get(ContextKind::InvalidArg) {
+        ErrorKind::InvalidValue | ErrorKind::ValueValidation => match clap_invalid_arg_label(e) {
+            Some(a) => format!("값 형식이 올바르지 않아요 ({a})"),
+            None => "값 형식이 올바르지 않아요".to_string(),
+        },
+        ErrorKind::UnknownArgument | ErrorKind::NoEquals => match clap_invalid_arg_label(e) {
             Some(a) => format!("모르는 옵션이에요 ({a})"),
             None => "모르는 옵션이에요".to_string(),
         },
@@ -1444,12 +1447,41 @@ fn clap_error_headline(e: &clap::Error) -> String {
     }
 }
 
+/// clap usage 줄의 영문 정규 명령명을 한국어 별칭으로 치환한다.
+/// 예: "wonjang age <BIRTH>" → "wonjang 나이 <BIRTH>". 사용자가 친 한국어 명령과
+/// 사용법이 일치하게 만든다(placeholder `<BIRTH>`는 필드명이라 그대로 둔다).
+fn koreanize_command_names(usage: &str) -> String {
+    use clap::CommandFactory;
+    use std::collections::HashMap;
+    fn collect(cmd: &clap::Command, map: &mut HashMap<String, String>) {
+        for sub in cmd.get_subcommands() {
+            let name = sub.get_name();
+            // 정규명이 영문인 명령만, 첫 한국어 별칭으로 매핑.
+            if name.is_ascii() {
+                if let Some(kr) = sub.get_all_aliases().find(|a| !a.is_ascii()) {
+                    map.insert(name.to_string(), kr.to_string());
+                }
+            }
+            collect(sub, map);
+        }
+    }
+    let mut map = HashMap::new();
+    collect(&Cli::command(), &mut map);
+    usage
+        .split(' ')
+        .map(|tok| map.get(tok).map(String::as_str).unwrap_or(tok))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// clap의 영문 인자 에러(필수값 누락·형식 오류·모르는 옵션 등)를 한국어로 출력한다.
 fn print_korean_clap_error(e: &clap::Error) {
     use clap::error::{ContextKind, ContextValue};
     ui::error(&clap_error_headline(e));
     if let Some(ContextValue::StyledStr(usage)) = e.get(ContextKind::Usage) {
         let s = usage.to_string();
-        eprintln!("  사용법: {}", s.strip_prefix("Usage: ").unwrap_or(&s));
+        let body = s.strip_prefix("Usage: ").unwrap_or(&s);
+        eprintln!("  사용법: {}", koreanize_command_names(body));
     }
     eprintln!("  전체 기능은 → wonjang 도움");
 }
@@ -9097,7 +9129,7 @@ mod calc_guard_tests {
 
 #[cfg(test)]
 mod alias_tests {
-    use super::{clap_error_headline, Cli, Commands};
+    use super::{clap_error_headline, koreanize_command_names, Cli, Commands};
     use clap::Parser;
 
     fn cmd_of(args: &[&str]) -> Commands {
@@ -9149,6 +9181,27 @@ mod alias_tests {
             headline_of(&["wonjang", "전역", "2025-03-04", "육군"]),
             "OK"
         );
+    }
+
+    // 사용법 줄의 영문 정규 명령명이 한국어 별칭으로 바뀌어야 한다(사용자가 친 말과 일치).
+    #[test]
+    fn usage_command_names_are_koreanized() {
+        let (age, dday, mil) = std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                (
+                    koreanize_command_names("wonjang age <BIRTH>"),
+                    koreanize_command_names("wonjang dday add <LABEL> <DATE>"),
+                    koreanize_command_names("wonjang 전역 <ENLIST> [BRANCH]"),
+                )
+            })
+            .expect("스레드 생성")
+            .join()
+            .expect("치환 스레드");
+        assert_eq!(age, "wonjang 나이 <BIRTH>");
+        assert_eq!(dday, "wonjang 디데이 추가 <LABEL> <DATE>");
+        // 이미 한국어 명령명이면 그대로 둔다.
+        assert_eq!(mil, "wonjang 전역 <ENLIST> [BRANCH]");
     }
 
     // 한국인이 가장 자연스럽게 떠올리는 단어가 곧장 해당 기능으로 가야 한다.
