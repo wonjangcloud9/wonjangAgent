@@ -1416,8 +1416,65 @@ mod friendly_error_tests {
     }
 }
 
+/// clap의 영문 인자 에러(필수값 누락·형식 오류·모르는 옵션 등)를 한국어로 출력한다.
+/// 도움말·버전(`--help`/`--version`)은 clap 기본 출력을 그대로 둔다(정상 정보).
+/// 알 수 없는 입력은 `prompt`(trailing_var_arg)로 잡혀 여기 오지 않으므로 AI 경로엔 영향 없다.
+/// clap 에러 종류를 한국어 한 줄로(인자 부족·형식 오류·모르는 옵션 등).
+fn clap_error_headline(e: &clap::Error) -> String {
+    use clap::error::{ContextKind, ErrorKind};
+    match e.kind() {
+        ErrorKind::MissingRequiredArgument
+        | ErrorKind::MissingSubcommand
+        | ErrorKind::TooFewValues => "필요한 값이 빠졌어요".to_string(),
+        ErrorKind::InvalidValue | ErrorKind::ValueValidation => {
+            match e.get(ContextKind::InvalidArg) {
+                Some(a) => format!("값 형식이 올바르지 않아요 ({a})"),
+                None => "값 형식이 올바르지 않아요".to_string(),
+            }
+        }
+        ErrorKind::UnknownArgument | ErrorKind::NoEquals => match e.get(ContextKind::InvalidArg) {
+            Some(a) => format!("모르는 옵션이에요 ({a})"),
+            None => "모르는 옵션이에요".to_string(),
+        },
+        ErrorKind::TooManyValues | ErrorKind::WrongNumberOfValues => {
+            "값 개수가 맞지 않아요".to_string()
+        }
+        ErrorKind::ArgumentConflict => "함께 쓸 수 없는 옵션이에요".to_string(),
+        _ => "입력을 이해하지 못했어요".to_string(),
+    }
+}
+
+fn print_korean_clap_error(e: &clap::Error) {
+    use clap::error::{ContextKind, ContextValue};
+    ui::error(&clap_error_headline(e));
+    if let Some(ContextValue::StyledStr(usage)) = e.get(ContextKind::Usage) {
+        let s = usage.to_string();
+        eprintln!("  사용법: {}", s.strip_prefix("Usage: ").unwrap_or(&s));
+    }
+    eprintln!("  전체 기능은 → wonjang 도움");
+}
+
 async fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) => {
+            use clap::error::ErrorKind;
+            match e.kind() {
+                // 도움말·버전은 clap 기본 출력을 그대로(정상 정보, 종료코드 0).
+                ErrorKind::DisplayHelp
+                | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                | ErrorKind::DisplayVersion => {
+                    let _ = e.print();
+                    std::process::exit(0);
+                }
+                // 그 외(필수값 누락·형식 오류 등)는 한국어로.
+                _ => {
+                    print_korean_clap_error(&e);
+                    std::process::exit(2);
+                }
+            }
+        }
+    };
     let mut cfg = Config::load()?;
     if let Some(m) = &cli.model {
         cfg.model = m.clone();
@@ -9040,7 +9097,7 @@ mod calc_guard_tests {
 
 #[cfg(test)]
 mod alias_tests {
-    use super::{Cli, Commands};
+    use super::{clap_error_headline, Cli, Commands};
     use clap::Parser;
 
     fn cmd_of(args: &[&str]) -> Commands {
@@ -9059,6 +9116,39 @@ mod alias_tests {
             .expect("스레드 생성")
             .join()
             .expect("파싱 스레드")
+    }
+
+    // 인자 부족·형식 오류 시 clap의 영문 prose 대신 한국어 메시지가 나와야 한다.
+    fn headline_of(args: &[&str]) -> String {
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || match Cli::try_parse_from(&owned) {
+                Ok(_) => "OK".to_string(),
+                Err(e) => clap_error_headline(&e),
+            })
+            .expect("스레드 생성")
+            .join()
+            .expect("파싱 스레드")
+    }
+
+    #[test]
+    fn clap_user_errors_render_korean() {
+        // 필수 인자 누락(`wonjang 전역`만 입력).
+        assert_eq!(headline_of(&["wonjang", "전역"]), "필요한 값이 빠졌어요");
+        // 모르는 옵션.
+        assert!(headline_of(&["wonjang", "전역", "2025-03-04", "--엉뚱"])
+            .starts_with("모르는 옵션이에요"));
+        // 값 형식 오류(--폭에 숫자가 아닌 값).
+        assert!(
+            headline_of(&["wonjang", "전역", "2025-03-04", "육군", "--폭", "abc"])
+                .starts_with("값 형식이 올바르지 않아요")
+        );
+        // 정상 입력은 에러가 아니다.
+        assert_eq!(
+            headline_of(&["wonjang", "전역", "2025-03-04", "육군"]),
+            "OK"
+        );
     }
 
     // 한국인이 가장 자연스럽게 떠올리는 단어가 곧장 해당 기능으로 가야 한다.
