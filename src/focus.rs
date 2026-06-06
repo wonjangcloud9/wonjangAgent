@@ -41,6 +41,23 @@ pub fn today_str() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
+/// 한 번의 집중 세션 상한(분) — 길어야 하루. 그 이상은 오타로 본다.
+/// (상한이 없으면 `집중 200000000000000000`처럼 말도 안 되는 값이 누적돼 카드가 깨진다.)
+pub const MAX_SESSION_MIN: i64 = 24 * 60;
+
+/// 집중 시간(분) 유효성 검사. 통과하면 Ok, 아니면 사용자용 한국어 메시지.
+pub fn check_minutes(m: i64) -> Result<(), String> {
+    if m <= 0 {
+        return Err("집중 시간은 1분 이상이어야 합니다. 예: wonjang 집중 25 코딩".to_string());
+    }
+    if m > MAX_SESSION_MIN {
+        return Err(
+            "집중 시간이 너무 길어요(최대 24시간=1440분). 예: wonjang 집중 25 코딩".to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// 분을 "N시간 M분" 또는 "M분"으로.
 pub fn fmt_minutes(m: i64) -> String {
     if m >= 60 {
@@ -178,5 +195,17 @@ mod tests {
         assert_eq!(fmt_minutes(25), "25분");
         assert_eq!(fmt_minutes(60), "1시간");
         assert_eq!(fmt_minutes(95), "1시간 35분");
+    }
+
+    #[test]
+    fn check_minutes_rejects_absurd_and_nonpositive() {
+        assert!(check_minutes(25).is_ok());
+        assert!(check_minutes(1).is_ok());
+        assert!(check_minutes(MAX_SESSION_MIN).is_ok()); // 24시간 경계는 허용
+        assert!(check_minutes(0).is_err());
+        assert!(check_minutes(-5).is_err());
+        assert!(check_minutes(MAX_SESSION_MIN + 1).is_err());
+        // 카드를 깨뜨렸던 실제 오염 값.
+        assert!(check_minutes(200_000_000_000_000_000).is_err());
     }
 }

@@ -8002,7 +8002,10 @@ fn cmd_open(target: &str) -> Result<()> {
 fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
     let today = focus::today_str();
     match minutes {
-        Some(m) if m > 0 => {
+        Some(m) if focus::check_minutes(m).is_err() => {
+            ui::error(&focus::check_minutes(m).unwrap_err());
+        }
+        Some(m) => {
             let label = label.join(" ");
             // 세션 기록.
             let mut store = focus::FocusStore::load()?;
@@ -8031,9 +8034,6 @@ fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
                 m,
                 focus::fmt_minutes(store.today_total(&today))
             ));
-        }
-        Some(_) => {
-            ui::error("집중 시간은 1분 이상이어야 합니다. 예: wonjang 집중 25 코딩");
         }
         None => {
             let store = focus::FocusStore::load()?;
