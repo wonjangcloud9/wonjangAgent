@@ -44,6 +44,7 @@ mod expenses;
 mod focus;
 mod gateway;
 mod geeknews;
+mod gifttax;
 mod github;
 mod habits;
 mod hangul;
@@ -694,6 +695,15 @@ enum Commands {
     IncomeTax {
         /// 과세표준(소득공제 뺀 금액). 한국식 OK: 5000만 · 1.2억
         base: String,
+    },
+    /// 증여세 추정(공제+누진세율). 예: wonjang 증여세 5억 자녀
+    #[command(name = "증여세", aliases = ["증여세계산", "증여"])]
+    GiftTax {
+        /// 증여액. 한국식 OK: 5억 · 5000만 · 1.2억
+        amount: String,
+        /// 관계(배우자·자녀·미성년·부모·기타·타인, 기본 성년 자녀)
+        #[arg(default_value = "자녀")]
+        relation: String,
     },
     /// 대출 상환 계산(원리금/원금 균등). 예: wonjang 대출 30000 4.5 360
     #[command(alias = "대출")]
@@ -1703,6 +1713,7 @@ async fn run() -> Result<()> {
         }) => return cmd_military(enlist, branch, *card, *width, *no_color, *copy),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::IncomeTax { base }) => return cmd_income_tax(base),
+        Some(Commands::GiftTax { amount, relation }) => return cmd_gift_tax(amount, relation),
         Some(Commands::Loan {
             manwon,
             rate,
@@ -3061,6 +3072,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 종소세 <과세표준>",
                     "종합소득세 추정(개인사업자·누진세율)",
+                ),
+                (
+                    "wonjang 증여세 <증여액> [관계]",
+                    "증여세 추정(공제+누진+신고공제)",
                 ),
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
@@ -6583,6 +6598,38 @@ fn cmd_income_tax(base_in: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_gift_tax(amount_in: &str, relation_in: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let amount = expenses::parse_won(amount_in).map_err(|e| anyhow::anyhow!(e))?;
+    if amount <= 0 {
+        anyhow::bail!("증여액은 1원 이상이어야 해요. 예: wonjang 증여세 5억 자녀");
+    }
+    let rel = gifttax::parse_relation(relation_in).map_err(|e| anyhow::anyhow!(e))?;
+    let g = gifttax::compute(amount, rel);
+    let w = expenses::won;
+    println!();
+    println!("  🎁 증여세 추정 ({} → {})", w(amount), rel.label());
+    println!("     증여재산공제     -{}", w(g.deduction));
+    println!("     과세표준         {}", w(g.base));
+    println!("     산출세액         {}", w(g.calculated));
+    if g.filing_credit > 0 {
+        println!("     신고세액공제(3%) -{}", w(g.filing_credit));
+    }
+    println!("     ───────────────");
+    println!(
+        "     납부세액         {}",
+        w(g.payable).bright_cyan().bold()
+    );
+    println!();
+    if g.payable == 0 {
+        println!("  ✅ 공제 범위 안이라 낼 증여세가 없어요(10년 합산 기준).");
+    }
+    println!("  ※ 기본 증여 추정 · 10년 합산·세대생략 할증·재산 평가 미반영 · 현행 세율");
+    println!("     정확한 신고는 홈택스·세무사에서 확인하세요.");
+    println!();
+    Ok(())
+}
+
 fn cmd_salary(manwon: f64) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
         anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
@@ -9451,6 +9498,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "종합소득세", "1.2억"]),
             Commands::IncomeTax { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "증여세", "5억", "자녀"]),
+            Commands::GiftTax { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
