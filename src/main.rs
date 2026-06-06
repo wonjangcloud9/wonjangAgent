@@ -8568,8 +8568,8 @@ fn cmd_weather(location: &[String]) -> Result<()> {
     let w = util::run_async(async move { weather::weather(&loc).await })?;
     println!();
     println!(
-        "  ☀️ {} 날씨: {} {:.0}°C (체감 {:.0}°C)",
-        w.place, w.desc, w.temp, w.feels
+        "  {} {} 날씨: {} {:.0}°C (체감 {:.0}°C)",
+        w.icon, w.place, w.desc, w.temp, w.feels
     );
     println!(
         "     습도 {}% · 강수 {}mm · 오늘 {:.0}~{:.0}°C",

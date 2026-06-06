@@ -12,6 +12,7 @@ pub struct Weather {
     pub feels: f64,
     pub humidity: i64,
     pub desc: String,
+    pub icon: String,
     pub today_min: f64,
     pub today_max: f64,
     pub precip: f64,
@@ -30,6 +31,8 @@ struct Current {
     apparent_temperature: f64,
     weather_code: i64,
     precipitation: f64,
+    #[serde(default)]
+    is_day: i64,
 }
 
 #[derive(Deserialize)]
@@ -58,7 +61,7 @@ pub async fn weather(location: &str) -> Result<Weather> {
 
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
-         &current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,precipitation\
+         &current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,precipitation,is_day\
          &daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FSeoul&forecast_days=1"
     );
     let http = client()?;
@@ -77,6 +80,7 @@ pub async fn weather(location: &str) -> Result<Weather> {
         feels: f.current.apparent_temperature,
         humidity: f.current.relative_humidity_2m,
         desc: wmo_desc(f.current.weather_code).to_string(),
+        icon: wmo_emoji(f.current.weather_code, f.current.is_day == 1).to_string(),
         today_min: f.daily.temperature_2m_min.first().copied().unwrap_or(0.0),
         today_max: f.daily.temperature_2m_max.first().copied().unwrap_or(0.0),
         precip: f.current.precipitation,
@@ -176,6 +180,34 @@ fn wmo_desc(code: i64) -> &'static str {
     }
 }
 
+/// WMO 날씨 코드 → 이모지(상태에 맞게, 맑음·약한구름은 주야 반영).
+fn wmo_emoji(code: i64, is_day: bool) -> &'static str {
+    match code {
+        0 => {
+            if is_day {
+                "☀️"
+            } else {
+                "🌙"
+            }
+        }
+        1 => {
+            if is_day {
+                "🌤️"
+            } else {
+                "🌙"
+            }
+        }
+        2 => "⛅",
+        3 => "☁️",
+        45 | 48 => "🌫️",
+        51 | 53 | 55 | 56 | 57 => "🌦️",
+        61 | 63 | 65 | 66 | 67 | 80 | 81 | 82 => "🌧️",
+        71 | 73 | 75 | 77 | 85 | 86 => "🌨️",
+        95 | 96 | 99 => "⛈️",
+        _ => "🌡️",
+    }
+}
+
 fn encode(s: &str) -> String {
     let mut out = String::new();
     for &b in s.as_bytes() {
@@ -205,6 +237,20 @@ mod tests {
         assert_eq!(wmo_desc(0), "맑음");
         assert_eq!(wmo_desc(61), "비");
         assert_eq!(wmo_desc(71), "눈");
+    }
+
+    #[test]
+    fn wmo_emoji_matches_condition() {
+        // 상태에 맞는 이모지(비/눈/흐림이 ☀️로 안 나와야).
+        assert_eq!(wmo_emoji(0, true), "☀️"); // 맑음 낮
+        assert_eq!(wmo_emoji(0, false), "🌙"); // 맑음 밤
+        assert_eq!(wmo_emoji(3, true), "☁️"); // 흐림
+        assert_eq!(wmo_emoji(61, true), "🌧️"); // 비
+        assert_eq!(wmo_emoji(71, true), "🌨️"); // 눈
+        assert_eq!(wmo_emoji(95, true), "⛈️"); // 뇌우
+                                               // 비/눈은 낮밤 무관하게 ☀️가 아님.
+        assert_ne!(wmo_emoji(61, true), "☀️");
+        assert_ne!(wmo_emoji(3, false), "☀️");
     }
 
     #[tokio::test]
