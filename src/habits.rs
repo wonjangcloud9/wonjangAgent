@@ -205,6 +205,28 @@ impl HabitStore {
             Ok(None)
         }
     }
+
+    /// 특정 날짜의 완료 기록을 지운다(실수로 체크한 것 되돌리기 — un-check).
+    /// 반환 `(이름, 지웠는지, 오늘기준 streak)`. 습관 자체를 찾지 못하면 None.
+    pub fn uncheck_on(&mut self, key: &str, date_s: &str) -> Result<Option<(String, bool, i64)>> {
+        let by_id: Option<u64> = key.parse().ok();
+        let found = self
+            .items
+            .iter_mut()
+            .find(|h| Some(h.id) == by_id || h.name == key);
+        if let Some(h) = found {
+            let before = h.dates.len();
+            h.dates.retain(|d| d != date_s);
+            let removed = h.dates.len() != before;
+            let result = (h.name.clone(), removed, h.streak(today()));
+            if removed {
+                self.save()?;
+            }
+            Ok(Some(result))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 /// 연속 일수가 기념할 만한 고비면 축하용 라벨을 돌려준다(자랑 카드 공유 유도 트리거).
@@ -292,6 +314,24 @@ mod tests {
         // 어제를 백필 → 04·05·06 연속 = 3일(억울하게 끊긴 streak 복구).
         s.items[0].dates.push("2026-06-05".into());
         assert_eq!(streak(&s.items[0].date_set(), today), 3);
+    }
+
+    #[test]
+    fn uncheck_removes_date_keeps_others() {
+        // uncheck_on의 핵심(retain) 로직 — 저장 없이 검증(디스크 부작용 방지).
+        let today = NaiveDate::from_ymd_opt(2026, 6, 6).unwrap();
+        let mut h = Habit {
+            id: 1,
+            name: "운동".into(),
+            dates: vec!["2026-06-05".into(), "2026-06-06".into()],
+        };
+        let before = h.dates.len();
+        h.dates.retain(|d| d != "2026-06-06"); // 오늘 취소
+        assert_eq!(h.dates.len(), before - 1);
+        assert!(!h.dates.iter().any(|d| d == "2026-06-06"));
+        assert!(h.dates.iter().any(|d| d == "2026-06-05")); // 다른 날은 유지
+        // 오늘 취소 후에도 어제(06-05)가 남아 '어제까지 연속'은 살아있다(=1).
+        assert_eq!(streak(&h.date_set(), today), 1);
     }
 
     #[test]

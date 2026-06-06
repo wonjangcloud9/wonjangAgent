@@ -1138,7 +1138,15 @@ enum HabitAction {
         /// 날짜(생략 시 오늘). '어제'·'그제' 또는 YYYY-MM-DD로 메우기
         when: Option<String>,
     },
-    /// id로 습관 삭제.
+    /// 완료 취소(실수로 체크한 것 되돌리기). 예: wonjang 습관 취소 운동 (어제도 OK)
+    #[command(name = "취소", aliases = ["완료취소", "uncheck"])]
+    Uncheck {
+        /// 습관 이름 또는 id
+        habit: String,
+        /// 날짜(생략 시 오늘). '어제'·'그제' 또는 YYYY-MM-DD
+        when: Option<String>,
+    },
+    /// id로 습관 삭제(습관 자체를 없앰).
     #[command(alias = "삭제")]
     Remove {
         /// 삭제할 습관 id
@@ -7778,6 +7786,31 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
                             "wonjang 자랑 --복사".bright_cyan()
                         );
                     }
+                }
+                None => ui::error(&format!("'{habit}' 습관을 찾을 수 없습니다.")),
+            }
+        }
+        Some(HabitAction::Uncheck { habit, when }) => {
+            let today = habits::today();
+            let date = parse_habit_when(when.as_deref(), today)?;
+            let date_s = date.format("%Y-%m-%d").to_string();
+            let day_label = if date == today {
+                "오늘".to_string()
+            } else {
+                format!(
+                    "{}월 {}일",
+                    chrono::Datelike::month(&date),
+                    chrono::Datelike::day(&date)
+                )
+            };
+            match store.uncheck_on(habit, &date_s)? {
+                Some((name, true, streak)) => {
+                    ui::note(&format!(
+                        "'{name}' {day_label} 완료를 취소했어요 (🔥 {streak}일 연속)"
+                    ));
+                }
+                Some((name, false, _)) => {
+                    ui::info(&format!("'{name}' {day_label}엔 완료 기록이 없었어요."));
                 }
                 None => ui::error(&format!("'{habit}' 습관을 찾을 수 없습니다.")),
             }
