@@ -7413,7 +7413,7 @@ fn cmd_color(input: &[String]) -> Result<()> {
     use owo_colors::OwoColorize;
     if input.is_empty() {
         println!();
-        println!("  색을 입력하세요. 예: wonjang 색 #ff5733  또는  wonjang 색 255 87 51");
+        println!("  색을 입력하세요. 예: wonjang 색 #ff5733  ·  255 87 51  ·  \"rgb(255,87,51)\"");
         println!();
         return Ok(());
     }
