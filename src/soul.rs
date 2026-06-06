@@ -153,6 +153,40 @@ pub fn mark_chosen() {
     }
 }
 
+/// 명령을 실행하기 직전 원장이 자기 말투로 던지는 한마디(성격별). `seed`(입력 텍스트)로
+/// 결정론적으로 한 줄 고른다 — 같은 입력엔 같은 반응, 입력마다 다양하게. 키·LLM 불필요.
+pub fn ack(key: &str, seed: &str) -> &'static str {
+    let lines: &[&str] = match key {
+        "친구" => &[
+            "오케이, 바로 해줄게 👌",
+            "그거 내가 해줄게",
+            "야 잠깐, 본다",
+            "ㅇㅋ 가자 🙌",
+        ],
+        "집사" => &[
+            "분부대로 하겠습니다.",
+            "바로 처리하겠습니다, 주인님.",
+            "잠시만 기다려 주십시오.",
+            "명 받들겠습니다.",
+        ],
+        "선배" => &["어, 해줄게.", "본다.", "잠깐.", "그래, 보자."],
+        "발랄" => &[
+            "네!! 바로 갈게요~ ✨",
+            "맡겨주세요! 💪",
+            "오케이! 🙌",
+            "좋아요! 바로요! 🌟",
+        ],
+        _ => &[
+            "네, 바로 볼게요 😊",
+            "잠깐만요, 처리할게요",
+            "네, 도와드릴게요",
+            "확인할게요!",
+        ],
+    };
+    let idx = seed.bytes().map(|b| b as usize).sum::<usize>() % lines.len();
+    lines[idx]
+}
+
 /// 선택 메뉴 입력("" 또는 "1".."N")을 프리셋 인덱스로. 빈 값·범위 밖·숫자 아님은 기본(0).
 pub fn resolve_choice(input: &str) -> usize {
     let t = input.trim();
@@ -201,6 +235,19 @@ mod tests {
         assert_eq!(resolve_choice("99"), 0); // 범위 밖 = 기본
         assert_eq!(resolve_choice("abc"), 0); // 숫자 아님 = 기본
         assert_eq!(resolve_choice("  3  "), 2); // 공백 허용
+    }
+
+    #[test]
+    fn ack_is_deterministic_and_per_persona() {
+        // 같은 입력 → 같은 반응(결정론).
+        assert_eq!(ack("친구", "연봉 3600"), ack("친구", "연봉 3600"));
+        // 모든 프리셋이 비지 않은 반응.
+        for (k, _, _) in PRESETS {
+            assert!(!ack(k, "자랑").is_empty());
+        }
+        // 성격마다 말투가 다르다(라인 집합이 겹치지 않음).
+        assert_ne!(ack("친구", "자랑"), ack("집사", "자랑"));
+        assert_ne!(ack("선배", "자랑"), ack("발랄", "자랑"));
     }
 
     #[test]

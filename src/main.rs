@@ -2134,6 +2134,7 @@ async fn repl_local_only(_cfg: &Config) -> Result<()> {
         // 로컬 명령이면 직접 실행(슬래시 접두사는 떼고).
         let cmd_text = input.strip_prefix('/').unwrap_or(input);
         if let Some(args) = parse_as_local_command(cmd_text) {
+            wonjang_say(soul::ack(soul::active_preset_key(), cmd_text));
             run_self_command(&args);
             continue;
         }
@@ -2242,6 +2243,7 @@ async fn repl(
         if slashed.is_some() || !eng.backend_ready() {
             let cmd_text = slashed.unwrap_or(input);
             if let Some(args) = parse_as_local_command(cmd_text) {
+                wonjang_say(soul::ack(soul::active_preset_key(), cmd_text));
                 run_self_command(&args);
                 continue;
             }
@@ -4174,6 +4176,19 @@ fn cmd_merge_tables(files: &[String], save: Option<&str>, source: bool) -> Resul
     }
     println!();
     Ok(())
+}
+
+/// 원장이 자기 말투로 한마디 — 명령 실행 직전 대화형에서 캐릭터 존재감을 준다.
+/// 형식: `{얼굴} 원장 ▸ {말}`. 고른 성격(SOUL.md)을 모든 명령 출력 앞에 입힌다.
+fn wonjang_say(line: &str) {
+    use owo_colors::OwoColorize;
+    let key = soul::active_preset_key();
+    println!(
+        "  {} {} {}",
+        soul::face(key),
+        "원장 ▸".bright_cyan().bold(),
+        line
+    );
 }
 
 /// 첫 실행·`성격`(인자 없이) 시 캐릭터를 고르는 대화형 선택. 각 원장이 자기 목소리로
