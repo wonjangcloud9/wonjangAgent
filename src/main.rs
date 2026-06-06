@@ -1595,8 +1595,18 @@ async fn run() -> Result<()> {
     }
 
     // 백엔드 결정: API 키가 있으면 api, 없으면 Claude Code/Codex CLI 자동 연결.
-    // (연결 정보는 REPL 배너 / 단발 위임 시점에 표시되므로 여기선 생략)
-    let backend = engine::resolve(&cfg)?;
+    // 백엔드가 없어도, 자연어 입력이 없는 '대화형 진입'이면 로컬 명령 전용 모드로 들어간다
+    // — LLM 없이 설치한 사용자도 자랑·가계부·계산기를 대화형에서 바로 쓰게 한다.
+    // (단발 자연어·프리셋·--continue처럼 LLM이 꼭 필요한 경우엔 기존대로 안내 후 종료)
+    let backend = match engine::resolve(&cfg) {
+        Ok(b) => b,
+        Err(e) => {
+            if cli.command.is_none() && cli.prompt.is_empty() && !cli.continue_session {
+                return repl_local_only(&cfg).await;
+            }
+            return Err(e);
+        }
+    };
     let eng = build_engine(backend, &cfg);
 
     let ctx = ToolContext {
@@ -1713,6 +1723,170 @@ fn build_engine(backend: engine::Backend, cfg: &Config) -> Engine {
 }
 
 /// 대화형 모드.
+/// 대화형 입력을 따옴표 인식해 토큰으로 나눈다. 따옴표가 안 닫히면 None(자연어로 간주).
+fn tokenize_input(s: &str) -> Option<Vec<String>> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut in_quote = false;
+    let mut has = false;
+    for c in s.chars() {
+        match c {
+            '"' => {
+                in_quote = !in_quote;
+                has = true;
+            }
+            c if c.is_whitespace() && !in_quote => {
+                if has {
+                    tokens.push(std::mem::take(&mut cur));
+                    has = false;
+                }
+            }
+            c => {
+                cur.push(c);
+                has = true;
+            }
+        }
+    }
+    if in_quote {
+        return None;
+    }
+    if has {
+        tokens.push(cur);
+    }
+    (!tokens.is_empty()).then_some(tokens)
+}
+
+/// 입력이 로컬 CLI 명령으로 파싱되면 그 인자들을 돌려준다(자연어면 None).
+/// clap 파싱은 서브커맨드가 많아 스택을 크게 쓰므로 넉넉한 스택의 스레드에서 수행한다.
+fn parse_as_local_command(input: &str) -> Option<Vec<String>> {
+    let mut tokens = tokenize_input(input)?;
+    // 온보딩 예시를 그대로 복붙해도 되게 선행 'wonjang'/'원장' 토큰은 떼어낸다.
+    if matches!(tokens.first().map(String::as_str), Some("wonjang" | "원장")) {
+        tokens.remove(0);
+    }
+    if tokens.is_empty() {
+        return None;
+    }
+    let toks = tokens.clone();
+    let is_local = std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let mut argv = vec!["wonjang".to_string()];
+            argv.extend(toks);
+            matches!(Cli::try_parse_from(&argv), Ok(c) if c.command.is_some())
+        })
+        .ok()?
+        .join()
+        .ok()?;
+    is_local.then_some(tokens)
+}
+
+/// 같은 바이너리를 서브프로세스로 재실행해 로컬 명령을 처리한다(stdio 상속).
+fn run_self_command(args: &[String]) {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            let _ = std::process::Command::new(exe).args(args).status();
+        }
+        Err(e) => ui::error(&format!("명령을 실행할 수 없어요: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod repl_local_tests {
+    use super::{parse_as_local_command, tokenize_input};
+
+    #[test]
+    fn tokenize_respects_quotes() {
+        assert_eq!(tokenize_input("자랑").unwrap(), vec!["자랑"]);
+        assert_eq!(
+            tokenize_input("지출 추가 5만 \"점심 식사\"").unwrap(),
+            vec!["지출", "추가", "5만", "점심 식사"]
+        );
+        assert_eq!(tokenize_input("   ").or(None), None);
+        assert_eq!(tokenize_input("\"안 닫힘"), None); // 따옴표 안 닫힘 → 자연어
+    }
+
+    #[test]
+    fn local_commands_recognized_natural_language_not() {
+        // 로컬 명령 → Some(인자).
+        assert!(parse_as_local_command("자랑").is_some());
+        assert!(parse_as_local_command("디데이 추가 수능 2026-11-19").is_some());
+        assert!(parse_as_local_command("지출 추가 5만 식비").is_some());
+        // 온보딩 예시 그대로(선행 wonjang) 복붙해도 동작 — wonjang은 떼고 인자 반환.
+        assert_eq!(
+            parse_as_local_command("wonjang 습관 추가 운동").unwrap(),
+            vec!["습관", "추가", "운동"]
+        );
+        // 자연어(에이전트 위임 대상) → None.
+        assert!(parse_as_local_command("오늘 날씨 어때").is_none());
+        assert!(parse_as_local_command("이 폴더 정리해줘").is_none());
+        assert!(parse_as_local_command("디데이가 뭐야?").is_none()); // 조사 붙으면 명령 아님
+    }
+}
+
+/// 백엔드(LLM) 없이 진입하는 대화형 모드 — 로컬 명령만 직접 실행한다.
+/// LLM 없이 설치한 사용자도 '자랑'·'가계부'·계산기를 대화형에서 바로 쓰게 한다.
+/// 자연어(에이전트) 입력만 백엔드 연결을 안내한다.
+async fn repl_local_only(_cfg: &Config) -> Result<()> {
+    ui::banner("Claude Code", false); // 백엔드 연결 전(정직한 안내) 배너
+    ui::onboarding_if_first();
+    loop {
+        print!("{}", ui::prompt());
+        io::stdout().flush()?;
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line)? == 0 {
+            println!();
+            ui::info("안녕히 가세요. 👋");
+            break;
+        }
+        let input = line.trim();
+        if input.is_empty() {
+            continue;
+        }
+        match input {
+            "/exit" | "/quit" | "/종료" => {
+                ui::info("안녕히 가세요. 👋");
+                break;
+            }
+            "/help" | "/도움말" => {
+                print_help();
+                continue;
+            }
+            s if s.starts_with("/성격") => {
+                let arg = s["/성격".len()..].trim();
+                if arg.is_empty() {
+                    ui::info("바꾸기: /성격 친구|집사|선배|발랄|기본");
+                } else {
+                    let res = if arg == "초기화" || arg == "기본" {
+                        soul::reset()
+                    } else {
+                        soul::set_preset(arg)
+                    };
+                    match res {
+                        Ok(()) => ui::info(&format!("이제부터 '{arg}' 성격으로 말할게요. 🎭")),
+                        Err(e) => ui::error(&format!("{e}")),
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+        // 로컬 명령이면 직접 실행(슬래시 접두사는 떼고).
+        let cmd_text = input.strip_prefix('/').unwrap_or(input);
+        if let Some(args) = parse_as_local_command(cmd_text) {
+            run_self_command(&args);
+            continue;
+        }
+        // 자연어 — 백엔드(LLM)가 필요하다고 친절히 안내(에러로 끊지 않음).
+        ui::info("자연어 명령은 백엔드(LLM)가 필요해요. 지금은 로컬 명령을 바로 쓸 수 있어요:");
+        ui::info(
+            "  예) 자랑 · 가계부 · 지출 추가 5만 식비 · 디데이 추가 수능 2026-11-19 · 대출 30000 4.5 360  (전체: 도움)",
+        );
+        ui::info("  자연어까지 쓰려면 Claude Code(claude) 설치·로그인 또는 API 키를 설정하세요.");
+    }
+    Ok(())
+}
+
 async fn repl(
     eng: &Engine,
     cfg: &Config,
@@ -1792,6 +1966,20 @@ async fn repl(
                 continue;
             }
             _ => {}
+        }
+
+        // 로컬 명령 직접 실행:
+        //  ① 슬래시로 명시(/자랑·/디데이 …)하면 백엔드 유무와 무관하게 로컬로,
+        //  ② 백엔드(LLM)가 없으면 평문도 로컬 명령이면 로컬로(LLM 없이 설치한
+        //     사용자가 대화형에서 '자랑'·'지출 추가 5만 식비'를 바로 쓰게).
+        // LLM이 연결된 사용자의 평문은 그대로 에이전트로 보낸다(회귀 없음).
+        let slashed = input.strip_prefix('/');
+        if slashed.is_some() || !eng.backend_ready() {
+            let cmd_text = slashed.unwrap_or(input);
+            if let Some(args) = parse_as_local_command(cmd_text) {
+                run_self_command(&args);
+                continue;
+            }
         }
 
         messages.push(Message::user(input.to_string()));
