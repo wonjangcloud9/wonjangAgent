@@ -4211,11 +4211,13 @@ fn persona_picker() -> Result<()> {
             format!("— \"{}\"", soul::voice_sample(key)).dimmed()
         );
     }
-    println!();
-    print!(
-        "   {}",
-        format!("번호 (1-{}, 엔터=기본): ", soul::PRESETS.len()).bold()
+    let custom_n = soul::PRESETS.len() + 1;
+    println!(
+        "   {} ✏️  나만의 원장 직접 만들기",
+        format!("{})", custom_n).bright_cyan().bold()
     );
+    println!();
+    print!("   {}", format!("번호 (1-{custom_n}, 엔터=기본): ").bold());
     io::stdout().flush()?;
     let mut line = String::new();
     if io::stdin().read_line(&mut line)? == 0 {
@@ -4227,6 +4229,9 @@ fn persona_picker() -> Result<()> {
         );
         println!();
         return Ok(());
+    }
+    if line.trim() == custom_n.to_string() {
+        return persona_creator();
     }
     let (key, label, _) = soul::PRESETS[soul::resolve_choice(&line)];
     soul::set_preset(key)?;
@@ -4250,9 +4255,52 @@ fn persona_picker() -> Result<()> {
     Ok(())
 }
 
+/// 나만의 원장 만들기 — 한 줄 묘사 + 말투로 커스텀 페르소나를 조립해 SOUL.md에 저장.
+/// EOF·빈 입력이면 만들지 않고 안내만(스크립트·파이프 안전).
+fn persona_creator() -> Result<()> {
+    use owo_colors::OwoColorize;
+    println!();
+    println!("  ✏️ {}", "나만의 원장 만들기".bold());
+    println!(
+        "     {}",
+        "원장을 한 줄로 묘사해 주세요 (예: 나를 '형'이라 부르고 차분하게 코딩을 돕는 비서)"
+            .dimmed()
+    );
+    print!("  묘사 ▸ ");
+    io::stdout().flush()?;
+    let mut desc = String::new();
+    if io::stdin().read_line(&mut desc)? == 0 || desc.trim().is_empty() {
+        println!();
+        ui::info("설명이 없어 성격은 그대로 둘게요. (다시: wonjang 성격 만들기)");
+        println!();
+        return Ok(());
+    }
+    print!("  말투 (1 존댓말 / 2 반말, 엔터=존댓말) ▸ ");
+    io::stdout().flush()?;
+    let mut tone = String::new();
+    io::stdin().read_line(&mut tone)?;
+    let formal = tone.trim() != "2";
+    let body = soul::build_custom_persona(desc.trim(), formal);
+    soul::save_persona(&body)?;
+    soul::mark_chosen();
+    println!();
+    println!(
+        "  ✅ {} 나만의 원장이 완성됐어요!",
+        "좋아요!".green().bold()
+    );
+    println!("     🌟 {}", desc.trim().bold());
+    println!(
+        "     {}",
+        "(다시 만들기: wonjang 성격 만들기 · 되돌리기: wonjang 성격 초기화)".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
 fn cmd_soul(preset: Option<&str>) -> Result<()> {
     use owo_colors::OwoColorize;
     match preset {
+        Some("만들기") | Some("직접") | Some("커스텀") => return persona_creator(),
         Some("초기화") | Some("기본값") => {
             soul::reset()?;
             println!();

@@ -117,8 +117,30 @@ pub fn face(key: &str) -> &'static str {
         "집사" => "🎩",
         "선배" => "😏",
         "발랄" => "✨",
+        "나만의" => "🌟",
         _ => "🌙",
     }
+}
+
+/// 사용자가 한 줄로 묘사한 캐릭터를 페르소나 본문으로 조립한다(직접 만들기).
+/// 키·LLM 없이 결정론적으로 만들어, SOUL.md에 저장하면 '나만의' 원장이 된다.
+pub fn build_custom_persona(desc: &str, formal: bool) -> String {
+    let tone = if formal {
+        "존댓말로 정중하되 딱딱하지 않게"
+    } else {
+        "반말로 편하게"
+    };
+    format!(
+        "당신은 '원장'입니다. {}. 항상 한국어로, {} 말하며 사용자를 든든하게 먼저 챙깁니다.",
+        desc.trim().trim_end_matches(['.', '。']),
+        tone
+    )
+}
+
+/// 임의의 페르소나 본문을 SOUL.md에 저장한다(직접 만들기·외부 편집 결과 저장용).
+pub fn save_persona(body: &str) -> Result<()> {
+    std::fs::write(soul_path()?, body.trim())?;
+    Ok(())
 }
 
 /// 프리셋별 자기소개 한마디 — 고를 때 미리듣기 + 고른 뒤 첫 인사로 쓴다.
@@ -235,6 +257,18 @@ mod tests {
         assert_eq!(resolve_choice("99"), 0); // 범위 밖 = 기본
         assert_eq!(resolve_choice("abc"), 0); // 숫자 아님 = 기본
         assert_eq!(resolve_choice("  3  "), 2); // 공백 허용
+    }
+
+    #[test]
+    fn build_custom_persona_includes_desc_and_tone() {
+        let formal = build_custom_persona("나를 '대표님'이라 부르는 비서", true);
+        assert!(formal.contains("원장"));
+        assert!(formal.contains("대표님"));
+        assert!(formal.contains("존댓말"));
+        let casual = build_custom_persona("나를 형이라 부르는 차분한 친구.", false);
+        assert!(casual.contains("반말"));
+        // 끝의 마침표는 정리된다(중복 방지).
+        assert!(!casual.contains("친구.."));
     }
 
     #[test]
