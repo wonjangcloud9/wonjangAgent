@@ -39,9 +39,9 @@ pub fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
-/// 날짜 문자열을 파싱(YYYY-MM-DD).
+/// 날짜 문자열을 파싱(YYYY-MM-DD). 흔한 한국식 표기(`.`·`/`·8자리)도 허용.
 pub fn parse_date(s: &str) -> Result<NaiveDate> {
-    NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+    NaiveDate::parse_from_str(&crate::datecalc::normalize_date(s), "%Y-%m-%d")
         .with_context(|| format!("날짜 형식이 올바르지 않습니다(YYYY-MM-DD): '{s}'"))
 }
 
@@ -217,8 +217,26 @@ mod tests {
     #[test]
     fn parse_validates() {
         assert!(parse_date("2026-12-25").is_ok());
-        assert!(parse_date("2026/12/25").is_err());
+        // 흔한 한국식 표기도 허용(정규화).
+        assert_eq!(
+            parse_date("2026.12.25").unwrap(),
+            parse_date("2026-12-25").unwrap()
+        );
+        assert_eq!(
+            parse_date("2026/12/25").unwrap(),
+            parse_date("2026-12-25").unwrap()
+        );
+        assert_eq!(
+            parse_date("20261225").unwrap(),
+            parse_date("2026-12-25").unwrap()
+        );
+        assert_eq!(
+            parse_date("2026. 12. 25.").unwrap(),
+            parse_date("2026-12-25").unwrap()
+        );
+        // 진짜 엉뚱한 입력은 여전히 에러.
         assert!(parse_date("아무거나").is_err());
+        assert!(parse_date("2026-13-40").is_err());
     }
 
     #[test]

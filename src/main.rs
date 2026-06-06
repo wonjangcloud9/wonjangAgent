@@ -6375,7 +6375,7 @@ fn cmd_anniversary(
         "원장 기념일",
         &format!("💕 {name}"),
         &format!("{}일째", s.nth_day),
-        &format!("📅 {date}부터"),
+        &format!("📅 {}부터", start.format("%Y-%m-%d")),
         &comment,
         width,
     );
@@ -7611,9 +7611,11 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
     match action {
         Some(DdayAction::Add { label, date }) => {
             let id = store.add(label, date)?;
-            let days = ddays::days_until(ddays::parse_date(date)?, ddays::today());
+            let parsed = ddays::parse_date(date)?;
+            let days = ddays::days_until(parsed, ddays::today());
             ui::note(&format!(
-                "디데이 #{id} 등록: {label} ({date}, {})",
+                "디데이 #{id} 등록: {label} ({}, {})",
+                parsed.format("%Y-%m-%d"),
                 ddays::dday_label(days)
             ));
         }

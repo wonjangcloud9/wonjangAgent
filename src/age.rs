@@ -7,9 +7,9 @@
 use anyhow::{anyhow, Result};
 use chrono::{Datelike, NaiveDate};
 
-/// `YYYY-MM-DD` 형식의 생일 문자열을 파싱한다.
+/// `YYYY-MM-DD` 형식의 생일 문자열을 파싱한다(흔한 한국식 표기 `.`·`/`·8자리도 허용).
 pub fn parse_birth(s: &str) -> Result<NaiveDate> {
-    NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+    NaiveDate::parse_from_str(&crate::datecalc::normalize_date(s), "%Y-%m-%d")
         .map_err(|_| anyhow!("생일은 YYYY-MM-DD 형식으로 입력하세요 (예: 1990-03-15)"))
 }
 

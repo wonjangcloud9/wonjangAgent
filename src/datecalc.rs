@@ -6,9 +6,36 @@
 use anyhow::{anyhow, Result};
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 
-/// `YYYY-MM-DD` 문자열을 파싱한다.
+/// 한국인이 흔히 쓰는 날짜 표기를 표준 `YYYY-MM-DD`로 정규화한다.
+/// `2026.11.19`·`2026/11/19`·`2026. 11. 19.`·`20261119`·`2026.1.5`를 모두 받는다.
+/// 정규화할 수 없으면 트림한 원본을 그대로 돌려준다(기존 파싱 에러 메시지 유지).
+pub fn normalize_date(s: &str) -> String {
+    let t = s.trim().trim_end_matches('.').trim();
+    // 구분자 없는 8자리(YYYYMMDD).
+    if t.len() == 8 && t.bytes().all(|b| b.is_ascii_digit()) {
+        return format!("{}-{}-{}", &t[0..4], &t[4..6], &t[6..8]);
+    }
+    // ./공백을 -로 통일한 뒤 세 토막(연-월-일)이면 0을 채워 표준형으로.
+    let unified: String = t
+        .chars()
+        .map(|c| if matches!(c, '.' | '/' | ' ') { '-' } else { c })
+        .collect();
+    let parts: Vec<&str> = unified.split('-').filter(|p| !p.is_empty()).collect();
+    if parts.len() == 3 {
+        if let (Ok(y), Ok(m), Ok(d)) = (
+            parts[0].parse::<i32>(),
+            parts[1].parse::<u32>(),
+            parts[2].parse::<u32>(),
+        ) {
+            return format!("{y:04}-{m:02}-{d:02}");
+        }
+    }
+    t.to_string()
+}
+
+/// `YYYY-MM-DD` 문자열을 파싱한다(흔한 한국식 표기 `.`·`/`·8자리도 허용).
 pub fn parse(s: &str) -> Result<NaiveDate> {
-    NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+    NaiveDate::parse_from_str(&normalize_date(s), "%Y-%m-%d")
         .map_err(|_| anyhow!("날짜는 YYYY-MM-DD 형식으로 입력하세요 (예: 2026-01-01)"))
 }
 
@@ -89,6 +116,25 @@ mod tests {
     fn diff_counts_days() {
         assert_eq!(days_between(d(2026, 1, 1), d(2026, 12, 31)), 364);
         assert_eq!(days_between(d(2026, 1, 1), d(2025, 12, 31)), -1);
+    }
+
+    #[test]
+    fn normalize_accepts_common_korean_formats() {
+        for s in [
+            "2026-11-19",
+            "2026.11.19",
+            "2026/11/19",
+            "2026. 11. 19.",
+            "20261119",
+            " 2026.11.19 ",
+        ] {
+            assert_eq!(normalize_date(s), "2026-11-19", "입력: {s:?}");
+        }
+        // 한 자리 월/일도 0 채움.
+        assert_eq!(normalize_date("2026.1.5"), "2026-01-05");
+        // 정규화 불가는 트림한 원본 그대로(다운스트림 에러 유지).
+        assert_eq!(normalize_date("아무거나"), "아무거나");
+        assert_eq!(normalize_date("  11/19  "), "11/19"); // 토막 2개 → 트림 원본 그대로(파싱 실패 유도)
     }
 
     #[test]
