@@ -8134,9 +8134,11 @@ fn cmd_dday(action: &Option<DdayAction>) -> Result<()> {
             let eff = ddays::effective_date(ddays::parse_date(date)?, *annual, today);
             let days = ddays::days_until(eff, today);
             let tag = if *annual { " 🔁매년" } else { "" };
+            // 요일까지 보여준다(목록·카드와 일관 — '무슨 요일?'이 계획에 바로 도움).
             ui::note(&format!(
-                "디데이 #{id} 등록: {label}{tag} ({}, {})",
+                "디데이 #{id} 등록: {label}{tag} ({} {}, {})",
                 eff.format("%Y-%m-%d"),
+                datecalc::weekday_kr(eff),
                 ddays::dday_label(days)
             ));
         }
