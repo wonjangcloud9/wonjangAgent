@@ -1,7 +1,10 @@
 # 원장 에이전트 (wonjangAgent)
 
-[![CI](https://github.com/wonjangcloud9/wonjangAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/wonjangcloud9/wonjangAgent/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/wonjang-agent.svg)](https://www.npmjs.com/package/wonjang-agent)
+[![다운로드](https://img.shields.io/npm/dm/wonjang-agent.svg)](https://www.npmjs.com/package/wonjang-agent)
+[![스타](https://img.shields.io/github/stars/wonjangcloud9/wonjangAgent?style=social)](https://github.com/wonjangcloud9/wonjangAgent/stargazers)
+[![CI](https://github.com/wonjangcloud9/wonjangAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/wonjangcloud9/wonjangAgent/actions/workflows/ci.yml)
+[![라이선스](https://img.shields.io/github/license/wonjangcloud9/wonjangAgent)](LICENSE)
 
 > 로컬 환경을 다루는 **한국어 우선** 자율 AI 에이전트 — Rust로 작성.
 

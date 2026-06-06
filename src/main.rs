@@ -49,6 +49,7 @@ mod habits;
 mod hangul;
 mod hash;
 mod holidays;
+mod incometax;
 mod jeonse;
 mod journal;
 mod jsontool;
@@ -687,6 +688,12 @@ enum Commands {
     Salary {
         /// 연봉(만 원 단위). 예: 3600 = 3,600만 원
         manwon: f64,
+    },
+    /// 종합소득세 추정(개인사업자·프리랜서, 누진세율). 예: wonjang 종소세 5000만
+    #[command(name = "종소세", aliases = ["종합소득세", "사업소득세", "소득세계산"])]
+    IncomeTax {
+        /// 과세표준(소득공제 뺀 금액). 한국식 OK: 5000만 · 1.2억
+        base: String,
     },
     /// 대출 상환 계산(원리금/원금 균등). 예: wonjang 대출 30000 4.5 360
     #[command(alias = "대출")]
@@ -1695,6 +1702,7 @@ async fn run() -> Result<()> {
             copy,
         }) => return cmd_military(enlist, branch, *card, *width, *no_color, *copy),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
+        Some(Commands::IncomeTax { base }) => return cmd_income_tax(base),
         Some(Commands::Loan {
             manwon,
             rate,
@@ -2118,7 +2126,7 @@ fn ensure_utf8_input() {}
 async fn repl_local_only(_cfg: &Config) -> Result<()> {
     use std::io::IsTerminal;
     ensure_utf8_input(); // 한글 백스페이스 글자 단위 보정
-    // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
+                         // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
     if io::stdin().is_terminal() && !soul::is_chosen() {
         persona_picker()?;
     }
@@ -2183,7 +2191,7 @@ async fn repl(
 ) -> Result<()> {
     use std::io::IsTerminal;
     ensure_utf8_input(); // 한글 백스페이스 글자 단위 보정
-    // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
+                         // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
     if io::stdin().is_terminal() && !soul::is_chosen() {
         persona_picker()?;
     }
@@ -3050,6 +3058,10 @@ fn cmd_guide() -> Result<()> {
             "🧮 생활·금융 계산기 (키 불필요)",
             &[
                 ("wonjang 실수령 <연봉만원>", "연봉 실수령액(4대보험+세금)"),
+                (
+                    "wonjang 종소세 <과세표준>",
+                    "종합소득세 추정(개인사업자·누진세율)",
+                ),
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
                 ("wonjang 예금/적금 <...>", "예적금 만기(세후)"),
@@ -6544,6 +6556,33 @@ fn cmd_military(
     Ok(())
 }
 
+fn cmd_income_tax(base_in: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let base = expenses::parse_won(base_in).map_err(|e| anyhow::anyhow!(e))?;
+    if base <= 0 {
+        anyhow::bail!("과세표준은 1원 이상이어야 해요. 예: wonjang 종소세 5000만");
+    }
+    let tax = incometax::income_tax(base);
+    let local = incometax::local_tax(tax);
+    let total = tax + local;
+    let rate = incometax::marginal_rate(base);
+    let w = expenses::won;
+    println!();
+    println!("  🧾 종합소득세 추정 (과세표준 {})", w(base));
+    println!("     적용 세율(한계)  {rate}%");
+    println!("     산출세액         {}", w(tax));
+    println!("     지방소득세(10%)  {}", w(local));
+    println!("     ───────────────");
+    println!("     총 세 부담       {}", w(total).bright_cyan().bold());
+    let eff = (total as f64 / base as f64 * 100.0).round() as i64;
+    println!("     실효세율         약 {eff}%");
+    println!();
+    println!("  ※ 과세표준 기준 추정(세액공제·감면·가산세 미반영) · 2025 현행 누진세율");
+    println!("     정확한 신고는 홈택스·세무사에서 확인하세요.");
+    println!();
+    Ok(())
+}
+
 fn cmd_salary(manwon: f64) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
         anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
@@ -9404,6 +9443,14 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "군대", "2025-03-04"]),
             Commands::Military { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "종소세", "5000만"]),
+            Commands::IncomeTax { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "종합소득세", "1.2억"]),
+            Commands::IncomeTax { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(

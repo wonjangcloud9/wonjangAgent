@@ -1,5 +1,9 @@
 # 원장 (wonjang) — 한국인을 위한 개인 비서 🇰🇷
 
+[![npm](https://img.shields.io/npm/v/wonjang-agent.svg)](https://www.npmjs.com/package/wonjang-agent)
+[![다운로드](https://img.shields.io/npm/dm/wonjang-agent.svg)](https://www.npmjs.com/package/wonjang-agent)
+[![스타](https://img.shields.io/github/stars/wonjangcloud9/wonjangAgent?style=social)](https://github.com/wonjangcloud9/wonjangAgent/stargazers)
+
 > 가계부·디데이·습관·실수령·날씨까지, **한국 사람이 매일 쓰는 걸 다 해주는** 똑똑한 명령어 비서.
 > 단일 바이너리(Rust)라 빠르고, **API 키도 로그인도 없이 설치하면 바로** 쓸 수 있어요.
 
@@ -77,6 +81,7 @@ wonjang 성격 만들기
 | --- | --- |
 | `wonjang 가계부` · `지출 추가 5만 식비` | 오늘·이번 달 지출, 분류별 막대, **월말 예상** |
 | `wonjang 연봉 3600` | 4대 보험·소득세 떼고 **월 실수령액**(2025 기준) |
+| `wonjang 종소세 5000만` | **종합소득세**(개인사업자·프리랜서) 누진세율 추정 + 지방소득세 |
 | `wonjang 대출 30000 4.5 360` | 원리금/원금균등 **월 상환액·총이자** |
 | `wonjang 예금 1000 3.5 12` · `적금` | 만기 수령액(이자소득세 15.4% 반영) |
 | `wonjang 부가세 5만` · `할인 5만 30` | 부가세·중복 할인가 |
