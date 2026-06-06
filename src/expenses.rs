@@ -150,6 +150,41 @@ impl ExpenseStore {
     }
 }
 
+/// 한국식 금액 표기를 원(KRW) 정수로 파싱한다(clap value_parser용).
+/// `5만`=50,000 · `1억`=100,000,000 · `5만원`=50,000 · `50,000`=50,000 · `1.5억`=150,000,000.
+/// 흔히 쓰는 콤마·공백·`원` 접미사를 떼고, 단위(천·만·억)는 곱해 준다.
+/// 조합(`3천만`·`1억5천`)은 받지 않는다 — 가계부 일상 입력엔 드물고, 모호함 없이
+/// 확실히 맞는 범위만 받는다(애매하면 순수 숫자로 입력하면 됨).
+pub fn parse_won(s: &str) -> Result<i64, String> {
+    let cleaned: String = s
+        .chars()
+        .filter(|c| !matches!(c, ',' | ' ' | '_'))
+        .collect();
+    let cleaned = cleaned.trim_end_matches('원');
+    if cleaned.is_empty() {
+        return Err("금액을 입력하세요 (예: 8000, 5만, 1억)".into());
+    }
+    let (num, unit): (&str, f64) = if let Some(p) = cleaned.strip_suffix('억') {
+        (p, 100_000_000.0)
+    } else if let Some(p) = cleaned.strip_suffix('만') {
+        (p, 10_000.0)
+    } else if let Some(p) = cleaned.strip_suffix('천') {
+        (p, 1_000.0)
+    } else {
+        (cleaned, 1.0)
+    };
+    // "만원"처럼 숫자가 없으면 1로(=1만). 단위 없는 순수 숫자는 그대로.
+    let num = if num.is_empty() { "1" } else { num };
+    let n: f64 = num
+        .parse()
+        .map_err(|_| format!("금액을 이해하지 못했어요: '{s}' (예: 8000, 5만, 1억, 50,000)"))?;
+    let won = (n * unit).round();
+    if !(0.0..=i64::MAX as f64).contains(&won) {
+        return Err(format!("금액 범위를 벗어났어요: '{s}'"));
+    }
+    Ok(won as i64)
+}
+
 /// 이번 달 `(일평균, 월말 예상)`. 현 페이스가 유지된다는 가정의 추정.
 /// total=이번 달 누적, day=경과 일수, days_in_month=이번 달 총 일수.
 pub fn pace(total: i64, day: i64, days_in_month: i64) -> (i64, i64) {
@@ -160,6 +195,25 @@ pub fn pace(total: i64, day: i64, days_in_month: i64) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_won_accepts_korean_money() {
+        assert_eq!(parse_won("8000"), Ok(8000));
+        assert_eq!(parse_won("50,000"), Ok(50_000));
+        assert_eq!(parse_won("5만"), Ok(50_000));
+        assert_eq!(parse_won("5만원"), Ok(50_000));
+        assert_eq!(parse_won("100만"), Ok(1_000_000));
+        assert_eq!(parse_won("1억"), Ok(100_000_000));
+        assert_eq!(parse_won("1.5억"), Ok(150_000_000));
+        assert_eq!(parse_won("5천"), Ok(5_000));
+        assert_eq!(parse_won("5.5만"), Ok(55_000));
+        assert_eq!(parse_won(" 3,000 원"), Ok(3_000));
+        assert_eq!(parse_won("만원"), Ok(10_000)); // 숫자 없으면 1만
+                                                   // 이해 못 하는 입력은 에러(영문 clap 에러 대신 한국어 안내).
+        assert!(parse_won("오만원").is_err()); // 한글 숫자는 미지원(혼동 방지)
+        assert!(parse_won("abc").is_err());
+        assert!(parse_won("").is_err());
+    }
 
     #[test]
     fn pace_projects_at_current_rate() {

@@ -1128,10 +1128,11 @@ enum HabitAction {
 
 #[derive(Subcommand)]
 enum ExpenseAction {
-    /// 오늘 지출 추가. 예: wonjang 지출 추가 8000 식비 점심
+    /// 오늘 지출 추가. 예: wonjang 지출 추가 8000 식비 점심 (5만·1억·50,000도 OK)
     #[command(alias = "추가")]
     Add {
-        /// 금액(원)
+        /// 금액(원). 5만·1억·50,000 같은 한국식 표기도 받아요
+        #[arg(value_parser = expenses::parse_won)]
         amount: i64,
         /// 분류(식비/교통/배달 등)
         category: String,
@@ -7554,9 +7555,7 @@ fn cmd_expense(action: &Option<ExpenseAction>) -> Result<()> {
                 }
             }
             println!();
-            ui::info(
-                "기록: wonjang 지출 추가 <금액> <분류> [메모]   |   이번달: wonjang 지출 이번달",
-            );
+            ui::info("기록: wonjang 지출 추가 <금액> <분류> [메모]  (금액은 5만·1억·50,000도 OK)");
         }
     }
     Ok(())
