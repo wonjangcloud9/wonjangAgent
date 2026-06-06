@@ -12,8 +12,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # 발행 전 품질 게이트 — 깨진/검증 안 된 코드가 npm·릴리스로 나가는 것을 막는다.
+  # (ci.yml과 동일하지만 release는 별도 워크플로라 여기서도 통과를 강제해야 안전.)
+  check:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: 포맷 검사
+        run: cargo fmt --all --check
+      - name: 클리피(경고를 오류로)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: 테스트
+        run: cargo test --all
+
   build:
     name: 빌드 (${{ matrix.target }})
+    needs: check
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

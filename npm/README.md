@@ -163,4 +163,8 @@ cargo install --git https://github.com/wonjangcloud9/wonjangAgent
 
 ---
 
+## 🐞 문제가 있으면 알려주세요
+
+버그나 "이런 기능 있으면" 하는 제안이 있으면 **[GitHub 이슈](https://github.com/wonjangcloud9/wonjangAgent/issues/new)** 를 남겨주세요. 한국어로 편하게 — 어떤 명령에서 뭘 기대했고 뭐가 나왔는지 적어주시면 큰 도움이 됩니다. 🙏
+
 소스·이슈·기여: **https://github.com/wonjangcloud9/wonjangAgent** · 라이선스: MIT

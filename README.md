@@ -510,6 +510,10 @@ cargo clippy --all-targets -- -D warnings
 > 필요하면 `native-tls`가 아니라 `rustls`(reqwest의 `rustls-tls`, lettre의
 > `tokio1-rustls-tls` 등)를 선택하세요. (현재 의존성 트리에 openssl 0개)
 
+## 🐞 문제 신고·제안
+
+버그를 만나거나 "이런 기능 있으면 좋겠다" 싶은 게 있으면 **[GitHub 이슈](https://github.com/wonjangcloud9/wonjangAgent/issues/new)** 를 남겨주세요. 한국어로 편하게 적어주시면 됩니다 — 어떤 명령에서, 무엇을 기대했고, 무엇이 나왔는지 적어주시면 큰 도움이 됩니다. 🙏
+
 ## 라이선스
 
 MIT
