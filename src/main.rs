@@ -51,6 +51,7 @@ mod hangul;
 mod hash;
 mod holidays;
 mod incometax;
+mod inheritance;
 mod jeonse;
 mod journal;
 mod jsontool;
@@ -718,6 +719,21 @@ enum Commands {
         /// 관계(배우자·자녀·미성년·부모·기타·타인, 기본 성년 자녀)
         #[arg(default_value = "자녀")]
         relation: String,
+    },
+    /// 법정 상속분(민법, 배우자 1.5배). 예: wonjang 상속 7억 --배우자 --자녀 2
+    #[command(name = "상속", aliases = ["상속분", "법정상속분", "유산"])]
+    Inheritance {
+        /// 상속재산. 한국식 OK: 7억 · 5000만
+        estate: String,
+        /// 배우자 있음
+        #[arg(long = "배우자")]
+        spouse: bool,
+        /// 자녀 수
+        #[arg(long = "자녀", default_value_t = 0)]
+        children: u32,
+        /// 부모(직계존속) 수 — 자녀가 없을 때만 상속
+        #[arg(long = "부모", default_value_t = 0)]
+        parents: u32,
     },
     /// 상품 최저가 비교 사이트 한 번에(네이버쇼핑·다나와·쿠팡·구글). 예: wonjang 최저가 에어팟
     #[command(name = "최저가", aliases = ["가격비교", "쇼핑검색"])]
@@ -1743,6 +1759,12 @@ async fn run() -> Result<()> {
             etc,
         }) => return cmd_withholding(amount, *reverse, *etc),
         Some(Commands::GiftTax { amount, relation }) => return cmd_gift_tax(amount, relation),
+        Some(Commands::Inheritance {
+            estate,
+            spouse,
+            children,
+            parents,
+        }) => return cmd_inheritance(estate, *spouse, *children, *parents),
         Some(Commands::PriceSearch { query, open }) => return cmd_price_search(query, *open),
         Some(Commands::Loan {
             manwon,
@@ -3110,6 +3132,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 원천징수 <금액>",
                     "프리랜서 3.3%/기타 8.8% 공제·역산",
+                ),
+                (
+                    "wonjang 상속 <재산> --배우자 --자녀 N",
+                    "법정 상속분(민법, 배우자 1.5배)",
                 ),
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
@@ -6708,6 +6734,36 @@ fn cmd_gift_tax(amount_in: &str, relation_in: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_inheritance(estate_in: &str, spouse: bool, children: u32, parents: u32) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let estate = expenses::parse_won(estate_in).map_err(|e| anyhow::anyhow!(e))?;
+    if estate <= 0 {
+        anyhow::bail!("상속재산은 1원 이상이어야 해요. 예: wonjang 상속 7억 --배우자 --자녀 2");
+    }
+    let heirs = inheritance::distribute(estate, spouse, children, parents)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    let m = expenses::won;
+    println!();
+    println!("  👪 법정 상속분 (상속재산 {})", m(estate));
+    for h in &heirs {
+        println!(
+            "     {:<6} {}/{}   {}",
+            h.name,
+            h.num,
+            h.den,
+            m(h.amount).bright_cyan()
+        );
+    }
+    if children > 0 && parents > 0 {
+        println!();
+        ui::info("  자녀(1순위)가 있어 부모는 상속분이 없어요(민법 순위).");
+    }
+    println!();
+    println!("  ※ 법정 상속분 추정 · 유언·유류분·기여분·상속포기 미반영(민법 1009조 기준)");
+    println!();
+    Ok(())
+}
+
 fn cmd_price_search(query: &[String], open: bool) -> Result<()> {
     use owo_colors::OwoColorize;
     let q = query.join(" ");
@@ -9615,6 +9671,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "원천징수", "100만"]),
             Commands::Withholding { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "상속", "7억", "--배우자", "--자녀", "2"]),
+            Commands::Inheritance { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
