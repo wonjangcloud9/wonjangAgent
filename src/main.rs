@@ -57,6 +57,7 @@ mod journal;
 mod jsontool;
 mod keyboard;
 mod koreannum;
+mod limitation;
 mod llm;
 mod loan;
 mod lotto;
@@ -719,6 +720,15 @@ enum Commands {
         /// 관계(배우자·자녀·미성년·부모·기타·타인, 기본 성년 자녀)
         #[arg(default_value = "자녀")]
         relation: String,
+    },
+    /// 소멸시효 완성일(채권 종류별). 예: wonjang 소멸시효 2020-01-01 상사
+    #[command(name = "소멸시효", aliases = ["시효", "채권시효"])]
+    Limitation {
+        /// 채권 발생일(권리 행사 가능일, YYYY-MM-DD)
+        date: String,
+        /// 채권 종류(민사·상사·임금·물품대금·이자·보험금·음식·판결, 기본 민사)
+        #[arg(default_value = "민사")]
+        kind: String,
     },
     /// 법정 상속분(민법, 배우자 1.5배). 예: wonjang 상속 7억 --배우자 --자녀 2
     #[command(name = "상속", aliases = ["상속분", "법정상속분", "유산"])]
@@ -1759,6 +1769,7 @@ async fn run() -> Result<()> {
             etc,
         }) => return cmd_withholding(amount, *reverse, *etc),
         Some(Commands::GiftTax { amount, relation }) => return cmd_gift_tax(amount, relation),
+        Some(Commands::Limitation { date, kind }) => return cmd_limitation(date, kind),
         Some(Commands::Inheritance {
             estate,
             spouse,
@@ -3136,6 +3147,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 상속 <재산> --배우자 --자녀 N",
                     "법정 상속분(민법, 배우자 1.5배)",
+                ),
+                (
+                    "wonjang 소멸시효 <발생일> [종류]",
+                    "채권 소멸시효 완성일(3·5·10년)",
                 ),
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
@@ -6734,6 +6749,45 @@ fn cmd_gift_tax(amount_in: &str, relation_in: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_limitation(date_in: &str, kind_in: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let start = ddays::parse_date(date_in)?;
+    let kind = limitation::parse_kind(kind_in).map_err(|e| anyhow::anyhow!(e))?;
+    let expiry = limitation::expiry(start, kind.years);
+    let today = chrono::Local::now().date_naive();
+    let left = (expiry - today).num_days();
+    let wd = datecalc::weekday_kr(expiry);
+    println!();
+    println!("  ⏳ 소멸시효 — {} ({})", kind.label, kind.basis);
+    println!(
+        "     발생일       {} ({})",
+        start.format("%Y-%m-%d"),
+        datecalc::weekday_kr(start)
+    );
+    println!("     시효기간     {}년", kind.years);
+    println!("     완성일       {} ({wd})", expiry.format("%Y-%m-%d"));
+    println!("     ───────────────");
+    if left > 0 {
+        println!(
+            "     남은 기간    {}  (이 안에 청구·소송 등으로 중단 가능)",
+            format!("D-{left}").bright_cyan().bold()
+        );
+    } else if left == 0 {
+        println!("     {}", "오늘이 시효 완성일이에요!".bright_red().bold());
+    } else {
+        println!(
+            "     {}  (이미 {}일 지남 — 시효 완성 가능성)",
+            "시효 완성(소멸)".bright_red().bold(),
+            -left
+        );
+    }
+    println!();
+    println!("  ※ 선택한 종류 기준의 일반적 시효예요. 채권 분류·중단 사유는 사안마다 달라");
+    println!("     구체적인 건 변호사와 확인하세요(시효 중단 시 새로 기산).");
+    println!();
+    Ok(())
+}
+
 fn cmd_inheritance(estate_in: &str, spouse: bool, children: u32, parents: u32) -> Result<()> {
     use owo_colors::OwoColorize;
     let estate = expenses::parse_won(estate_in).map_err(|e| anyhow::anyhow!(e))?;
@@ -9675,6 +9729,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "상속", "7억", "--배우자", "--자녀", "2"]),
             Commands::Inheritance { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "소멸시효", "2020-01-01", "상사"]),
+            Commands::Limitation { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
