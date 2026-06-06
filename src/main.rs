@@ -1452,24 +1452,36 @@ fn clap_error_headline(e: &clap::Error) -> String {
 /// 사용법이 일치하게 만든다(placeholder `<BIRTH>`는 필드명이라 그대로 둔다).
 fn koreanize_command_names(usage: &str) -> String {
     use clap::CommandFactory;
-    use std::collections::HashMap;
-    fn collect(cmd: &clap::Command, map: &mut HashMap<String, String>) {
-        for sub in cmd.get_subcommands() {
-            let name = sub.get_name();
-            // 정규명이 영문인 명령만, 첫 한국어 별칭으로 매핑.
-            if name.is_ascii() {
-                if let Some(kr) = sub.get_all_aliases().find(|a| !a.is_ascii()) {
-                    map.insert(name.to_string(), kr.to_string());
-                }
-            }
-            collect(sub, map);
-        }
-    }
-    let mut map = HashMap::new();
-    collect(&Cli::command(), &mut map);
+    // usage 경로를 따라 명령 트리를 내려가며, 그 경로의 실제 서브커맨드가
+    // 한국어 별칭을 가질 때만 치환한다. 전역 평면 맵을 쓰면 같은 영문 액션명
+    // (예: add)이라도 별칭 없는 명령(cron/watch)에 다른 enum의 별칭이 새어
+    // '실행하면 또 에러 나는' 명령으로 잘못 유도하므로 트리 추적이 필요하다.
+    let root = Cli::command();
+    let mut cur: Option<clap::Command> = Some(root);
     usage
         .split(' ')
-        .map(|tok| map.get(tok).map(String::as_str).unwrap_or(tok))
+        .map(|tok| {
+            // 현재 Command에서 이 토큰을 정규명으로 가진 서브커맨드를 찾는다.
+            // 못 찾으면 placeholder(<X>)·값이므로 그대로 두고 컨텍스트도 유지.
+            let found = cur
+                .as_ref()
+                .and_then(|cmd| cmd.get_subcommands().find(|s| s.get_name() == tok).cloned());
+            match found {
+                Some(sub) => {
+                    let replaced = if sub.get_name().is_ascii() {
+                        sub.get_all_aliases()
+                            .find(|a| !a.is_ascii())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| tok.to_string())
+                    } else {
+                        tok.to_string()
+                    };
+                    cur = Some(sub);
+                    replaced
+                }
+                None => tok.to_string(),
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -2113,19 +2125,11 @@ async fn repl_local_only(_cfg: &Config) -> Result<()> {
                 continue;
             }
             s if s.starts_with("/성격") => {
+                // 인자 없으면 picker, '만들기'면 직접 만들기, 이름이면 지정 — cmd_soul로 일원화.
                 let arg = s["/성격".len()..].trim();
-                if arg.is_empty() {
-                    ui::info("바꾸기: /성격 친구|집사|선배|발랄|기본");
-                } else {
-                    let res = if arg == "초기화" || arg == "기본" {
-                        soul::reset()
-                    } else {
-                        soul::set_preset(arg)
-                    };
-                    match res {
-                        Ok(()) => ui::info(&format!("이제부터 '{arg}' 성격으로 말할게요. 🎭")),
-                        Err(e) => ui::error(&format!("{e}")),
-                    }
+                let arg = if arg.is_empty() { None } else { Some(arg) };
+                if let Err(e) = cmd_soul(arg) {
+                    ui::error(&format!("{e}"));
                 }
                 continue;
             }
@@ -2134,7 +2138,7 @@ async fn repl_local_only(_cfg: &Config) -> Result<()> {
         // 로컬 명령이면 직접 실행(슬래시 접두사는 떼고).
         let cmd_text = input.strip_prefix('/').unwrap_or(input);
         if let Some(args) = parse_as_local_command(cmd_text) {
-            wonjang_say(soul::ack(soul::active_preset_key(), cmd_text));
+            wonjang_say(soul::ack(soul::tone_key(), cmd_text));
             run_self_command(&args);
             continue;
         }
@@ -2197,37 +2201,25 @@ async fn repl(
                 continue;
             }
             s if s.starts_with("/성격") => {
+                // 인자 없으면 picker, '만들기'면 직접 만들기, 이름이면 지정 — cmd_soul로 일원화.
                 let arg = s["/성격".len()..].trim();
-                if arg.is_empty() {
-                    ui::info(&format!(
-                        "현재 성격: {}",
-                        soul::active_persona().chars().take(34).collect::<String>()
-                    ));
-                    ui::info("바꾸기: /성격 친구|집사|선배|발랄|기본  ('초기화'로 기본 복귀)");
-                } else {
-                    let res = if arg == "초기화" || arg == "기본" {
-                        soul::reset()
-                    } else {
-                        soul::set_preset(arg)
-                    };
-                    match res {
-                        Ok(()) => {
-                            // 새 성격을 즉시 반영하도록 시스템 프롬프트 재구성.
-                            if let (Ok(mem), Ok(skills)) =
-                                (memory::Memory::load(), skill::SkillStore::load())
-                            {
-                                if !messages.is_empty() {
-                                    messages[0] = Message::system(agent::system_prompt(
-                                        mem.prompt_block(),
-                                        skills.prompt_block(),
-                                    ));
-                                    sess.save(messages).ok();
-                                }
+                let arg = if arg.is_empty() { None } else { Some(arg) };
+                match cmd_soul(arg) {
+                    Ok(()) => {
+                        // 성격이 바뀌었을 수 있으니 시스템 프롬프트를 즉시 재구성.
+                        if let (Ok(mem), Ok(skills)) =
+                            (memory::Memory::load(), skill::SkillStore::load())
+                        {
+                            if !messages.is_empty() {
+                                messages[0] = Message::system(agent::system_prompt(
+                                    mem.prompt_block(),
+                                    skills.prompt_block(),
+                                ));
+                                sess.save(messages).ok();
                             }
-                            ui::info(&format!("이제부터 '{arg}' 성격으로 말할게요. 🎭"));
                         }
-                        Err(e) => ui::error(&format!("{e}")),
                     }
+                    Err(e) => ui::error(&format!("{e}")),
                 }
                 continue;
             }
@@ -2243,7 +2235,7 @@ async fn repl(
         if slashed.is_some() || !eng.backend_ready() {
             let cmd_text = slashed.unwrap_or(input);
             if let Some(args) = parse_as_local_command(cmd_text) {
-                wonjang_say(soul::ack(soul::active_preset_key(), cmd_text));
+                wonjang_say(soul::ack(soul::tone_key(), cmd_text));
                 run_self_command(&args);
                 continue;
             }
@@ -4219,21 +4211,46 @@ fn persona_picker() -> Result<()> {
     println!();
     print!("   {}", format!("번호 (1-{custom_n}, 엔터=기본): ").bold());
     io::stdout().flush()?;
-    let mut line = String::new();
-    if io::stdin().read_line(&mut line)? == 0 {
-        // 입력이 없는 환경(파이프·EOF) — 강제로 정하지 않고 현재 상태만 안내한다.
-        println!();
-        println!(
-            "  🎭 지금 성격: {}  (바꾸기: wonjang 성격 친구|집사|선배|발랄|기본)",
-            soul::active_preset_key().bright_cyan()
-        );
-        println!();
-        return Ok(());
-    }
-    if line.trim() == custom_n.to_string() {
-        return persona_creator();
-    }
-    let (key, label, _) = soul::PRESETS[soul::resolve_choice(&line)];
+    // 잘못된 입력은 조용히 기본으로 확정하지 않고 다시 묻는다. 이름(친구·집사…)도 받는다.
+    let idx = loop {
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line)? == 0 {
+            // 입력이 없는 환경(파이프·EOF) — 강제로 정하지 않고 현재 상태만 안내한다.
+            println!();
+            println!(
+                "  🎭 지금 성격: {}  (바꾸기: wonjang 성격 친구|집사|선배|발랄|기본)",
+                soul::active_preset_key().bright_cyan()
+            );
+            println!();
+            return Ok(());
+        }
+        let t = line.trim();
+        if t.is_empty() {
+            break 0; // 엔터 = 기본
+        }
+        if t == custom_n.to_string() {
+            return persona_creator();
+        }
+        if let Some(pos) = soul::PRESETS.iter().position(|(name, _, _)| *name == t) {
+            break pos; // 이름으로 답한 경우
+        }
+        match t
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=soul::PRESETS.len()).contains(n))
+        {
+            Some(n) => break n - 1,
+            None => {
+                println!(
+                    "   {}",
+                    format!("1-{custom_n} 사이 번호로 입력해 주세요.").yellow()
+                );
+                print!("   {}", format!("번호 (1-{custom_n}, 엔터=기본): ").bold());
+                io::stdout().flush()?;
+            }
+        }
+    };
+    let (key, label, _) = soul::PRESETS[idx];
     soul::set_preset(key)?;
     soul::mark_chosen();
     println!();
@@ -5804,7 +5821,7 @@ fn cmd_brag(
         return Ok(());
     }
 
-    let persona = soul::active_preset_key();
+    let persona = soul::tone_key();
     // 코멘트는 '현재 streak' 기준(라벨의 최장 기록과 분리 — 정직한 지금 상태).
     let comment = card::card_comment(
         persona,
@@ -5912,7 +5929,7 @@ fn cmd_brag_weekly(width: usize, no_color: bool, copy: bool) -> Result<()> {
         return Ok(());
     }
 
-    let persona = soul::active_preset_key();
+    let persona = soul::tone_key();
     let f_delta = tw_f - lw_f;
     let e_delta = tw_e - lw_e;
     let focus_value = if f_delta == 0 {
@@ -9294,13 +9311,15 @@ mod alias_tests {
     // 사용법 줄의 영문 정규 명령명이 한국어 별칭으로 바뀌어야 한다(사용자가 친 말과 일치).
     #[test]
     fn usage_command_names_are_koreanized() {
-        let (age, dday, mil) = std::thread::Builder::new()
+        let (age, dday, mil, cron, watch) = std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)
             .spawn(|| {
                 (
                     koreanize_command_names("wonjang age <BIRTH>"),
                     koreanize_command_names("wonjang dday add <LABEL> <DATE>"),
                     koreanize_command_names("wonjang 전역 <ENLIST> [BRANCH]"),
+                    koreanize_command_names("wonjang cron add <SCHEDULE> <PROMPT>"),
+                    koreanize_command_names("wonjang 감시 add <SYMBOL> <TARGET>"),
                 )
             })
             .expect("스레드 생성")
@@ -9310,6 +9329,9 @@ mod alias_tests {
         assert_eq!(dday, "wonjang 디데이 추가 <LABEL> <DATE>");
         // 이미 한국어 명령명이면 그대로 둔다.
         assert_eq!(mil, "wonjang 전역 <ENLIST> [BRANCH]");
+        // 별칭 없는 액션(cron/watch의 add)은 영문 그대로 — 안내한 명령이 실제로 동작해야.
+        assert_eq!(cron, "wonjang cron add <SCHEDULE> <PROMPT>");
+        assert_eq!(watch, "wonjang 감시 add <SYMBOL> <TARGET>");
     }
 
     // 한국인이 가장 자연스럽게 떠올리는 단어가 곧장 해당 기능으로 가야 한다.

@@ -91,6 +91,22 @@ pub fn active_preset_key() -> &'static str {
         .unwrap_or("나만의")
 }
 
+/// 말투를 고를 때 쓰는 키. 프리셋이면 그대로, 커스텀('나만의')이면 본문의 말투
+/// 마커로 반말이면 '친구', 존댓말이면 '기본'으로 환원한다. 얼굴(🌟)은 별개로 유지하되
+/// ack·인사·카드 코멘트의 *말투*가 사용자가 고른 반말/존댓말과 어긋나지 않게 한다.
+pub fn tone_key() -> &'static str {
+    match active_preset_key() {
+        "나만의" => {
+            if active_persona().contains("반말") {
+                "친구"
+            } else {
+                "기본"
+            }
+        }
+        k => k,
+    }
+}
+
 /// 성격·시간대에 맞춘 짧은 첫 인사(배너용).
 pub fn greeting() -> String {
     use chrono::Timelike;
@@ -101,7 +117,7 @@ pub fn greeting() -> String {
         17..=20 => "좋은 저녁이에요",
         _ => "안녕하세요",
     };
-    match active_preset_key() {
+    match tone_key() {
         "친구" => "안녕! 나 원장이야 🙌".to_string(),
         "집사" => "주인님, 원장 대령했습니다.".to_string(),
         "선배" => "왔냐. 원장이다.".to_string(),
@@ -209,19 +225,6 @@ pub fn ack(key: &str, seed: &str) -> &'static str {
     lines[idx]
 }
 
-/// 선택 메뉴 입력("" 또는 "1".."N")을 프리셋 인덱스로. 빈 값·범위 밖·숫자 아님은 기본(0).
-pub fn resolve_choice(input: &str) -> usize {
-    let t = input.trim();
-    if t.is_empty() {
-        return 0;
-    }
-    t.parse::<usize>()
-        .ok()
-        .filter(|n| (1..=PRESETS.len()).contains(n))
-        .map(|n| n - 1)
-        .unwrap_or(0)
-}
-
 /// 프리셋을 SOUL.md에 저장한다.
 pub fn set_preset(key: &str) -> Result<()> {
     let body = preset(key).ok_or_else(|| {
@@ -244,20 +247,6 @@ pub fn reset() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolve_choice_maps_menu_input() {
-        assert_eq!(resolve_choice(""), 0); // 엔터 = 기본(첫 번째)
-        assert_eq!(resolve_choice("1"), 0);
-        assert_eq!(resolve_choice("2"), 1);
-        assert_eq!(
-            resolve_choice(&PRESETS.len().to_string()),
-            PRESETS.len() - 1
-        );
-        assert_eq!(resolve_choice("99"), 0); // 범위 밖 = 기본
-        assert_eq!(resolve_choice("abc"), 0); // 숫자 아님 = 기본
-        assert_eq!(resolve_choice("  3  "), 2); // 공백 허용
-    }
 
     #[test]
     fn build_custom_persona_includes_desc_and_tone() {

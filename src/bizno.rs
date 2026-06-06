@@ -17,6 +17,10 @@ pub fn is_valid(input: &str) -> Option<bool> {
     {
         return None;
     }
+    // 전부 0(000-00-00000)은 체크섬상 통과하지만 실재하지 않는 번호다 — 무효로 본다.
+    if digits.iter().all(|&d| d == 0) {
+        return Some(false);
+    }
     const W: [u32; 9] = [1, 3, 7, 1, 3, 7, 1, 3, 5];
     let mut sum: u32 = (0..9).map(|i| digits[i] * W[i]).sum();
     sum += (digits[8] * 5) / 10; // 9번째 자리 ×5의 십의 자리를 더함
@@ -46,6 +50,9 @@ mod tests {
         assert_eq!(is_valid("120-81-47521"), Some(true)); // 카카오
                                                           // 끝자리 오타 → 검증번호 불일치.
         assert_eq!(is_valid("124-81-00997"), Some(false));
+        // 전부 0은 체크섬상 통과하지만 실재하지 않으므로 무효.
+        assert_eq!(is_valid("000-00-00000"), Some(false));
+        assert_eq!(is_valid("0000000000"), Some(false));
         // 자리수 부족·초과·문자 → None.
         assert_eq!(is_valid("124-81-0099"), None);
         assert_eq!(is_valid("12481009980"), None);
