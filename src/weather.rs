@@ -54,6 +54,64 @@ struct GeoHit {
     longitude: f64,
 }
 
+/// 하루치 예보(주간 표시용).
+pub struct DayForecast {
+    pub date: String, // YYYY-MM-DD
+    pub icon: String,
+    pub desc: String,
+    pub min: f64,
+    pub max: f64,
+    pub precip_prob: i64,
+}
+
+#[derive(Deserialize)]
+struct WeeklyResp {
+    daily: WeeklyDaily,
+}
+
+#[derive(Deserialize)]
+struct WeeklyDaily {
+    time: Vec<String>,
+    weather_code: Vec<i64>,
+    temperature_2m_max: Vec<f64>,
+    temperature_2m_min: Vec<f64>,
+    #[serde(default)]
+    precipitation_probability_max: Vec<i64>,
+}
+
+/// 7일 주간 예보(강수확률 포함). 반환: (지역명, 날짜순 예보).
+pub async fn weekly(location: &str) -> Result<(String, Vec<DayForecast>)> {
+    let (lat, lon, place) = resolve(location.trim()).await?;
+    let url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
+         &daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max\
+         &timezone=Asia%2FSeoul&forecast_days=7"
+    );
+    let r: WeeklyResp = client()?
+        .get(&url)
+        .send()
+        .await
+        .context("주간 날씨 요청 실패")?
+        .json()
+        .await
+        .context("주간 날씨 응답 파싱 실패")?;
+    let d = r.daily;
+    let days = (0..d.time.len())
+        .map(|i| {
+            let code = *d.weather_code.get(i).unwrap_or(&0);
+            DayForecast {
+                date: d.time[i].clone(),
+                icon: wmo_emoji(code, true).to_string(),
+                desc: wmo_desc(code).to_string(),
+                min: *d.temperature_2m_min.get(i).unwrap_or(&0.0),
+                max: *d.temperature_2m_max.get(i).unwrap_or(&0.0),
+                precip_prob: d.precipitation_probability_max.get(i).copied().unwrap_or(0),
+            }
+        })
+        .collect();
+    Ok((place, days))
+}
+
 /// 지역 이름으로 날씨를 가져온다(비면 서울).
 pub async fn weather(location: &str) -> Result<Weather> {
     let loc = location.trim();

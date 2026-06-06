@@ -621,6 +621,13 @@ enum Commands {
         #[arg(trailing_var_arg = true)]
         location: Vec<String>,
     },
+    /// 주간 날씨 예보(7일·강수확률). 예: wonjang 주간날씨 부산
+    #[command(name = "주간날씨", aliases = ["날씨주간", "주간예보"])]
+    WeatherWeekly {
+        /// 지역 이름(선택, 생략 시 서울)
+        #[arg(trailing_var_arg = true)]
+        location: Vec<String>,
+    },
     /// 미세먼지(대기질). 예: wonjang 미세먼지 (생략 시 서울)
     #[command(alias = "미세먼지")]
     Air {
@@ -1773,6 +1780,7 @@ async fn run() -> Result<()> {
         Some(Commands::Open { target }) => return cmd_open(target),
         Some(Commands::Subway { station }) => return cmd_subway(&cfg, station),
         Some(Commands::Weather { location }) => return cmd_weather(location),
+        Some(Commands::WeatherWeekly { location }) => return cmd_weather_weekly(location),
         Some(Commands::Air { location }) => return cmd_air(location),
         Some(Commands::Exchange { amount, currency }) => return cmd_exchange(*amount, currency),
         Some(Commands::Coin { symbol }) => return cmd_coin(symbol),
@@ -3108,6 +3116,7 @@ fn cmd_guide() -> Result<()> {
             "🌐 실시간 정보 (키 불필요)",
             &[
                 ("wonjang 날씨 [지역]", "실시간 날씨"),
+                ("wonjang 주간날씨 [지역]", "7일 예보(강수확률 포함)"),
                 ("wonjang 미세먼지 [지역]", "PM10·PM2.5 + 등급"),
                 ("wonjang 지하철 <역>", "서울 지하철 실시간 도착"),
                 ("wonjang 혼잡도 <지역>", "서울 실시간 혼잡도"),
@@ -8579,6 +8588,45 @@ fn cmd_weather(location: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn cmd_weather_weekly(location: &[String]) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let loc = location.join(" ");
+    let (place, days) = util::run_async(async move { weather::weekly(&loc).await })?;
+    println!();
+    println!("  📅 {} 주간 날씨", place.bright_cyan().bold());
+    for d in &days {
+        let (md, wd) = match chrono::NaiveDate::parse_from_str(&d.date, "%Y-%m-%d") {
+            Ok(date) => (
+                format!(
+                    "{}/{}",
+                    chrono::Datelike::month(&date),
+                    chrono::Datelike::day(&date)
+                ),
+                datecalc::weekday_kr(date),
+            ),
+            Err(_) => (d.date.clone(), ""),
+        };
+        // 비/눈 가능성이 높으면 강수확률을 눈에 띄게.
+        let prob = if d.precip_prob >= 60 {
+            format!("💧{}%", d.precip_prob).bright_cyan().to_string()
+        } else {
+            format!("💧{}%", d.precip_prob).dimmed().to_string()
+        };
+        println!(
+            "     {:>5} ({})  {} {:.0}~{:.0}°C  {}  {}",
+            md,
+            wd,
+            d.icon,
+            d.min,
+            d.max,
+            prob,
+            d.desc.dimmed()
+        );
+    }
+    println!();
+    Ok(())
+}
+
 fn cmd_subway(cfg: &Config, station: &str) -> Result<()> {
     let key = cfg.seoul_api_key.clone();
     let st = station.to_string();
@@ -9899,6 +9947,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "움짤", "1.png", "2.png"]),
             Commands::AnimGif { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "주간날씨", "부산"]),
+            Commands::WeatherWeekly { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
