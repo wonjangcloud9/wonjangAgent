@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- ============ SEO ============ -->
+<title>원장(wonjang) — 한국인을 위한 터미널 AI 개인 비서 | 가계부·디데이·실수령·자랑카드 CLI</title>
+<meta name="description" content="키도 로그인도 없이 설치하면 바로 쓰는 한국어 터미널 비서. 가계부·실수령액·디데이·전역일·자랑 카드·날씨·환율까지. 단일 바이너리(Rust)로 빠르고, npm 한 줄로 설치하세요." />
+<meta name="keywords" content="원장, wonjang, 터미널 비서, CLI 개인비서, 한국어 CLI, 실수령액 계산기, 가계부 CLI, 디데이 계산기, 전역일 계산기, 자랑 카드, 사업자번호 검증, Rust CLI, npm, 개인 비서, AI 비서" />
+<meta name="author" content="wonjang" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://wonjangcloud9.github.io/wonjangAgent/" />
+
+<!-- ============ Open Graph ============ -->
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="ko_KR" />
+<meta property="og:site_name" content="원장(wonjang)" />
+<meta property="og:title" content="원장 — 한국인을 위한 터미널 개인 비서" />
+<meta property="og:description" content="가계부·실수령·디데이·자랑 카드까지. 키 없이 설치하면 바로 쓰는 한국어 CLI 비서." />
+<meta property="og:url" content="https://wonjangcloud9.github.io/wonjangAgent/" />
+<meta property="og:image" content="https://wonjangcloud9.github.io/wonjangAgent/og.svg" />
+
+<!-- ============ Twitter ============ -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="원장 — 한국인을 위한 터미널 개인 비서" />
+<meta name="twitter:description" content="가계부·실수령·디데이·자랑 카드까지. 키 없이 설치하면 바로 쓰는 한국어 CLI 비서." />
+<meta name="twitter:image" content="https://wonjangcloud9.github.io/wonjangAgent/og.svg" />
+
+<meta name="theme-color" content="#0d1117" />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+<!-- ============ 구조화 데이터 (JSON-LD) ============ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "원장(wonjang)",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux, Windows",
+  "description": "한국인을 위한 터미널 개인 비서 CLI. 가계부·실수령·디데이·자랑 카드·날씨·환율을 키 없이 바로 사용.",
+  "url": "https://wonjangcloud9.github.io/wonjangAgent/",
+  "downloadUrl": "https://www.npmjs.com/package/wonjang-agent",
+  "softwareVersion": "1.46",
+  "inLanguage": "ko",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Organization", "name": "wonjang" },
+  "license": "https://opensource.org/licenses/MIT"
+}
+</script>
+
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#30363d;
+    --text:#e6edf3; --muted:#9da7b3; --accent:#58d3ff; --accent2:#7ee787;
+    --gold:#ffd479; --pink:#ff7b9c;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"D2Coding","Apple SD Gothic Neo",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+  section{padding:64px 0;border-top:1px solid var(--border)}
+  h2{font-size:1.7rem;margin-bottom:8px;letter-spacing:-.02em}
+  h2 .em{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lead{color:var(--muted);margin-bottom:28px;font-size:1.05rem}
+
+  /* nav */
+  nav{position:sticky;top:0;z-index:10;background:rgba(13,17,23,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:56px}
+  .brand{font-weight:800;font-size:1.15rem;letter-spacing:-.02em}
+  .brand .moon{color:var(--gold)}
+  .navlinks a{color:var(--muted);margin-left:18px;font-size:.92rem}
+  .navlinks a:hover{color:var(--text)}
+  @media(max-width:620px){.navlinks a:not(.gh){display:none}}
+
+  /* hero */
+  .hero{padding:84px 0 56px;text-align:center;border-top:none}
+  .badge{display:inline-block;font-family:var(--mono);font-size:.78rem;color:var(--accent2);border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:5px 14px;margin-bottom:22px}
+  .hero h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.15;letter-spacing:-.03em;margin-bottom:18px}
+  .hero h1 .g{background:linear-gradient(90deg,var(--gold),var(--pink));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .hero p.sub{color:var(--muted);font-size:1.15rem;max-width:680px;margin:0 auto 30px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:.95rem;padding:12px 22px;border-radius:10px;border:1px solid var(--border);transition:transform .12s ease,border-color .12s}
+  .btn:hover{transform:translateY(-2px);text-decoration:none}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),#3aa0ff);color:#04121b;border-color:transparent}
+  .btn.ghost{background:var(--panel);color:var(--text)}
+  .install{font-family:var(--mono);background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:inline-flex;align-items:center;gap:12px;margin-top:6px}
+  .install code{color:var(--accent2);font-size:.98rem}
+  .install .dollar{color:var(--muted)}
+  .hint{color:var(--muted);font-size:.85rem;margin-top:14px}
+
+  /* terminal card */
+  .term{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;max-width:560px;margin:38px auto 0;text-align:left;box-shadow:0 24px 60px -30px rgba(0,0,0,.8)}
+  .term .bar{display:flex;gap:7px;padding:11px 14px;background:var(--panel2);border-bottom:1px solid var(--border)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .dot.r{background:#ff5f56}.dot.y{background:#ffbd2e}.dot.g{background:#27c93f}
+  .term pre{font-family:var(--mono);font-size:.83rem;line-height:1.55;padding:18px;color:var(--text);overflow-x:auto;white-space:pre}
+  .term .cmt{color:var(--muted)}
+  .term .ok{color:var(--accent2)}
+  .term .cy{color:var(--accent)}
+  .term .go{color:var(--gold)}
+
+  /* feature grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
+  .card h3{font-size:1.08rem;margin-bottom:10px}
+  .card ul{list-style:none}
+  .card li{color:var(--muted);font-size:.92rem;padding:3px 0}
+  .card li code{font-family:var(--mono);color:var(--text);font-size:.86rem;background:var(--panel2);padding:1px 6px;border-radius:5px}
+
+  /* personas */
+  .persona{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:13px 16px;margin-bottom:10px}
+  .persona .face{font-size:1.5rem;width:34px;text-align:center}
+  .persona .nm{font-weight:700;width:96px;flex-shrink:0}
+  .persona .vo{color:var(--muted);font-family:var(--mono);font-size:.85rem}
+  @media(max-width:560px){.persona .vo{font-size:.78rem}.persona .nm{width:auto}}
+
+  /* steps */
+  table.plat{width:100%;border-collapse:collapse;margin-top:8px}
+  table.plat td{border:1px solid var(--border);padding:9px 12px;font-size:.9rem}
+  table.plat td:first-child{color:var(--muted);width:120px}
+
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:.88rem;text-align:center}
+  footer a{margin:0 8px}
+  .kw{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <span class="brand"><span class="moon">🌙</span> 원장 <span style="color:var(--muted);font-weight:400;font-size:.85rem">wonjang</span></span>
+    <span class="navlinks">
+      <a href="#features">기능</a>
+      <a href="#brag">자랑 카드</a>
+      <a href="#character">캐릭터</a>
+      <a href="#install">설치</a>
+      <a class="gh" href="https://github.com/wonjangcloud9/wonjangAgent">GitHub ↗</a>
+    </span>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="badge">키 없이 · 로그인 없이 · 설치하면 바로</span>
+    <h1>한국인을 위한<br /><span class="g">터미널 개인 비서</span></h1>
+    <p class="sub">가계부·실수령액·디데이·전역일·자랑 카드·날씨·환율까지 —<br />한국 사람이 매일 쓰는 걸 <b>다 해주는</b> 똑똑한 명령어 비서. 단일 바이너리(Rust)라 빠릅니다.</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">⚡ 1분 설치</a>
+      <a class="btn ghost" href="https://github.com/wonjangcloud9/wonjangAgent">⭐ GitHub</a>
+    </div>
+    <div class="install"><span class="dollar">$</span> <code>npm install -g wonjang-agent</code></div>
+    <p class="hint">macOS · Linux · Windows · 플랫폼 바이너리 자동 설치</p>
+
+    <div class="term" aria-label="원장 자랑 카드 예시">
+      <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+<pre><span class="cmt">$ wonjang 자랑</span>
+
+╭──── 원장 카드 · 2026년 6월 ────╮
+│ 🔥 가장 긴 연속 운동 <span class="go">15일</span>      │
+│ ▓░▓▓░▓▓ ░▓▓▓░░▓ ▓▓▓▓▓▓▓ ▓▓▓▓▓▓▓│
+│ 🍅 이번 달 집중 <span class="cy">32시간</span>         │
+│ 💰 이번 달 지출 <span class="cy">240,000원</span>      │
+│ 📅 다가오는 날  수능 <span class="go">D-166</span>     │
+├────────────────────────────────┤
+│ 💬 운동 15일 연속, 잘 쌓고 있어요│
+╰─ 나도 만들기 → wonjang-agent ──╯</pre>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2><span class="em">이런 걸 다 해줘요</span></h2>
+    <p class="lead">전부 키 없이 됩니다. 한국식 입력 그대로 알아들어요 — <code style="font-family:var(--mono)">5만</code> · <code style="font-family:var(--mono)">1억</code> · <code style="font-family:var(--mono)">2026.11.19</code></p>
+    <div class="grid">
+      <div class="card">
+        <h3>💰 돈 — 직장인이 매일 묻는 것</h3>
+        <ul>
+          <li><code>연봉 3600</code> 4대 보험·소득세 뗀 월 실수령</li>
+          <li><code>가계부</code> · <code>지출 추가 5만 식비</code> 월말 예상까지</li>
+          <li><code>대출 30000 4.5 360</code> 원리금·총이자</li>
+          <li><code>퇴직금</code> · <code>연차수당</code> · <code>야근수당</code></li>
+          <li><code>사업자번호 124-81-00998</code> 검증</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>📅 시간·날짜</h3>
+        <ul>
+          <li><code>디데이 추가 수능 2026-11-19</code> D-day</li>
+          <li><code>기념일 2024-02-14</code> 사귄 지 며칠 (공유 카드)</li>
+          <li><code>월급날 25</code> 월급까지 며칠</li>
+          <li><code>전역 2025-03-04 육군</code> 전역까지·계급·진행률</li>
+          <li><code>나이 1990-05-15</code> 만나이·세는나이·띠</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🇰🇷 한국 생활 유틸</h3>
+        <ul>
+          <li><code>평수 84</code> 평 ↔ ㎡</li>
+          <li><code>변환 7 자</code> 자·치·돈·근·관 전통 단위</li>
+          <li><code>금액 50000</code> 계약서용 한글 금액</li>
+          <li><code>로마자 홍길동</code> 여권식 표기</li>
+          <li><code>영타 dkssud</code> 한영 오타 복구</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🌐 실시간 정보</h3>
+        <ul>
+          <li><code>날씨 서울</code> · <code>미세먼지</code></li>
+          <li><code>지하철 강남</code> · <code>따릉이</code></li>
+          <li><code>환율 100 USD</code></li>
+          <li><code>공휴일</code> 황금연휴까지</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🛠 도구</h3>
+        <ul>
+          <li><code>비밀번호 16</code> · <code>qr "https://..."</code></li>
+          <li><code>엑셀</code> CSV 분석·피벗</li>
+          <li><code>해시</code> · <code>인코딩</code> · <code>백업</code></li>
+          <li>전체 목록은 <code>wonjang 도움</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🤖 AI로 확장 (선택)</h3>
+        <ul>
+          <li>위 기능은 전부 키 없이 동작</li>
+          <li>claude·codex CLI에 자동 연결</li>
+          <li>또는 <code>OPENROUTER_API_KEY</code> 설정</li>
+          <li>"다운로드 폴더 정리해줘"까지 한국어로</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="brag">
+  <div class="wrap">
+    <h2><span class="em">한 달의 나를, 카톡 한 장으로</span></h2>
+    <p class="lead">습관·집중·지출·디데이를 <b>카톡에서도 안 깨지는 카드 한 장</b>으로. <code style="font-family:var(--mono)">wonjang 자랑 --복사</code>면 클립보드에 바로 — 친구한테 자랑하고 싶어져요.</p>
+    <div class="term" style="margin-top:8px">
+      <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+<pre><span class="cmt">$ wonjang 전역 2025-03-04 육군 --카드</span>
+
+╭────────── 원장 전역 ───────────╮
+│         🪖 육군 · 상병         │
+│                                │
+│           전역 <span class="cy">D-152</span>           │
+│                                │
+│ 📅 2026-09-03 (목) · 진행 <span class="go">67%</span>  │
+├────────────────────────────────┤
+│    곧 100일 안쪽! 힘내요 💪    │
+╰─ 나도 만들기 → wonjang-agent ──╯</pre>
+    </div>
+  </div>
+</section>
+
+<section id="character">
+  <div class="wrap">
+    <h2><span class="em">내 원장, 내 성격으로</span> 🎭</h2>
+    <p class="lead">처음 실행하면 <b>성격부터 골라요</b>. 각 원장이 자기 목소리로 인사하고, 고른 성격이 대화에 묻어나요. <code style="font-family:var(--mono)">wonjang 성격</code>으로 언제든 바꿔요.</p>
+    <div class="persona"><span class="face">🌙</span><span class="nm">다정한 비서</span><span class="vo">"안녕하세요, 원장입니다 🌙 무엇을 도와드릴까요?"</span></div>
+    <div class="persona"><span class="face">😎</span><span class="nm">편한 친구</span><span class="vo">"야, 나 원장이야. 뭐 도와줄까? 😎"</span></div>
+    <div class="persona"><span class="face">🎩</span><span class="nm">정중한 집사</span><span class="vo">"주인님, 원장 대령했습니다."</span></div>
+    <div class="persona"><span class="face">😏</span><span class="nm">시크한 선배</span><span class="vo">"왔냐. 뭐 필요한데."</span></div>
+    <div class="persona"><span class="face">✨</span><span class="nm">밝은 에너지</span><span class="vo">"안녕하세요!! 원장이에요!! 오늘도 화이팅이에요 ✨"</span></div>
+    <p class="hint"><code style="font-family:var(--mono)">~/.local/share/wonjang/SOUL.md</code>를 직접 편집하면 <b>나만의 원장</b>도 만들 수 있어요.</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2><span class="em">1분 설치</span></h2>
+    <p class="lead">설치하면 <code style="font-family:var(--mono)">wonjang</code> 명령이 생깁니다(플랫폼 바이너리 자동 다운로드).</p>
+    <div class="install" style="margin-bottom:18px"><span class="dollar">$</span> <code>npm install -g wonjang-agent</code></div>
+    <p class="lead" style="margin-bottom:8px">바로 써보기:</p>
+    <div class="term" style="max-width:none">
+      <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+<pre><span class="cy">wonjang</span>                    <span class="cmt"># 대화형 — 먼저 성격을 골라요</span>
+<span class="cy">wonjang 자랑</span>               <span class="cmt"># 한 달의 나를 카톡 카드로</span>
+<span class="cy">wonjang 연봉 3600</span>          <span class="cmt"># 월 실수령액</span>
+<span class="cy">wonjang 지출 추가 5만 식비</span>   <span class="cmt"># 가계부</span></pre>
+    </div>
+    <p class="lead" style="margin:22px 0 6px">소스에서 빌드(Rust):</p>
+    <div class="install"><span class="dollar">$</span> <code>cargo install --git https://github.com/wonjangcloud9/wonjangAgent</code></div>
+    <table class="plat">
+      <tr><td>macOS</td><td>arm64 (Apple Silicon) · x64</td></tr>
+      <tr><td>Linux</td><td>x64 (musl 정적)</td></tr>
+      <tr><td>Windows</td><td>x64</td></tr>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>원장(wonjang)</b> — 한국인을 위한 터미널 개인 비서</p>
+    <p style="margin-top:10px">
+      <a href="https://github.com/wonjangcloud9/wonjangAgent">GitHub</a> ·
+      <a href="https://www.npmjs.com/package/wonjang-agent">npm</a> ·
+      <a href="https://github.com/wonjangcloud9/wonjangAgent/blob/main/CHANGELOG.md">변경 이력</a> ·
+      <a href="https://github.com/wonjangcloud9/wonjangAgent/issues">이슈</a>
+    </p>
+    <p style="margin-top:10px;color:#6b7480">MIT License · Made with 🦀 Rust</p>
+    <p class="kw">한국어 터미널 비서, CLI 개인비서, 실수령액 계산기, 가계부 명령어, 디데이 계산, 전역일 계산기, 자랑 카드, 사업자등록번호 검증, 원장 에이전트, wonjang agent</p>
+  </div>
+</footer>
+
+</body>
+</html>

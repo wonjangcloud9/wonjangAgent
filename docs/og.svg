@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd479"/>
+      <stop offset="1" stop-color="#ff7b9c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="628" fill="none" stroke="#30363d" stroke-width="2"/>
+  <text x="80" y="150" font-family="monospace" font-size="30" fill="#7ee787">$ npm install -g wonjang-agent</text>
+  <text x="80" y="290" font-family="-apple-system,Segoe UI,sans-serif" font-size="88" font-weight="800" fill="#e6edf3">🌙 원장 <tspan fill="#9da7b3" font-size="44" font-weight="400">wonjang</tspan></text>
+  <text x="80" y="380" font-family="-apple-system,Segoe UI,sans-serif" font-size="56" font-weight="800" fill="url(#g)">한국인을 위한 터미널 개인 비서</text>
+  <text x="80" y="465" font-family="-apple-system,Segoe UI,sans-serif" font-size="34" fill="#9da7b3">가계부 · 실수령 · 디데이 · 전역일 · 자랑 카드 · 날씨 · 환율</text>
+  <text x="80" y="540" font-family="-apple-system,Segoe UI,sans-serif" font-size="30" fill="#58d3ff">키 없이 · 로그인 없이 · 설치하면 바로 — 단일 바이너리(Rust)</text>
+</svg>
