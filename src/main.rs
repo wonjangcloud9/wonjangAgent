@@ -7127,6 +7127,7 @@ fn cmd_calorie(sex: &str, age: u32, height: f64, weight: f64) -> Result<()> {
 }
 
 fn cmd_bmi(height: f64, weight: f64) -> Result<()> {
+    use owo_colors::OwoColorize;
     println!();
     match bmi::calc(height, weight) {
         Some(b) => {
@@ -7138,6 +7139,14 @@ fn cmd_bmi(height: f64, weight: f64) -> Result<()> {
             if diff.abs() >= 0.5 {
                 let word = if diff > 0.0 { "초과" } else { "부족" };
                 println!("     표준 대비      {:.1}kg {word}", diff.abs());
+            }
+            // 사람의 BMI 범위(약 12~80)를 크게 벗어나면 키↔몸무게를 바꿔 넣었거나
+            // 자릿수를 잘못 친 경우가 대부분 — 헛값을 정답처럼 보여주지 않게 짚어준다.
+            if !(10.0..=80.0).contains(&b.value) {
+                println!(
+                    "     {}",
+                    "ⓘ 값이 비현실적이에요 — 순서는 '키(cm) 몸무게(kg)'예요. 예: 175 70".dimmed()
+                );
             }
         }
         None => println!("  키와 몸무게는 0보다 커야 해요."),
