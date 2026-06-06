@@ -5435,19 +5435,28 @@ fn cmd_brag(
         None => ym.clone(),
     };
 
-    // 습관: 가장 긴 streak + 그 습관의 최근 28일 잔디.
+    // 습관: '가장 긴 연속'은 최장 기록(longest)으로 보여준다(라벨과 일치 + 자랑거리).
+    // 코멘트는 정직하게 '현재 streak'으로 — 기록은 자랑, 코멘트는 지금 상태.
     let habit_store = habits::HabitStore::load().unwrap_or_default();
     let today = habits::today();
-    let mut best: Option<(String, i64, std::collections::HashSet<String>)> = None;
+    // (이름, 최장 연속, 현재 streak, 날짜셋)
+    let mut best: Option<(String, i64, i64, std::collections::HashSet<String>)> = None;
     for h in &habit_store.items {
-        let s = h.streak(today);
-        if best.as_ref().map(|(_, bs, _)| s > *bs).unwrap_or(true) {
-            best = Some((h.name.clone(), s, h.date_set()));
+        let set = h.date_set();
+        let longest = habits::stats(&set, today).map(|s| s.longest).unwrap_or(0);
+        if best
+            .as_ref()
+            .map(|(_, bl, _, _)| longest > *bl)
+            .unwrap_or(true)
+        {
+            let current = habits::streak(&set, today);
+            best = Some((h.name.clone(), longest, current, set));
         }
     }
-    let streak = best.as_ref().map(|(n, s, _)| (n.clone(), *s));
+    let streak = best.as_ref().map(|(n, l, _, _)| (n.clone(), *l));
+    let current_streak = best.as_ref().map(|(_, _, c, _)| *c).unwrap_or(0);
     let jandi: Vec<bool> = match &best {
-        Some((_, _, set)) => (0..28)
+        Some((_, _, _, set)) => (0..28)
             .rev()
             .map(|i| {
                 let d = today - chrono::Duration::days(i);
@@ -5514,9 +5523,10 @@ fn cmd_brag(
     }
 
     let persona = soul::active_preset_key();
+    // 코멘트는 '현재 streak' 기준(라벨의 최장 기록과 분리 — 정직한 지금 상태).
     let comment = card::card_comment(
         persona,
-        streak.as_ref().map(|(_, s)| *s).unwrap_or(0),
+        current_streak,
         streak.as_ref().map(|(n, _)| n.as_str()).unwrap_or("습관"),
     );
     let data = card::CardData {
@@ -5575,16 +5585,21 @@ fn cmd_brag_weekly(width: usize, no_color: bool, copy: bool) -> Result<()> {
     let today = ddays::today();
     let day = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
 
-    // 습관: 가장 긴 streak + 이번 주 7일 잔디.
+    // 습관: '가장 긴 연속'은 최장 기록(longest)으로(라벨과 일치) + 이번 주 7일 잔디.
     let habit_store = habits::HabitStore::load().unwrap_or_default();
     let mut best: Option<(String, i64, std::collections::HashSet<String>)> = None;
     for h in &habit_store.items {
-        let s = h.streak(today);
-        if best.as_ref().map(|(_, bs, _)| s > *bs).unwrap_or(true) {
-            best = Some((h.name.clone(), s, h.date_set()));
+        let set = h.date_set();
+        let longest = habits::stats(&set, today).map(|s| s.longest).unwrap_or(0);
+        if best
+            .as_ref()
+            .map(|(_, bl, _)| longest > *bl)
+            .unwrap_or(true)
+        {
+            best = Some((h.name.clone(), longest, set));
         }
     }
-    let streak = best.as_ref().map(|(n, s, _)| (n.clone(), *s));
+    let streak = best.as_ref().map(|(n, l, _)| (n.clone(), *l));
     let jandi7: Vec<bool> = match &best {
         Some((_, _, set)) => (0..7)
             .rev()
