@@ -2092,10 +2092,32 @@ mod repl_local_tests {
 }
 
 /// 백엔드(LLM) 없이 진입하는 대화형 모드 — 로컬 명령만 직접 실행한다.
+/// 한글 입력 백스페이스가 글자(=UTF-8 3바이트) 단위로 동작하도록 stdin TTY에 IUTF8을 켠다.
+/// 라인 디서플린이 UTF-8을 모르면(로케일 미설정 등) 백스페이스가 바이트 단위라 한글 1자를
+/// 지우는 데 3번을 눌러야 한다. canonical 모드는 유지하고 입력 플래그(IUTF8)만 보정한다.
+/// TTY가 아니면(파이프) 손대지 않는다. unix 전용(Windows는 콘솔이 UTF-8을 따로 처리).
+#[cfg(unix)]
+fn ensure_utf8_input() {
+    unsafe {
+        let fd = libc::STDIN_FILENO;
+        if libc::isatty(fd) != 1 {
+            return;
+        }
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut t) == 0 && t.c_iflag & libc::IUTF8 == 0 {
+            t.c_iflag |= libc::IUTF8;
+            libc::tcsetattr(fd, libc::TCSANOW, &t);
+        }
+    }
+}
+#[cfg(not(unix))]
+fn ensure_utf8_input() {}
+
 /// LLM 없이 설치한 사용자도 '자랑'·'가계부'·계산기를 대화형에서 바로 쓰게 한다.
 /// 자연어(에이전트) 입력만 백엔드 연결을 안내한다.
 async fn repl_local_only(_cfg: &Config) -> Result<()> {
     use std::io::IsTerminal;
+    ensure_utf8_input(); // 한글 백스페이스 글자 단위 보정
     // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
     if io::stdin().is_terminal() && !soul::is_chosen() {
         persona_picker()?;
@@ -2160,6 +2182,7 @@ async fn repl(
     sess: &session::Session,
 ) -> Result<()> {
     use std::io::IsTerminal;
+    ensure_utf8_input(); // 한글 백스페이스 글자 단위 보정
     // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
     if io::stdin().is_terminal() && !soul::is_chosen() {
         persona_picker()?;
