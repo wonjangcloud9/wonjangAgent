@@ -89,6 +89,40 @@ fn truncate_width(s: &str, max: usize) -> String {
     out
 }
 
+/// 끝에서부터 표시 폭 `max` 이하가 되도록 클러스터 경계로 취한다(truncate_width의 꼬리판).
+fn truncate_tail_width(s: &str, max: usize) -> String {
+    let cls = clusters(s);
+    let mut w = 0;
+    let mut start = cls.len();
+    for i in (0..cls.len()).rev() {
+        if w + cls[i].1 > max {
+            break;
+        }
+        w += cls[i].1;
+        start = i;
+    }
+    cls[start..].iter().map(|(c, _)| c.as_str()).collect()
+}
+
+/// 표시 폭 `max`를 넘으면 가운데를 `…`로 접어 앞·뒤를 모두 보존한다.
+/// D-day 숫자·연속일처럼 '값의 뒤쪽 핵심 수치'가 먼저 잘려나가지 않게 한다.
+fn fit_middle(s: &str, max: usize) -> String {
+    if disp_width(s) <= max {
+        return s.to_string();
+    }
+    if max <= 1 {
+        return truncate_width(s, max);
+    }
+    let keep = max - 1; // '…' 한 칸
+    let tail_w = keep / 2;
+    let head_w = keep - tail_w; // 앞쪽에 같거나 한 칸 더
+    format!(
+        "{}…{}",
+        truncate_width(s, head_w),
+        truncate_tail_width(s, tail_w)
+    )
+}
+
 /// 가로 막대(값/최댓값 비율을 `█`로). 항상 정확히 `width` 표시칸(빈칸은 공백).
 /// 엑셀 그룹 집계의 막대그래프 등 한눈 비교에 쓴다. max≤0이면 빈 칸.
 pub fn hbar(value: f64, max: f64, width: usize) -> String {
@@ -141,6 +175,14 @@ fn centered(body: &str, inner: usize) -> String {
 fn row(label: &str, value: &str, inner: usize, label_col: usize) -> String {
     let pad = label_col.saturating_sub(disp_width(label));
     content(&format!("{label}{}{value}", " ".repeat(pad)), inner)
+}
+
+/// `row`와 같되, 좁아서 값이 다 안 들어가면 값의 가운데를 접어 '뒤쪽 핵심 수치'를
+/// 보존한다. D-day 숫자·연속일이 카톡 좁은 폭(34)에서 먼저 사라지던 걸 막는다.
+fn row_keep_ends(label: &str, value: &str, inner: usize, label_col: usize) -> String {
+    let prefix_w = disp_width(label).max(label_col);
+    let avail = inner.saturating_sub(1 + prefix_w); // content()가 더하는 앞 공백 1칸 감안
+    row(label, &fit_middle(value, avail), inner, label_col)
 }
 
 /// 가로줄(테두리/구분선). `title`을 가운데 두고 ─로 채운다.
@@ -217,7 +259,7 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
     lines.push(rule('╭', '╮', &format!("원장 카드 · {}", d.title), inner));
     if let Some((name, s)) = &d.streak {
         let value = format!("{name} {s}일{}", streak_badge(*s));
-        lines.push(row("🔥 가장 긴 연속", &value, inner, col));
+        lines.push(row_keep_ends("🔥 가장 긴 연속", &value, inner, col));
     }
     if !d.jandi.is_empty() {
         // 잔디는 폭이 커서(최대 31칸) 라벨 없이 한 줄 통째로 — 좁은 카톡 폭(34)에도 들어가게.
@@ -236,7 +278,7 @@ pub fn render_card(d: &CardData, width: usize) -> Vec<String> {
         lines.push(row("💰 이번 달 지출", expense, inner, col));
     }
     if let Some(dday) = &d.dday {
-        lines.push(row("📅 다가오는 날", dday, inner, col));
+        lines.push(row_keep_ends("📅 다가오는 날", dday, inner, col));
     }
     if d.journal_count > 0 {
         lines.push(row(
@@ -492,6 +534,37 @@ mod tests {
             last.contains("wonjang-agent"),
             "카톡 폭에서 풋터 설치명이 잘림: {last:?}"
         );
+    }
+
+    #[test]
+    fn long_dday_and_streak_keep_trailing_value() {
+        // 카톡 좁은 폭(34)에서 현실적인 긴 이름이 와도 핵심 수치(D-숫자·연속일)는
+        // 잘려나가지 않아야 한다(전염의 중심 아티팩트라 치명적이었던 버그).
+        for label in ["유럽 여행 출발", "프로젝트 마감", "둘째 출산 예정일"] {
+            let d = CardData {
+                title: "2026년 6월".into(),
+                streak: Some(("아침 러닝 5km 매일매일".into(), 42)),
+                jandi: Vec::new(),
+                focus_label: None,
+                expense_label: None,
+                dday: Some(format!("{label} D-202")),
+                journal_count: 0,
+                comment: "가보자".into(),
+                footer: SHARE_FOOTER.into(),
+            };
+            let lines = render_card(&d, 34);
+            for line in &lines {
+                assert_eq!(disp_width(line), 34, "폭 불일치: {line:?}");
+            }
+            let joined = lines.join("\n");
+            assert!(joined.contains("D-202"), "D-숫자 사라짐({label}): {joined}");
+            assert!(joined.contains("42일"), "연속일 사라짐: {joined}");
+        }
+        // fit_middle은 뒤(핵심 수치)를 보존하며 가운데를 접는다.
+        let folded = fit_middle("유럽 여행 출발 D-202", 15);
+        assert!(folded.ends_with("D-202"), "꼬리 보존 실패: {folded}");
+        assert!(folded.contains('…'), "접힘 표시 없음: {folded}");
+        assert!(disp_width(&folded) <= 15, "폭 초과: {folded}");
     }
 
     #[test]
