@@ -222,7 +222,7 @@ pub fn onboarding_if_first() {
     println!(
         "     {} {}",
         "🌱 오늘부터 한 가지만 쌓아봐요:".dimmed(),
-        "wonjang 습관 add 운동".bright_cyan()
+        "wonjang 습관 추가 운동".bright_cyan()
     );
     println!(
         "     {}",

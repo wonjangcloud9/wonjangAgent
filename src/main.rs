@@ -1080,7 +1080,8 @@ enum WatchAction {
 enum BookmarkAction {
     /// 즐겨찾기 목록(기본).
     List,
-    /// 즐겨찾기 추가. 예: wonjang 즐겨찾기 add 노션 https://notion.so
+    /// 즐겨찾기 추가. 예: wonjang 즐겨찾기 추가 노션 https://notion.so
+    #[command(alias = "추가")]
     Add {
         /// 단축 이름
         name: String,
@@ -1088,6 +1089,7 @@ enum BookmarkAction {
         target: String,
     },
     /// id로 즐겨찾기 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 즐겨찾기 id
         id: u64,
@@ -1244,7 +1246,8 @@ enum TodoAction {
 enum RemindAction {
     /// 예정된 알림 목록(기본).
     List,
-    /// 알림 추가. 예: wonjang remind add 30 "물 마시기" --every @daily
+    /// 알림 추가. 예: wonjang 약속 추가 30 "물 마시기" --every @daily
+    #[command(alias = "추가")]
     Add {
         /// 지금부터 N분 뒤(첫 알림)
         minutes: i64,
@@ -1255,6 +1258,7 @@ enum RemindAction {
         every: Option<String>,
     },
     /// id로 알림 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 알림 id
         id: u64,
@@ -2523,10 +2527,7 @@ fn cmd_guide() -> Result<()> {
         (
             "📅 일정 & 집중",
             &[
-                (
-                    "wonjang remind add <분> \"약속\"",
-                    "약속·알림(반복 --every)",
-                ),
+                ("wonjang 약속 추가 <분> \"약속\"", "약속·알림(반복 --every)"),
                 ("wonjang 할일 / todo", "할 일 체크리스트"),
                 ("wonjang 디데이 추가 \"수능\" <날짜>", "디데이"),
                 ("wonjang 디데이 카드 [이름]", "D-day 공유 카드(카톡 캡처)"),
@@ -5533,7 +5534,7 @@ fn cmd_bookmark(action: &Option<BookmarkAction>) -> Result<()> {
         }
         None | Some(BookmarkAction::List) => {
             if store.items.is_empty() {
-                ui::info("즐겨찾기가 없어요. 추가: wonjang 즐겨찾기 add 노션 https://notion.so");
+                ui::info("즐겨찾기가 없어요. 추가: wonjang 즐겨찾기 추가 노션 https://notion.so");
                 return Ok(());
             }
             println!("즐겨찾기:\n");
@@ -7774,7 +7775,7 @@ fn cmd_remind(action: &Option<RemindAction>) -> Result<()> {
     }) = action
     {
         if title.trim().is_empty() {
-            ui::error("알림 제목이 필요합니다. 예: wonjang remind add 30 \"물 마시기\"");
+            ui::error("알림 제목이 필요합니다. 예: wonjang 약속 추가 30 \"물 마시기\"");
             std::process::exit(1);
         }
         // 반복 주기 파싱(크론의 스케줄 파서 재사용).
@@ -8387,6 +8388,18 @@ mod alias_tests {
             cmd_of(&["wonjang", "디데이", "추가", "수능", "2026-11-19"]),
             Commands::Dday {
                 action: Some(DdayAction::Add { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "약속", "추가", "30", "물 마시기"]),
+            Commands::Remind {
+                action: Some(super::RemindAction::Add { .. })
+            }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "즐겨찾기", "추가", "노션", "https://notion.so"]),
+            Commands::Bookmark {
+                action: Some(super::BookmarkAction::Add { .. })
             }
         ));
         // 영문 동사 회귀 방지.
