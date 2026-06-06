@@ -8574,7 +8574,12 @@ fn cmd_air(location: &[String]) -> Result<()> {
 
 fn cmd_weather(location: &[String]) -> Result<()> {
     let loc = location.join(" ");
-    let w = util::run_async(async move { weather::weather(&loc).await })?;
+    // 날씨와 미세먼지를 동시에 — 한국인의 아침 세트. 미세먼지는 보너스라
+    // 실패해도(.ok()) 날씨 카드는 그대로 보여준다.
+    let (w, air) = util::run_async(async move {
+        let (w, air) = tokio::join!(weather::weather(&loc), airquality::air_quality(&loc));
+        Ok::<_, anyhow::Error>((w?, air.ok()))
+    })?;
     println!();
     println!(
         "  {} {} 날씨: {} {:.0}°C (체감 {:.0}°C)",
@@ -8584,6 +8589,12 @@ fn cmd_weather(location: &[String]) -> Result<()> {
         "     습도 {}% · 강수 {}mm · 오늘 {:.0}~{:.0}°C",
         w.humidity, w.precip, w.today_min, w.today_max
     );
+    // 미세먼지(있을 때만, 0/0은 결측으로 보고 생략해 false "좋음" 방지).
+    if let Some(a) = air.filter(|a| a.pm10 > 0.0 || a.pm25 > 0.0) {
+        let (g10, e10) = airquality::grade_pm10(a.pm10);
+        let (g25, e25) = airquality::grade_pm25(a.pm25);
+        println!("     🌫️ 미세먼지 {g10} {e10} · 초미세 {g25} {e25}");
+    }
     println!("     👕 {}", weather::outfit(w.feels));
     if let Some(u) = weather::umbrella(w.precip_prob) {
         println!("     {u}");
