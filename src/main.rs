@@ -1130,11 +1130,13 @@ enum HabitAction {
         /// 습관 이름
         name: String,
     },
-    /// 오늘 습관 완료. 예: wonjang 습관 완료 운동
+    /// 습관 완료. 예: wonjang 습관 완료 운동 (깜빡한 날: 습관 완료 운동 어제)
     #[command(alias = "완료")]
     Done {
         /// 습관 이름 또는 id
         habit: String,
+        /// 날짜(생략 시 오늘). '어제'·'그제' 또는 YYYY-MM-DD로 메우기
+        when: Option<String>,
     },
     /// id로 습관 삭제.
     #[command(alias = "삭제")]
@@ -2842,7 +2844,10 @@ fn cmd_guide() -> Result<()> {
             &[
                 ("wonjang 지출 추가 <금액> <분류>", "가계부"),
                 ("wonjang 지출 내보내기", "가계부를 CSV로(엑셀 분석)"),
-                ("wonjang 습관 완료 <이름>", "습관 트래커(연속일수)"),
+                (
+                    "wonjang 습관 완료 <이름> [어제]",
+                    "습관 체크(깜빡한 날 메우기: 어제·날짜)",
+                ),
                 ("wonjang 습관 통계 <이름>", "달성률·최장연속·요일패턴"),
                 ("wonjang 일기 \"<내용>\"", "간단 일기(월별 저장)"),
                 ("wonjang 일지/메모 (프리셋)", "옵시디언 노트"),
@@ -7719,6 +7724,27 @@ fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// 습관 완료 날짜를 해석한다: 생략=오늘 · '어제'·'그제' · YYYY-MM-DD(흔한 한국식 표기 허용).
+/// 미래 날짜는 거부(아직 안 한 날을 미리 체크할 수 없음).
+fn parse_habit_when(when: Option<&str>, today: chrono::NaiveDate) -> Result<chrono::NaiveDate> {
+    use chrono::Duration;
+    let date = match when.map(str::trim) {
+        None | Some("오늘") => today,
+        Some("어제") => today - Duration::days(1),
+        Some("그제") | Some("그저께") => today - Duration::days(2),
+        Some(s) => {
+            let norm = datecalc::normalize_date(s);
+            chrono::NaiveDate::parse_from_str(&norm, "%Y-%m-%d").map_err(|_| {
+                anyhow::anyhow!("날짜는 '어제'·'그제' 또는 YYYY-MM-DD로 (예: 습관 완료 운동 어제)")
+            })?
+        }
+    };
+    if date > today {
+        anyhow::bail!("미래 날짜는 체크할 수 없어요(아직 안 한 날이에요).");
+    }
+    Ok(date)
+}
+
 fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
     let mut store = habits::HabitStore::load()?;
     match action {
@@ -7726,22 +7752,36 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
             let id = store.add(name)?;
             ui::note(&format!("습관 #{id} 추가: {name}. 오늘부터 시작해 봐요!"));
         }
-        Some(HabitAction::Done { habit }) => match store.check(habit)? {
-            Some((name, streak)) => {
-                ui::note(&format!("'{name}' 완료! 🔥 {streak}일 연속"));
-                // 마일스톤이면 축하 + 자랑 카드 공유 유도(감정의 정점에서 전염 트리거).
-                if let Some(label) = habits::milestone(streak) {
-                    use owo_colors::OwoColorize;
-                    println!(
-                        "  🎉 {} {} 이 기록, 카드로 남겨 자랑해요 → {}",
-                        format!("{name} {label}").bright_yellow().bold(),
-                        "달성!".bright_yellow(),
-                        "wonjang 자랑 --복사".bright_cyan()
-                    );
+        Some(HabitAction::Done { habit, when }) => {
+            let today = habits::today();
+            let date = parse_habit_when(when.as_deref(), today)?;
+            let date_s = date.format("%Y-%m-%d").to_string();
+            let backfill = date != today;
+            match store.check_on(habit, &date_s)? {
+                Some((name, streak)) => {
+                    if backfill {
+                        ui::note(&format!(
+                            "'{name}' {}월 {}일 체크 완료(메움) — 🔥 {streak}일 연속",
+                            chrono::Datelike::month(&date),
+                            chrono::Datelike::day(&date)
+                        ));
+                    } else {
+                        ui::note(&format!("'{name}' 완료! 🔥 {streak}일 연속"));
+                    }
+                    // 마일스톤이면 축하 + 자랑 카드 공유 유도(감정의 정점에서 전염 트리거).
+                    if let Some(label) = habits::milestone(streak) {
+                        use owo_colors::OwoColorize;
+                        println!(
+                            "  🎉 {} {} 이 기록, 카드로 남겨 자랑해요 → {}",
+                            format!("{name} {label}").bright_yellow().bold(),
+                            "달성!".bright_yellow(),
+                            "wonjang 자랑 --복사".bright_cyan()
+                        );
+                    }
                 }
+                None => ui::error(&format!("'{habit}' 습관을 찾을 수 없습니다.")),
             }
-            None => ui::error(&format!("'{habit}' 습관을 찾을 수 없습니다.")),
-        },
+        }
         Some(HabitAction::Remove { id }) => {
             if store.remove(*id)? {
                 ui::note(&format!("습관 #{id}을(를) 삭제했습니다."));

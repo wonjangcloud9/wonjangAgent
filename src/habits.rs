@@ -183,15 +183,20 @@ impl HabitStore {
 
     /// 이름 또는 id 문자열로 습관을 찾아 오늘 완료 표시(idempotent).
     pub fn check(&mut self, key: &str) -> Result<Option<(String, i64)>> {
-        let today_s = today_str();
+        self.check_on(key, &today_str())
+    }
+
+    /// 특정 날짜에 습관을 완료 처리한다(깜빡한 날 메우기 — 백필). 이미 있으면 그대로.
+    /// 반환 streak은 오늘 기준(과거를 메우면 연속이 이어져 늘 수 있다).
+    pub fn check_on(&mut self, key: &str, date_s: &str) -> Result<Option<(String, i64)>> {
         let by_id: Option<u64> = key.parse().ok();
         let found = self
             .items
             .iter_mut()
             .find(|h| Some(h.id) == by_id || h.name == key);
         if let Some(h) = found {
-            if !h.done_today(&today_s) {
-                h.dates.push(today_s.clone());
+            if !h.dates.iter().any(|d| d == date_s) {
+                h.dates.push(date_s.to_string());
             }
             let result = (h.name.clone(), h.streak(today()));
             self.save()?;
@@ -271,6 +276,22 @@ mod tests {
         let s = set(&["2026-06-01", "2026-06-02", "2026-06-03"]);
         let st = stats(&s, NaiveDate::from_ymd_opt(2026, 6, 6).unwrap()).unwrap();
         assert_eq!(st.dominant_weekday(), None);
+    }
+
+    #[test]
+    fn backfill_bridges_broken_streak() {
+        let today = NaiveDate::from_ymd_opt(2026, 6, 6).unwrap();
+        let mut s = HabitStore::default();
+        s.items.push(Habit {
+            id: 1,
+            name: "운동".into(),
+            dates: vec!["2026-06-04".into(), "2026-06-06".into()], // 5일(어제) 빠짐
+        });
+        // 어제(05)를 메우기 전: 오늘 기준 연속 1일(어제가 비어 04와 안 이어짐).
+        assert_eq!(streak(&s.items[0].date_set(), today), 1);
+        // 어제를 백필 → 04·05·06 연속 = 3일(억울하게 끊긴 streak 복구).
+        s.items[0].dates.push("2026-06-05".into());
+        assert_eq!(streak(&s.items[0].date_set(), today), 3);
     }
 
     #[test]
