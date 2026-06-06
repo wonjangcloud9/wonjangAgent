@@ -635,7 +635,7 @@ enum Commands {
         value: f64,
     },
     /// 만 나이 계산(만 나이 통일법 기준). 예: wonjang 나이 1990-03-15
-    #[command(alias = "나이")]
+    #[command(aliases = ["나이", "만나이", "세는나이", "나이계산"])]
     Age {
         /// 생일 (YYYY-MM-DD)
         birth: String,
@@ -717,7 +717,7 @@ enum Commands {
         age: u32,
     },
     /// 야근·휴일 수당(근로기준법 가산율). 예: wonjang 야근수당 12000 --연장 3
-    #[command(aliases = ["야근수당", "수당"])]
+    #[command(aliases = ["야근수당", "수당", "야근"])]
     Overtime {
         /// 통상시급(원). 예: 12000
         hourly: f64,
@@ -750,7 +750,7 @@ enum Commands {
         unit: i64,
     },
     /// 단위 변환(온도·무게·길이·속도·부피·넓이). 예: wonjang 변환 100 c
-    #[command(alias = "변환")]
+    #[command(aliases = ["변환", "단위", "환산"])]
     Convert {
         /// 값
         value: f64,
@@ -765,7 +765,7 @@ enum Commands {
         weight: f64,
     },
     /// 수면 시간 계산(90분 주기). 예: wonjang 수면 07:00 (없으면 지금 자면)
-    #[command(alias = "수면")]
+    #[command(aliases = ["수면", "잠"])]
     Sleep {
         /// 기상 시각(HH:MM). 생략 시 지금 자는 기준 기상 시각 추천
         wake: Option<String>,
@@ -799,7 +799,7 @@ enum Commands {
         amount: f64,
     },
     /// 글자수 세기(공백 포함/제외, 자소서 제한 체크). 예: wonjang 글자수 "자소서" --제한 1000
-    #[command(alias = "글자수")]
+    #[command(aliases = ["글자수", "자소서"])]
     Chars {
         /// 셀 텍스트(여러 단어면 공백으로 이어 붙여 셈)
         text: Vec<String>,
@@ -998,7 +998,7 @@ enum Commands {
         count: usize,
     },
     /// 안전한 비밀번호 생성(OS 난수). 예: wonjang 비번 16 --기호
-    #[command(alias = "비번")]
+    #[command(aliases = ["비번", "비밀번호"])]
     Password {
         /// 길이(기본 16, 4~128)
         length: Option<usize>,
@@ -8328,6 +8328,39 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "더치페이", "50000", "4"]),
             Commands::Dutch { .. }
+        ));
+        // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
+        assert!(matches!(
+            cmd_of(&["wonjang", "비밀번호"]),
+            Commands::Password { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "만나이", "1990-01-01"]),
+            Commands::Age { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "세는나이", "1990-01-01"]),
+            Commands::Age { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "잠", "23:00"]),
+            Commands::Sleep { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "단위", "7", "자"]),
+            Commands::Convert { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "환산", "7", "자"]),
+            Commands::Convert { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "야근", "12000"]),
+            Commands::Overtime { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "자소서", "안녕"]),
+            Commands::Chars { .. }
         ));
     }
 
