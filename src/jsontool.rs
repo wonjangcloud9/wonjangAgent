@@ -36,10 +36,20 @@ pub fn pick<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
 
 /// 파일을 읽어 파싱한다. 오류면 위치 정보를 담은 메시지.
 pub fn parse_file(path: &str) -> Result<Value> {
-    let text = std::fs::read_to_string(path)?;
-    serde_json::from_str(&text).map_err(|e| {
+    // 파일 I/O 에러도 한국어로(다른 파일 명령과 일관 — 영문 OS 에러 누출 방지).
+    let text = std::fs::read_to_string(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => anyhow!("파일을 찾을 수 없어요: {path}"),
+        _ => anyhow!("파일을 읽을 수 없어요: {path}"),
+    })?;
+    parse_str(&text)
+}
+
+/// 문자열을 JSON으로 파싱한다. 형식 오류는 위치(행·열)와 함께 한국어로 안내한다
+/// (영문 serde 메시지는 붙이지 않는다 — 한국어 우선).
+pub fn parse_str(text: &str) -> Result<Value> {
+    serde_json::from_str(text).map_err(|e| {
         anyhow!(
-            "JSON이 올바르지 않아요 ({}행 {}열): {e}",
+            "JSON 형식이 올바르지 않아요 ({}행 {}열 근처)",
             e.line(),
             e.column()
         )
@@ -62,6 +72,22 @@ mod tests {
             "tags": ["a", "b", "c"],
             "meta": {"port": 8080}
         })
+    }
+
+    #[test]
+    fn errors_are_korean_without_english() {
+        // 형식 오류: 한국어 + 위치, 영문 serde 잔재 없음.
+        let err = parse_str("not,valid").unwrap_err().to_string();
+        assert!(err.contains("올바르지 않아요"), "{err}");
+        assert!(!err.to_lowercase().contains("expected"), "영문 누출: {err}");
+        // 없는 파일: 영문 OS 에러 대신 한국어.
+        let err = parse_file("definitely/no/such/file.json")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("찾을 수 없어요"), "{err}");
+        assert!(!err.contains("os error"), "영문 누출: {err}");
+        // 정상 파싱은 그대로.
+        assert!(parse_str("{\"a\":1}").is_ok());
     }
 
     #[test]
