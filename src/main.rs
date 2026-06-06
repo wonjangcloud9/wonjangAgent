@@ -713,11 +713,14 @@ enum Commands {
         #[arg(long = "복사")]
         copy: bool,
     },
-    /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600
+    /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600 / wonjang 실수령 300 --월급
     #[command(aliases = ["실수령", "연봉"])]
     Salary {
-        /// 연봉(만 원 단위). 예: 3600 = 3,600만 원
+        /// 금액(만 원 단위). 기본은 연봉(예: 3600), --월급이면 월급(예: 300)
         manwon: f64,
+        /// 입력을 월급으로 본다(월급×12=연봉으로 환산). 예: wonjang 실수령 300 --월급
+        #[arg(long = "월급")]
+        monthly: bool,
     },
     /// 종합소득세 추정(개인사업자·프리랜서, 누진세율). 예: wonjang 종소세 5000만
     #[command(name = "종소세", aliases = ["종합소득세", "사업소득세", "소득세계산"])]
@@ -1803,7 +1806,7 @@ async fn run() -> Result<()> {
             no_color,
             copy,
         }) => return cmd_military(enlist, branch, *card, *width, *no_color, *copy),
-        Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
+        Some(Commands::Salary { manwon, monthly }) => return cmd_salary(*manwon, *monthly),
         Some(Commands::IncomeTax { base }) => return cmd_income_tax(base),
         Some(Commands::Withholding {
             amount,
@@ -3179,7 +3182,10 @@ fn cmd_guide() -> Result<()> {
         (
             "🧮 생활·금융 계산기 (키 불필요)",
             &[
-                ("wonjang 실수령 <연봉만원>", "연봉 실수령액(4대보험+세금)"),
+                (
+                    "wonjang 실수령 <연봉만원> [--월급]",
+                    "실수령액(4대보험+세금, --월급이면 월급 기준)",
+                ),
                 (
                     "wonjang 종소세 <과세표준>",
                     "종합소득세 추정(개인사업자·누진세율)",
@@ -7012,15 +7018,33 @@ fn cmd_price_search(query: &[String], open: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_salary(manwon: f64) -> Result<()> {
+fn cmd_salary(manwon: f64, monthly: bool) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
-        anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
+        let ex = if monthly {
+            "wonjang 실수령 300 --월급"
+        } else {
+            "wonjang 실수령 3600"
+        };
+        anyhow::bail!("금액은 1만원 이상이어야 해요. 예: {ex}");
     }
-    let annual = manwon * 10_000.0;
-    let p = salary::from_annual(annual);
+    // 월급 입력이면 월급 기준으로(엔진이 월급×12=연봉으로 환산). 표시용 연봉도 따로 계산.
+    let annual_manwon = if monthly { manwon * 12.0 } else { manwon };
+    let p = if monthly {
+        salary::from_monthly(manwon * 10_000.0)
+    } else {
+        salary::from_annual(manwon * 10_000.0)
+    };
     let w = |v: f64| expenses::won(v.round() as i64);
     println!();
-    println!("  💰 연봉 실수령액 ({})", jeonse::fmt_eok(manwon));
+    if monthly {
+        println!(
+            "  💰 월급 실수령액 (월 {} · 연봉 환산 {})",
+            jeonse::fmt_eok(manwon),
+            jeonse::fmt_eok(annual_manwon)
+        );
+    } else {
+        println!("  💰 연봉 실수령액 ({})", jeonse::fmt_eok(manwon));
+    }
     println!("     월 세전        {}", w(p.gross_monthly));
     println!("     ─ 국민연금     -{}", w(p.national_pension));
     println!("     ─ 건강보험     -{}", w(p.health));
@@ -7032,6 +7056,9 @@ fn cmd_salary(manwon: f64) -> Result<()> {
     println!("     월 실수령      {}", w(p.net_monthly()));
     println!("     연 실수령      {}", w(p.net_monthly() * 12.0));
     println!();
+    if !monthly {
+        println!("  💡 월급으로 계산하려면: wonjang 실수령 300 --월급");
+    }
     println!("  ※ 2025년 요율·1인 가구·비과세 식대 20만 원 기준 추정치");
     println!();
     Ok(())
@@ -9756,11 +9783,13 @@ mod calc_guard_tests {
     // 0·음수·비유한 입력은 "0원" 같은 무의미 출력 대신 정직하게 거부한다(v1.23.3 원칙 확장).
     #[test]
     fn salary_rejects_meaningless_input() {
-        assert!(cmd_salary(0.0).is_err());
-        assert!(cmd_salary(-100.0).is_err());
-        assert!(cmd_salary(f64::INFINITY).is_err());
-        assert!(cmd_salary(f64::NAN).is_err());
-        assert!(cmd_salary(3600.0).is_ok()); // 정상은 그대로.
+        assert!(cmd_salary(0.0, false).is_err());
+        assert!(cmd_salary(-100.0, false).is_err());
+        assert!(cmd_salary(f64::INFINITY, false).is_err());
+        assert!(cmd_salary(f64::NAN, false).is_err());
+        assert!(cmd_salary(3600.0, false).is_ok()); // 연봉 정상.
+        assert!(cmd_salary(300.0, true).is_ok()); // 월급 모드 정상.
+        assert!(cmd_salary(0.0, true).is_err()); // 월급 모드도 0 거부.
     }
 
     #[test]

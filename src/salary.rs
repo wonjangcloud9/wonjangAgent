@@ -124,9 +124,25 @@ pub fn from_annual(annual: f64) -> Payslip {
     }
 }
 
+/// 월급(세전, 원)으로 월 실수령 명세를 계산한다(연봉=월급×12로 환산).
+/// 많은 사람이 연봉이 아니라 '월급'으로 떠올리기 때문에 입력 편의를 준다.
+pub fn from_monthly(monthly: f64) -> Payslip {
+    from_annual(monthly * 12.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monthly_equals_annual_div_12() {
+        // 월급 300만 입력 = 연봉 3600만 입력과 같아야(환산만 다름).
+        let m = from_monthly(3_000_000.0);
+        let a = from_annual(36_000_000.0);
+        assert_eq!(m.gross_monthly, a.gross_monthly);
+        assert_eq!(m.national_pension, a.national_pension);
+        assert_eq!(m.net_monthly(), a.net_monthly());
+    }
 
     #[test]
     fn four_insurances_for_3600() {
