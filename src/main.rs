@@ -2241,7 +2241,10 @@ async fn repl(
             }
         }
 
-        messages.push(Message::user(input.to_string()));
+        // 슬래시로 시작했으나 알려진 슬래시·로컬 명령이 아니면 선행 '/'를 떼고 LLM에 보낸다
+        // (군더더기 '/'가 모델 입력에 새는 것 방지). 슬래시 없는 평문은 그대로.
+        let to_send = slashed.unwrap_or(input);
+        messages.push(Message::user(to_send.to_string()));
         match eng.run(cfg, ctx, messages).await {
             Ok(answer) => agent::print_answer(&answer),
             Err(e) => ui::error(&format!("{e:#}")),
