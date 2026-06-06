@@ -58,6 +58,16 @@ pub fn check_minutes(m: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// 합산 시 비정상(0 이하·24시간 초과) 항목은 0으로 무시한다 — 옛/수기편집 오염 데이터가
+/// 카드·현황 합계를 깨뜨리는 것을 표시 단계에서도 방어한다(입력 검증과 별개의 방어선).
+fn sane_minutes(m: i64) -> i64 {
+    if m > 0 && m <= MAX_SESSION_MIN {
+        m
+    } else {
+        0
+    }
+}
+
 /// 분을 "N시간 M분" 또는 "M분"으로.
 pub fn fmt_minutes(m: i64) -> String {
     if m >= 60 {
@@ -115,12 +125,15 @@ impl FocusStore {
         self.items
             .iter()
             .filter(|s| s.date == date)
-            .map(|s| s.minutes)
+            .map(|s| sane_minutes(s.minutes))
             .sum()
     }
 
     pub fn today_count(&self, date: &str) -> usize {
-        self.items.iter().filter(|s| s.date == date).count()
+        self.items
+            .iter()
+            .filter(|s| s.date == date && sane_minutes(s.minutes) > 0)
+            .count()
     }
 
     /// from(YYYY-MM-DD) 이후(포함) 집중 합계 — 최근 N일 추세용. YYYY-MM-DD는
@@ -129,7 +142,7 @@ impl FocusStore {
         self.items
             .iter()
             .filter(|s| s.date.as_str() >= from)
-            .map(|s| s.minutes)
+            .map(|s| sane_minutes(s.minutes))
             .sum()
     }
 
@@ -138,7 +151,7 @@ impl FocusStore {
         self.items
             .iter()
             .filter(|s| s.date.starts_with(ym))
-            .map(|s| s.minutes)
+            .map(|s| sane_minutes(s.minutes))
             .sum()
     }
 }
@@ -170,6 +183,28 @@ mod tests {
         });
         assert_eq!(s.today_total("2026-06-01"), 75);
         assert_eq!(s.today_count("2026-06-01"), 2);
+    }
+
+    #[test]
+    fn garbage_entry_ignored_in_totals() {
+        // 옛/수기편집 오염값(2e17분)이 합계·횟수를 깨뜨리지 않아야(표시 단계 방어).
+        let mut s = FocusStore::default();
+        s.items.push(FocusSession {
+            id: 1,
+            date: "2026-06-04".into(),
+            minutes: 200_000_000_000_000_000,
+            label: "코딩".into(),
+        });
+        s.items.push(FocusSession {
+            id: 2,
+            date: "2026-06-04".into(),
+            minutes: 25,
+            label: "코딩".into(),
+        });
+        assert_eq!(s.today_total("2026-06-04"), 25); // garbage 제외
+        assert_eq!(s.today_count("2026-06-04"), 1); // garbage는 세션으로 안 셈
+        assert_eq!(s.month_total("2026-06"), 25);
+        assert_eq!(s.since_total("2026-06-01"), 25);
     }
 
     #[test]
