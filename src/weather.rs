@@ -266,6 +266,21 @@ fn wmo_emoji(code: i64, is_day: bool) -> &'static str {
     }
 }
 
+/// 체감온도(°C)별 옷차림 추천 — 기상청 기온별 옷차림 기준.
+pub fn outfit(feels: f64) -> &'static str {
+    let t = feels.round() as i64;
+    match t {
+        28.. => "민소매·반팔·반바지 🥵",
+        23..=27 => "반팔·얇은 셔츠·면바지 👕",
+        20..=22 => "긴팔·얇은 가디건·청바지 🙂",
+        17..=19 => "맨투맨·니트·가디건 🧥",
+        12..=16 => "자켓·야상·청바지 🧥",
+        9..=11 => "트렌치코트·점퍼·니트 🧣",
+        5..=8 => "코트·가죽자켓·히트텍 🧥",
+        _ => "두꺼운 패딩·목도리·기모 🥶",
+    }
+}
+
 fn encode(s: &str) -> String {
     let mut out = String::new();
     for &b in s.as_bytes() {
@@ -309,6 +324,15 @@ mod tests {
                                                // 비/눈은 낮밤 무관하게 ☀️가 아님.
         assert_ne!(wmo_emoji(61, true), "☀️");
         assert_ne!(wmo_emoji(3, false), "☀️");
+    }
+
+    #[test]
+    fn outfit_by_feels_temp() {
+        assert!(outfit(30.0).contains("반팔"));
+        assert!(outfit(25.0).contains("반팔"));
+        assert!(outfit(18.0).contains("니트") || outfit(18.0).contains("맨투맨"));
+        assert!(outfit(2.0).contains("패딩"));
+        assert!(outfit(7.0).contains("코트"));
     }
 
     #[tokio::test]

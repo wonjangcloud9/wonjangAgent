@@ -8584,6 +8584,7 @@ fn cmd_weather(location: &[String]) -> Result<()> {
         "     습도 {}% · 강수 {}mm · 오늘 {:.0}~{:.0}°C",
         w.humidity, w.precip, w.today_min, w.today_max
     );
+    println!("     👕 {}", weather::outfit(w.feels));
     println!();
     Ok(())
 }
