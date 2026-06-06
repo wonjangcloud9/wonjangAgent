@@ -66,6 +66,7 @@ mod notion;
 mod organize;
 mod overtime;
 mod password;
+mod payday;
 mod pick;
 mod preset;
 mod push;
@@ -651,6 +652,12 @@ enum Commands {
         /// 카드를 클립보드에 복사
         #[arg(long = "복사")]
         copy: bool,
+    },
+    /// 월급날까지 며칠? 예: wonjang 월급날 25 (말일 지급은 wonjang 월급날 말일)
+    #[command(name = "payday", aliases = ["월급날", "급여일", "월급"])]
+    Payday {
+        /// 월급날(1~31 또는 '말일')
+        day: String,
     },
     /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600
     #[command(aliases = ["실수령", "연봉"])]
@@ -1527,6 +1534,7 @@ async fn run() -> Result<()> {
             no_color,
             copy,
         }) => return cmd_age(birth, *card, *width, *no_color, *copy),
+        Some(Commands::Payday { day }) => return cmd_payday(day),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::Loan {
             manwon,
@@ -2824,6 +2832,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 디데이 추가 \"수능\" <날짜>", "디데이"),
                 ("wonjang 디데이 카드 [이름]", "D-day 공유 카드(카톡 캡처)"),
                 ("wonjang 기념일 <사귄날> [이름]", "기념일 N일째 공유 카드"),
+                ("wonjang 월급날 <일>", "월급날까지 D-day(매달 반복·말일 OK)"),
                 ("wonjang 디데이 내보내기", "디데이를 캘린더(.ics)로"),
                 ("wonjang 집중 <분> [무엇]", "뽀모도로 타이머"),
             ],
@@ -6045,6 +6054,33 @@ fn pick_export_path(
     }
 }
 
+fn cmd_payday(day: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let spec = payday::parse(day).map_err(|e| anyhow::anyhow!(e))?;
+    let today = chrono::Local::now().date_naive();
+    let next = payday::next_payday(&spec, today);
+    let dleft = (next - today).num_days();
+    let wd = datecalc::weekday_kr(next);
+    println!();
+    let comment = match dleft {
+        0 => "🎉 오늘이 월급날! 통장 확인 고고",
+        1 => "🤑 내일이 월급날! 오늘만 버티면 돼요",
+        2..=3 => "💪 거의 다 왔어요",
+        4..=7 => "💪 조금만 더 힘내요",
+        _ => "💪 화이팅! 곧 들어와요",
+    };
+    if dleft == 0 {
+        println!("  💰 {}", "오늘이 월급날이에요! 🎉".bright_green().bold());
+        println!("     {} ({wd})", next.format("%Y-%m-%d"));
+    } else {
+        println!("  💰 월급날 {}", format!("D-{dleft}").bright_cyan().bold());
+        println!("     다음 월급날: {} ({wd})", next.format("%Y-%m-%d"));
+    }
+    println!("     {comment}");
+    println!();
+    Ok(())
+}
+
 fn cmd_salary(manwon: f64) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
         anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
@@ -8705,6 +8741,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "더치페이", "50000", "4"]),
             Commands::Dutch { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "월급날", "25"]),
+            Commands::Payday { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
