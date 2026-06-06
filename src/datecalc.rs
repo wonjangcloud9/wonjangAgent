@@ -81,9 +81,11 @@ pub struct DaysSince {
 pub fn days_since(start: NaiveDate, today: NaiveDate) -> DaysSince {
     let days_ago = days_between(start, today).max(0);
     let nth_day = days_ago + 1;
-    // 100단위 + 해마다(1~10년) 마디를 오름차순으로.
+    // 매 100일(100~1000) + 해마다(1~10년) 마디를 오름차순으로.
+    // 한국 커플은 100·200·…·900·1000일을 다 챙긴다 — 100단위를 빠짐없이.
     const MARKS: &[i64] = &[
-        100, 200, 300, 365, 500, 730, 1000, 1095, 1460, 1825, 2000, 3000, 3650,
+        100, 200, 300, 365, 400, 500, 600, 700, 730, 800, 900, 1000, 1095, 1460, 1825, 2000, 3000,
+        3650,
     ];
     let mut milestones = Vec::new();
     for &m in MARKS {
@@ -157,13 +159,26 @@ mod tests {
         let s = days_since(d(2024, 1, 1), d(2026, 6, 5));
         assert_eq!(s.days_ago, 886);
         assert_eq!(s.nth_day, 887);
-        // 다가오는 마디 2개: 1000일, 1095일(3년).
+        // 다가오는 마디 2개: 900일(곧!), 1000일 — 100단위를 건너뛰지 않는다.
         assert_eq!(s.milestones.len(), 2);
-        assert_eq!(s.milestones[0].0, 1000);
-        assert_eq!(s.milestones[1].0, 1095);
-        // 1000일째 = 시작일 + 999일, D-day는 양수(미래).
-        assert_eq!(s.milestones[0].1, add_days(d(2024, 1, 1), 999).unwrap());
+        assert_eq!(s.milestones[0].0, 900);
+        assert_eq!(s.milestones[1].0, 1000);
+        // 900일째 = 시작일 + 899일, D-day는 양수(미래).
+        assert_eq!(s.milestones[0].1, add_days(d(2024, 1, 1), 899).unwrap());
         assert!(s.milestones[0].2 > 0);
+    }
+
+    #[test]
+    fn milestones_do_not_skip_hundreds() {
+        // 350일째 커플 → 다음 마디는 365(1주년)·400, 400을 건너뛰지 않는다.
+        let s = days_since(d(2025, 1, 1), add_days(d(2025, 1, 1), 349).unwrap());
+        assert_eq!(s.nth_day, 350);
+        assert_eq!(s.milestones[0].0, 365);
+        assert_eq!(s.milestones[1].0, 400);
+        // 650일째 → 700·730(2주년).
+        let s2 = days_since(d(2025, 1, 1), add_days(d(2025, 1, 1), 649).unwrap());
+        assert_eq!(s2.milestones[0].0, 700);
+        assert_eq!(s2.milestones[1].0, 730);
     }
 
     #[test]
