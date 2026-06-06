@@ -6784,6 +6784,10 @@ fn cmd_anniversary(
     let s = datecalc::days_since(start, today);
     // 카드 하단: 다음 기념일 안내(있으면), 없으면 따뜻한 한마디.
     let comment = match s.milestones.first() {
+        // 365 배수 마디는 커플이 챙기는 'N주년'으로도 알려준다(공유 카드가 더 와닿게).
+        Some((mark, _, dday)) if *mark % 365 == 0 => {
+            format!("다음 {mark}일({}주년)까지 D-{dday} 🎉", mark / 365)
+        }
         Some((mark, _, dday)) => format!("다음 {mark}일까지 D-{dday} 🎉"),
         None => "오래오래 함께해요 💞".to_string(),
     };
