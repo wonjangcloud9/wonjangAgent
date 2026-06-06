@@ -60,6 +60,7 @@ mod lotto;
 mod mcp;
 mod memory;
 mod menu;
+mod military;
 mod myip;
 mod news;
 mod notes;
@@ -659,6 +660,27 @@ enum Commands {
     Payday {
         /// 월급날(1~31 또는 '말일')
         day: String,
+    },
+    /// 전역일·복무 진행률·계급. 예: wonjang 전역 2025-03-04 육군 (공유 카드는 --카드)
+    #[command(name = "전역", aliases = ["전역일", "군대", "제대", "전역계산", "디데이전역"])]
+    Military {
+        /// 입대일 (YYYY-MM-DD)
+        enlist: String,
+        /// 군별(육군·해병대·해군·공군·사회복무요원, 기본 육군)
+        #[arg(default_value = "육군")]
+        branch: String,
+        /// 전역까지를 공유 카드 한 장으로(카톡 캡처)
+        #[arg(long = "카드", alias = "card")]
+        card: bool,
+        /// 박스 폭(기본 40, 카톡엔 34 권장)
+        #[arg(long = "폭", default_value_t = 40)]
+        width: usize,
+        /// 색 없이 출력(파이프·복붙용)
+        #[arg(long = "no-color")]
+        no_color: bool,
+        /// 카드를 클립보드에 복사
+        #[arg(long = "복사")]
+        copy: bool,
     },
     /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600
     #[command(aliases = ["실수령", "연봉"])]
@@ -1563,6 +1585,14 @@ async fn run() -> Result<()> {
             copy,
         }) => return cmd_age(birth, *card, *width, *no_color, *copy),
         Some(Commands::Payday { day }) => return cmd_payday(day),
+        Some(Commands::Military {
+            enlist,
+            branch,
+            card,
+            width,
+            no_color,
+            copy,
+        }) => return cmd_military(enlist, branch, *card, *width, *no_color, *copy),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::Loan {
             manwon,
@@ -2863,6 +2893,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 디데이 카드 [이름]", "D-day 공유 카드(카톡 캡처)"),
                 ("wonjang 기념일 <사귄날> [이름]", "기념일 N일째 공유 카드"),
                 ("wonjang 월급날 <일>", "월급날까지 D-day(매달 반복·말일 OK)"),
+                (
+                    "wonjang 전역 <입대일> [군별]",
+                    "전역까지 D-day·계급·진행률(--카드)",
+                ),
                 ("wonjang 디데이 내보내기", "디데이를 캘린더(.ics)로"),
                 ("wonjang 집중 <분> [무엇]", "뽀모도로 타이머"),
             ],
@@ -6140,6 +6174,136 @@ fn cmd_payday(day: &str) -> Result<()> {
     Ok(())
 }
 
+fn military_comment(
+    today: chrono::NaiveDate,
+    enlist: chrono::NaiveDate,
+    dleft: i64,
+    term: &str,
+) -> String {
+    if today < enlist {
+        return "입대 준비 화이팅! 💪".to_string();
+    }
+    match dleft {
+        d if d < 0 => format!("{term} 축하해요! 자유다 🎊"),
+        0 => format!("오늘 {term}! 고생했어요 🎉"),
+        1 => "내일이면 사회인! 🎊".to_string(),
+        2..=30 => "말년 휴가 곧이에요, 조금만 더 💪".to_string(),
+        31..=100 => "곧 100일 안쪽! 힘내요 💪".to_string(),
+        _ => "한 칸씩, 잘 버티고 있어요 💪".to_string(),
+    }
+}
+
+fn cmd_military(
+    enlist_in: &str,
+    branch_in: &str,
+    card: bool,
+    width: usize,
+    no_color: bool,
+    copy: bool,
+) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let branch = military::parse_branch(branch_in).map_err(|e| anyhow::anyhow!(e))?;
+    let enlist = ddays::parse_date(enlist_in)?;
+    let today = chrono::Local::now().date_naive();
+    let discharge = military::discharge_date(enlist, branch);
+    let term = branch.discharge_term(); // 전역 / 소집해제
+    let dleft = (discharge - today).num_days();
+    let wd = datecalc::weekday_kr(discharge);
+    // 전역 당일·이후는 진행률 100%로 표시(만기 경계는 전역 다음날이라 당일은 99%로 나오는 걸 보정).
+    let pct = if today >= discharge {
+        100
+    } else {
+        military::progress_pct(enlist, branch, today)
+    };
+
+    // 상태별 큰 글씨(D 표현).
+    let big = if today < enlist {
+        format!("입대 D-{}", (enlist - today).num_days())
+    } else if dleft > 0 {
+        format!("{term} D-{dleft}")
+    } else if dleft == 0 {
+        format!("오늘 {term}! 🎉")
+    } else {
+        format!("{term} D+{}", -dleft)
+    };
+
+    if card {
+        let head = if branch.has_rank() && today >= enlist && dleft >= 0 {
+            format!(
+                "🪖 {} · {}",
+                branch.label(),
+                military::rank_on(enlist, today).label()
+            )
+        } else {
+            format!("🪖 {}", branch.label())
+        };
+        // big에 이미 '{term} D-…'가 있으니 date_line엔 날짜·진행률만(카톡폭 34에 맞춰 압축).
+        let date_line = format!("📅 {} ({wd}) · 진행 {pct}%", discharge.format("%Y-%m-%d"));
+        let comment = military_comment(today, enlist, dleft, term);
+        let lines = card::render_event_card("원장 전역", &head, &big, &date_line, &comment, width);
+        print_card(&lines, soul::active_preset_key(), no_color, copy);
+        return Ok(());
+    }
+
+    println!();
+    if today < enlist {
+        let to = (enlist - today).num_days();
+        println!(
+            "  🪖 {} 입대까지 {}",
+            branch.label(),
+            format!("D-{to}").bright_cyan().bold()
+        );
+        println!(
+            "     입대일: {} ({})",
+            enlist.format("%Y-%m-%d"),
+            datecalc::weekday_kr(enlist)
+        );
+        println!(
+            "     예정 {term}일: {} ({wd})",
+            discharge.format("%Y-%m-%d")
+        );
+    } else if dleft > 0 {
+        println!(
+            "  🪖 {} {term}까지 {}",
+            branch.label(),
+            format!("D-{dleft}").bright_cyan().bold()
+        );
+        println!("     {term}일: {} ({wd})", discharge.format("%Y-%m-%d"));
+        println!("     복무 진행률: {pct}%");
+        if branch.has_rank() {
+            println!(
+                "     현재 계급: {}",
+                military::rank_on(enlist, today).label()
+            );
+            if let Some((r, date)) = military::next_promotion(enlist, today) {
+                let pd = (date - today).num_days();
+                println!(
+                    "     다음 진급: {} ({}) D-{pd}",
+                    r.label(),
+                    date.format("%Y-%m-%d")
+                );
+            }
+        }
+    } else if dleft == 0 {
+        println!("  🎉 오늘 {term}입니다! 고생 많으셨어요");
+        println!("     {term}일: {} ({wd})", discharge.format("%Y-%m-%d"));
+    } else {
+        println!(
+            "  🎖️ {} {term} 완료 {}",
+            branch.label(),
+            format!("D+{}", -dleft).bright_green().bold()
+        );
+        println!("     {term}일: {} ({wd})", discharge.format("%Y-%m-%d"));
+    }
+    println!();
+    println!(
+        "  ※ 만기 {term}일 기준(조기전역·휴가·공휴일 미반영) · 복무기간 {}개월",
+        branch.months()
+    );
+    println!();
+    Ok(())
+}
+
 fn cmd_salary(manwon: f64) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
         anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
@@ -8933,6 +9097,14 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "월급날", "25"]),
             Commands::Payday { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "전역", "2025-03-04", "육군"]),
+            Commands::Military { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "군대", "2025-03-04"]),
+            Commands::Military { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
