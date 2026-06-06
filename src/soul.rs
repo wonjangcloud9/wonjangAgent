@@ -110,6 +110,62 @@ pub fn greeting() -> String {
     }
 }
 
+/// 프리셋별 짧은 얼굴(이모지) — 터미널에서 '캐릭터가 곁에 있다'는 느낌을 준다.
+pub fn face(key: &str) -> &'static str {
+    match key {
+        "친구" => "😎",
+        "집사" => "🎩",
+        "선배" => "😏",
+        "발랄" => "✨",
+        _ => "🌙",
+    }
+}
+
+/// 프리셋별 자기소개 한마디 — 고를 때 미리듣기 + 고른 뒤 첫 인사로 쓴다.
+pub fn voice_sample(key: &str) -> &'static str {
+    match key {
+        "친구" => "야, 나 원장이야. 뭐 도와줄까? 😎",
+        "집사" => "주인님, 원장 대령했습니다. 분부만 내려주십시오.",
+        "선배" => "왔냐. 뭐 필요한데.",
+        "발랄" => "안녕하세요!! 원장이에요!! 오늘도 화이팅이에요 ✨",
+        _ => "안녕하세요, 원장입니다 🌙 무엇을 도와드릴까요?",
+    }
+}
+
+/// 사용자가 성격을 직접 고른 적이 있는가(있으면 첫 실행 선택을 다시 묻지 않는다).
+fn chosen_marker() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join("wonjang").join(".persona_chosen"))
+}
+
+/// 성격을 한 번이라도 정했으면 true(마커 또는 SOUL.md 존재).
+pub fn is_chosen() -> bool {
+    chosen_marker().map(|p| p.exists()).unwrap_or(false)
+        || soul_path().map(|p| p.exists()).unwrap_or(false)
+}
+
+/// 성격을 골랐다고 표시(첫 실행 선택을 반복하지 않도록).
+pub fn mark_chosen() {
+    if let Some(p) = chosen_marker() {
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(p, "1").ok();
+    }
+}
+
+/// 선택 메뉴 입력("" 또는 "1".."N")을 프리셋 인덱스로. 빈 값·범위 밖·숫자 아님은 기본(0).
+pub fn resolve_choice(input: &str) -> usize {
+    let t = input.trim();
+    if t.is_empty() {
+        return 0;
+    }
+    t.parse::<usize>()
+        .ok()
+        .filter(|n| (1..=PRESETS.len()).contains(n))
+        .map(|n| n - 1)
+        .unwrap_or(0)
+}
+
 /// 프리셋을 SOUL.md에 저장한다.
 pub fn set_preset(key: &str) -> Result<()> {
     let body = preset(key).ok_or_else(|| {
@@ -132,6 +188,32 @@ pub fn reset() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_choice_maps_menu_input() {
+        assert_eq!(resolve_choice(""), 0); // 엔터 = 기본(첫 번째)
+        assert_eq!(resolve_choice("1"), 0);
+        assert_eq!(resolve_choice("2"), 1);
+        assert_eq!(
+            resolve_choice(&PRESETS.len().to_string()),
+            PRESETS.len() - 1
+        );
+        assert_eq!(resolve_choice("99"), 0); // 범위 밖 = 기본
+        assert_eq!(resolve_choice("abc"), 0); // 숫자 아님 = 기본
+        assert_eq!(resolve_choice("  3  "), 2); // 공백 허용
+    }
+
+    #[test]
+    fn every_preset_has_distinct_face_and_voice() {
+        for (key, _, _) in PRESETS {
+            assert!(!face(key).is_empty());
+            assert!(!voice_sample(key).is_empty());
+        }
+        // 프리셋마다 목소리가 달라야 개성이 산다.
+        let voices: std::collections::HashSet<_> =
+            PRESETS.iter().map(|(k, _, _)| voice_sample(k)).collect();
+        assert_eq!(voices.len(), PRESETS.len());
+    }
 
     #[test]
     fn preset_lookup() {

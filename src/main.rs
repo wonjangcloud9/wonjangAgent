@@ -2083,6 +2083,11 @@ mod repl_local_tests {
 /// LLM 없이 설치한 사용자도 '자랑'·'가계부'·계산기를 대화형에서 바로 쓰게 한다.
 /// 자연어(에이전트) 입력만 백엔드 연결을 안내한다.
 async fn repl_local_only(_cfg: &Config) -> Result<()> {
+    use std::io::IsTerminal;
+    // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
+    if io::stdin().is_terminal() && !soul::is_chosen() {
+        persona_picker()?;
+    }
     ui::banner("Claude Code", false); // 백엔드 연결 전(정직한 안내) 배너
     ui::onboarding_if_first(false);
     loop {
@@ -2149,6 +2154,11 @@ async fn repl(
     messages: &mut Vec<Message>,
     sess: &session::Session,
 ) -> Result<()> {
+    use std::io::IsTerminal;
+    // 첫 실행: 캐릭터(성격)부터 고른다 — 그 다음 배너가 그 목소리로 인사한다.
+    if io::stdin().is_terminal() && !soul::is_chosen() {
+        persona_picker()?;
+    }
     ui::banner(&eng.label(cfg), eng.backend_ready());
     ui::onboarding_if_first(eng.backend_ready());
 
@@ -4166,6 +4176,65 @@ fn cmd_merge_tables(files: &[String], save: Option<&str>, source: bool) -> Resul
     Ok(())
 }
 
+/// 첫 실행·`성격`(인자 없이) 시 캐릭터를 고르는 대화형 선택. 각 원장이 자기 목소리로
+/// 미리 인사하고, 고르면 그 캐릭터가 터미널에 등장한다. EOF(비대화형)면 현재 상태만 안내.
+fn persona_picker() -> Result<()> {
+    use owo_colors::OwoColorize;
+    println!();
+    println!("  🎭 {}", "당신의 원장, 어떤 성격이면 좋을까요?".bold());
+    println!(
+        "     {}",
+        "골라주세요 — 나중에 'wonjang 성격'으로 언제든 바꿀 수 있어요".dimmed()
+    );
+    println!();
+    for (i, (key, label, _)) in soul::PRESETS.iter().enumerate() {
+        println!(
+            "   {} {} {} {}",
+            format!("{})", i + 1).bright_cyan().bold(),
+            soul::face(key),
+            label,
+            format!("— \"{}\"", soul::voice_sample(key)).dimmed()
+        );
+    }
+    println!();
+    print!(
+        "   {}",
+        format!("번호 (1-{}, 엔터=기본): ", soul::PRESETS.len()).bold()
+    );
+    io::stdout().flush()?;
+    let mut line = String::new();
+    if io::stdin().read_line(&mut line)? == 0 {
+        // 입력이 없는 환경(파이프·EOF) — 강제로 정하지 않고 현재 상태만 안내한다.
+        println!();
+        println!(
+            "  🎭 지금 성격: {}  (바꾸기: wonjang 성격 친구|집사|선배|발랄|기본)",
+            soul::active_preset_key().bright_cyan()
+        );
+        println!();
+        return Ok(());
+    }
+    let (key, label, _) = soul::PRESETS[soul::resolve_choice(&line)];
+    soul::set_preset(key)?;
+    soul::mark_chosen();
+    println!();
+    println!(
+        "  ✅ {} '{}' 원장이 함께할게요.",
+        "좋아요!".green().bold(),
+        label.bright_cyan()
+    );
+    println!(
+        "     {}  {}",
+        soul::face(key),
+        soul::voice_sample(key).bold()
+    );
+    println!(
+        "     {}",
+        "(바꾸기: wonjang 성격 <이름> · 되돌리기: wonjang 성격 초기화)".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
 fn cmd_soul(preset: Option<&str>) -> Result<()> {
     use owo_colors::OwoColorize;
     match preset {
@@ -4185,31 +4254,7 @@ fn cmd_soul(preset: Option<&str>) -> Result<()> {
             );
             println!();
         }
-        None => {
-            println!();
-            println!("  🎭 원장 성격 (말투·태도)");
-            println!(
-                "     지금: {}",
-                soul::active_persona()
-                    .chars()
-                    .take(40)
-                    .collect::<String>()
-                    .dimmed()
-            );
-            println!();
-            println!("  고를 수 있는 성격:");
-            for (key, label, _) in soul::PRESETS {
-                println!("     {:<6} {}", key.bright_cyan(), label);
-            }
-            println!();
-            println!("     바꾸기: {}", "wonjang 성격 <이름>".bold());
-            println!(
-                "     직접 편집: {}",
-                soul::soul_path()?.display().to_string().dimmed()
-            );
-            println!("     되돌리기: wonjang 성격 초기화");
-            println!();
-        }
+        None => return persona_picker(),
     }
     Ok(())
 }
