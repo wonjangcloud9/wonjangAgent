@@ -16,6 +16,8 @@ pub struct Weather {
     pub today_min: f64,
     pub today_max: f64,
     pub precip: f64,
+    /// 오늘 강수확률(%) — 우산 안내용.
+    pub precip_prob: i64,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +41,8 @@ struct Current {
 struct Daily {
     temperature_2m_max: Vec<f64>,
     temperature_2m_min: Vec<f64>,
+    #[serde(default)]
+    precipitation_probability_max: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -120,7 +124,8 @@ pub async fn weather(location: &str) -> Result<Weather> {
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
          &current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,precipitation,is_day\
-         &daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FSeoul&forecast_days=1"
+         &daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max\
+         &timezone=Asia%2FSeoul&forecast_days=1"
     );
     let http = client()?;
     let f: Forecast = http
@@ -142,6 +147,12 @@ pub async fn weather(location: &str) -> Result<Weather> {
         today_min: f.daily.temperature_2m_min.first().copied().unwrap_or(0.0),
         today_max: f.daily.temperature_2m_max.first().copied().unwrap_or(0.0),
         precip: f.current.precipitation,
+        precip_prob: f
+            .daily
+            .precipitation_probability_max
+            .first()
+            .copied()
+            .unwrap_or(0),
     })
 }
 
@@ -281,6 +292,16 @@ pub fn outfit(feels: f64) -> &'static str {
     }
 }
 
+/// 오늘 강수확률(%)에 따른 우산 안내. 비 올 만할 때만 Some — 맑은 날엔
+/// None을 돌려 카드를 깔끔하게 둔다(필요할 때만 알려주는 게 핵심).
+pub fn umbrella(prob: i64) -> Option<String> {
+    match prob {
+        60.. => Some(format!("☔ 우산 꼭 챙기세요 · 비 올 확률 {prob}%")),
+        30..=59 => Some(format!("🌂 우산 있으면 좋아요 · 비 올 확률 {prob}%")),
+        _ => None,
+    }
+}
+
 fn encode(s: &str) -> String {
     let mut out = String::new();
     for &b in s.as_bytes() {
@@ -333,6 +354,18 @@ mod tests {
         assert!(outfit(18.0).contains("니트") || outfit(18.0).contains("맨투맨"));
         assert!(outfit(2.0).contains("패딩"));
         assert!(outfit(7.0).contains("코트"));
+    }
+
+    #[test]
+    fn umbrella_advice_by_prob() {
+        // 맑은 날(낮은 확률)은 우산 안내 없음 — 카드 깔끔.
+        assert!(umbrella(0).is_none());
+        assert!(umbrella(29).is_none());
+        // 애매하면 "있으면 좋아요", 높으면 "꼭".
+        assert!(umbrella(45).unwrap().contains("있으면 좋아요"));
+        assert!(umbrella(80).unwrap().contains("꼭"));
+        // 확률 숫자가 그대로 노출돼야.
+        assert!(umbrella(80).unwrap().contains("80%"));
     }
 
     #[tokio::test]

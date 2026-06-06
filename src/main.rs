@@ -8585,6 +8585,9 @@ fn cmd_weather(location: &[String]) -> Result<()> {
         w.humidity, w.precip, w.today_min, w.today_max
     );
     println!("     👕 {}", weather::outfit(w.feels));
+    if let Some(u) = weather::umbrella(w.precip_prob) {
+        println!("     {u}");
+    }
     println!();
     Ok(())
 }
