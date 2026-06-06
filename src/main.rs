@@ -640,8 +640,8 @@ enum Commands {
         /// 생일 (YYYY-MM-DD)
         birth: String,
     },
-    /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 실수령 3600
-    #[command(alias = "실수령")]
+    /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600
+    #[command(aliases = ["실수령", "연봉"])]
     Salary {
         /// 연봉(만 원 단위). 예: 3600 = 3,600만 원
         manwon: f64,
@@ -737,10 +737,11 @@ enum Commands {
         /// 카테고리(한식/중식/일식/양식/분식/야식). 생략 시 전체에서 추천
         category: Option<String>,
     },
-    /// 더치페이(n빵) 정산. 예: wonjang 더치 50000 3
-    #[command(alias = "더치")]
+    /// 더치페이(n빵) 정산. 예: wonjang 더치페이 50000 3 (5만·50,000도 OK)
+    #[command(aliases = ["더치", "더치페이"])]
     Dutch {
-        /// 총액(원)
+        /// 총액(원). 5만·50,000 같은 한국식 표기도 OK
+        #[arg(value_parser = expenses::parse_won)]
         total: i64,
         /// 인원수
         people: i64,
@@ -8318,6 +8319,15 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "투두"]),
             Commands::Todo { .. }
+        ));
+        // 연봉·더치페이는 가장 자연스러운 단어 — 별칭이 없으면 AI로 위임된다(느림·예측불가).
+        assert!(matches!(
+            cmd_of(&["wonjang", "연봉", "3600"]),
+            Commands::Salary { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "더치페이", "50000", "4"]),
+            Commands::Dutch { .. }
         ));
     }
 
