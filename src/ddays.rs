@@ -114,6 +114,10 @@ pub fn to_ics(items: &[Dday], dtstamp: &str) -> String {
         out.push_str(&format!("DTSTAMP:{dtstamp}\r\n"));
         out.push_str(&format!("DTSTART;VALUE=DATE:{start}\r\n"));
         out.push_str(&format!("DTEND;VALUE=DATE:{end}\r\n"));
+        // 매년 반복 디데이는 캘린더에서도 매년 반복(생신·결혼기념일)되게 한다.
+        if d.annual {
+            out.push_str("RRULE:FREQ=YEARLY\r\n");
+        }
         out.push_str(&format!("SUMMARY:{}\r\n", ics_escape(&d.label)));
         out.push_str("END:VEVENT\r\n");
     }
@@ -231,8 +235,17 @@ mod tests {
                 date: "엉망".into(), // 건너뜀
                 annual: false,
             },
+            Dday {
+                id: 4,
+                label: "결혼기념일".into(),
+                date: "2020-05-20".into(),
+                annual: true, // 매년 반복 → RRULE
+            },
         ];
         let ics = to_ics(&items, "20260604T000000Z");
+        // 매년 반복은 RRULE:FREQ=YEARLY, 일회성은 RRULE 없음.
+        assert!(ics.contains("RRULE:FREQ=YEARLY"), "{ics}");
+        assert_eq!(ics.matches("RRULE").count(), 1); // 결혼기념일만
         assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
         assert!(ics.trim_end().ends_with("END:VCALENDAR"));
         assert!(ics.contains("DTSTART;VALUE=DATE:20261119"));
@@ -240,8 +253,8 @@ mod tests {
         assert!(ics.contains("SUMMARY:수능"));
         assert!(ics.contains("SUMMARY:회의\\, 발표")); // 콤마 이스케이프
         assert!(ics.contains("UID:dday-1@wonjang"));
-        // 깨진 날짜는 이벤트 생성 안 함 → VEVENT 2개.
-        assert_eq!(ics.matches("BEGIN:VEVENT").count(), 2);
+        // 깨진 날짜는 이벤트 생성 안 함 → 유효 3개(수능·회의·결혼기념일).
+        assert_eq!(ics.matches("BEGIN:VEVENT").count(), 3);
     }
 
     #[test]
