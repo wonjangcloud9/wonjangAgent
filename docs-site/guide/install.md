@@ -1,3 +1,7 @@
+---
+description: 원장 설치 방법 — npm 한 줄(npm install -g wonjang-agent) 또는 Rust 소스 빌드. macOS·Linux·Windows 지원.
+---
+
 # 설치
 
 ## npm (권장)

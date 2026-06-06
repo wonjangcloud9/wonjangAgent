@@ -34,6 +34,26 @@ export default defineConfig({
     ['meta', { property: 'og:url', content: 'https://wonjangcloud9.github.io/wonjangAgent/' }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
     ['link', { rel: 'canonical', href: 'https://wonjangcloud9.github.io/wonjangAgent/' }],
+    // 구조화 데이터(JSON-LD) — 검색엔진 리치 결과용 SoftwareApplication.
+    [
+      'script',
+      { type: 'application/ld+json' },
+      JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: '원장(wonjang)',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'macOS, Linux, Windows',
+        description:
+          '한국인을 위한 터미널 개인 비서 CLI. 가계부·실수령·디데이·전역일·자랑 카드·날씨·환율을 키 없이 바로 사용.',
+        url: 'https://wonjangcloud9.github.io/wonjangAgent/',
+        downloadUrl: 'https://www.npmjs.com/package/wonjang-agent',
+        inLanguage: 'ko',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        author: { '@type': 'Organization', name: 'wonjang' },
+        license: 'https://opensource.org/licenses/MIT',
+      }),
+    ],
   ],
   sitemap: {
     hostname: 'https://wonjangcloud9.github.io/wonjangAgent/',
