@@ -10,6 +10,7 @@ mod annual_leave;
 mod archive;
 mod backup;
 mod bike;
+mod bizno;
 mod bmi;
 mod bmr;
 mod bookmarks;
@@ -733,6 +734,12 @@ enum Commands {
         manwon: f64,
         /// 미사용 연차 일수(반차는 0.5). 예: 5
         days: f64,
+    },
+    /// 사업자등록번호 검증(국세청 체크섬). 예: wonjang 사업자번호 124-81-00998
+    #[command(name = "사업자번호", aliases = ["사업자", "사업자등록번호"])]
+    BizNo {
+        /// 사업자등록번호(하이픈 있어도 됨)
+        number: String,
     },
     /// 자동차세 계산(비영업 승용). 예: wonjang 자동차세 1998 3
     #[command(alias = "자동차세")]
@@ -1584,6 +1591,7 @@ async fn run() -> Result<()> {
         }) => return cmd_severance(*monthly, *years, *months),
         Some(Commands::AnnualLeave { years, months }) => return cmd_annual_leave(*years, *months),
         Some(Commands::LeavePay { manwon, days }) => return cmd_leave_pay(*manwon, *days),
+        Some(Commands::BizNo { number }) => return cmd_bizno(number),
         Some(Commands::CarTax { cc, age }) => return cmd_car_tax(*cc, *age),
         Some(Commands::Overtime {
             hourly,
@@ -2906,6 +2914,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 야근수당 <시급> --연장 N", "연장·야간·휴일 수당"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
+                (
+                    "wonjang 사업자번호 <번호>",
+                    "사업자등록번호 검증(오타·체크섬)",
+                ),
                 (
                     "wonjang 나이 <YYYY-MM-DD>",
                     "만 나이·세는나이·띠·살아온 날 (--카드로 공유)",
@@ -6334,6 +6346,32 @@ fn cmd_leave_pay(manwon: f64, days: f64) -> Result<()> {
     println!("     연차수당       {}", w(total));
     println!();
     ui::info("     ※ 통상임금=월급 가정 추정. 상여·고정수당 포함 시 실제는 더 클 수 있어요.");
+    Ok(())
+}
+
+fn cmd_bizno(number: &str) -> Result<()> {
+    use owo_colors::OwoColorize;
+    println!();
+    match bizno::is_valid(number) {
+        Some(true) => {
+            println!("  🏢 사업자등록번호 검증");
+            println!(
+                "     {}  {}",
+                bizno::format(number),
+                "✅ 유효".bright_green()
+            );
+            ui::info("     검증번호 일치(형식·체크섬 정상). 실제 사업자 존재는 국세청 조회로 확인하세요.");
+        }
+        Some(false) => {
+            println!("  🏢 사업자등록번호 검증");
+            println!("     {}  {}", bizno::format(number), "❌ 무효".bright_red());
+            ui::info("     검증번호가 안 맞아요 — 오타가 있을 수 있어요. 다시 확인해 주세요.");
+        }
+        None => {
+            ui::error("사업자등록번호는 숫자 10자리예요. 예: wonjang 사업자번호 124-81-00998");
+        }
+    }
+    println!();
     Ok(())
 }
 
