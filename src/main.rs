@@ -764,11 +764,12 @@ enum Commands {
         /// 몸무게(kg)
         weight: f64,
     },
-    /// 수면 시간 계산(90분 주기). 예: wonjang 수면 07:00 (없으면 지금 자면)
+    /// 수면 시간 계산(90분 주기). 예: 수면 07:00(기상 기준) · 수면 취침 23:00 · 수면(지금 자면)
     #[command(aliases = ["수면", "잠"])]
     Sleep {
-        /// 기상 시각(HH:MM). 생략 시 지금 자는 기준 기상 시각 추천
-        wake: Option<String>,
+        /// 기상 시각(HH:MM). '취침 23:00'처럼 쓰면 그 시각에 자는 기준. 생략 시 지금 자는 기준
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
     },
     /// 기초대사량·하루 권장 칼로리. 예: wonjang 칼로리 남 30 175 70
     #[command(alias = "칼로리")]
@@ -1503,7 +1504,7 @@ async fn run() -> Result<()> {
         }) => return cmd_dutch(*total, *people, *unit),
         Some(Commands::Convert { value, unit }) => return cmd_convert(*value, unit),
         Some(Commands::Bmi { height, weight }) => return cmd_bmi(*height, *weight),
-        Some(Commands::Sleep { wake }) => return cmd_sleep(wake.as_deref()),
+        Some(Commands::Sleep { args }) => return cmd_sleep(args),
         Some(Commands::Calorie {
             sex,
             age,
@@ -1788,6 +1789,38 @@ fn run_self_command(args: &[String]) {
             let _ = std::process::Command::new(exe).args(args).status();
         }
         Err(e) => ui::error(&format!("명령을 실행할 수 없어요: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod sleep_mode_tests {
+    use super::{parse_sleep_args, SleepMode};
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn parses_three_modes() {
+        assert_eq!(parse_sleep_args(&args(&[])), SleepMode::WakeNow);
+        // 기존 동작: 시각 하나 = 기상 시각 → 취침 추천(회귀 방지).
+        assert_eq!(
+            parse_sleep_args(&args(&["07:00"])),
+            SleepMode::WakeAt("07:00".into())
+        );
+        // 새 모드: 취침 시각 지정(키워드 앞·뒤 모두).
+        assert_eq!(
+            parse_sleep_args(&args(&["취침", "23:00"])),
+            SleepMode::BedAt("23:00".into())
+        );
+        assert_eq!(
+            parse_sleep_args(&args(&["23:00", "취침"])),
+            SleepMode::BedAt("23:00".into())
+        );
+        assert_eq!(
+            parse_sleep_args(&args(&["잘때", "01:30"])),
+            SleepMode::BedAt("01:30".into())
+        );
     }
 }
 
@@ -6974,12 +7007,32 @@ fn cmd_discount(price: f64, rates: &[f64]) -> Result<()> {
     Ok(())
 }
 
-fn cmd_sleep(wake: Option<&str>) -> Result<()> {
+/// 수면 명령 입력을 모드로 해석한다.
+/// `[]`=지금 자면 기상 추천 · `[취침, 23:00]`=그 시각에 자면 기상 추천 · `[07:00]`=기상 시각→취침 추천.
+#[derive(Debug, PartialEq)]
+enum SleepMode {
+    WakeNow,
+    BedAt(String),
+    WakeAt(String),
+}
+
+fn parse_sleep_args(args: &[String]) -> SleepMode {
+    const BED_KW: [&str; 5] = ["취침", "자기", "잘때", "잘", "bed"];
+    match args {
+        [] => SleepMode::WakeNow,
+        // '취침 23:00'(키워드+시각) 또는 '23:00 취침'(시각+키워드) 모두 받는다.
+        [a, b] if BED_KW.contains(&a.as_str()) => SleepMode::BedAt(b.clone()),
+        [a, b] if BED_KW.contains(&b.as_str()) => SleepMode::BedAt(a.clone()),
+        [t, ..] => SleepMode::WakeAt(t.clone()),
+    }
+}
+
+fn cmd_sleep(args: &[String]) -> Result<()> {
     use owo_colors::OwoColorize;
     println!();
-    match wake {
-        Some(w) => {
-            let wt = sleepcalc::parse_time(w)?;
+    match parse_sleep_args(args) {
+        SleepMode::WakeAt(w) => {
+            let wt = sleepcalc::parse_time(&w)?;
             println!("  😴 {} 기상 기준 — 이 시각에 주무세요", w.bright_cyan());
             for (cycles, bed) in sleepcalc::bedtimes_for_wake(wt) {
                 println!(
@@ -6990,7 +7043,19 @@ fn cmd_sleep(wake: Option<&str>) -> Result<()> {
                 );
             }
         }
-        None => {
+        SleepMode::BedAt(b) => {
+            let bt = sleepcalc::parse_time(&b)?;
+            println!("  😴 {} 취침 기준 — 이 시각에 일어나세요", b.bright_cyan());
+            for (cycles, wakeup) in sleepcalc::waketimes_for_bed(bt) {
+                println!(
+                    "     {}  ({}주기 · 약 {} 수면)",
+                    wakeup.bold(),
+                    cycles,
+                    sleep_dur(cycles)
+                );
+            }
+        }
+        SleepMode::WakeNow => {
             use chrono::Timelike;
             let now = chrono::Local::now().time();
             let nt = chrono::NaiveTime::from_hms_opt(now.hour(), now.minute(), 0).unwrap();
@@ -7010,8 +7075,9 @@ fn cmd_sleep(wake: Option<&str>) -> Result<()> {
     }
     println!();
     println!(
-        "  {} 90분 수면 주기 끝에 깨면 개운해요(참고용).",
-        "ⓘ".dimmed()
+        "  {} 90분 주기 끝에 깨면 개운해요. {}",
+        "ⓘ".dimmed(),
+        "수면 07:00(기상)·수면 취침 23:00·수면(지금)".dimmed()
     );
     println!();
     Ok(())
