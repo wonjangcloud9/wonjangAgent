@@ -1292,11 +1292,58 @@ enum CronAction {
     Run,
 }
 
+/// 사용자에게 보여줄 에러 문자열. 네트워크/연결 실패는 영문 reqwest 체인과 내부 URL을
+/// 감추고 깔끔한 한국어로 바꾼다(모바일·약한 와이파이·오프라인에서 흔함).
+fn friendlyize_error(full: &str) -> String {
+    const NET_SIGNS: [&str; 7] = [
+        "error sending request",
+        "sending request for url",
+        "dns error",
+        "tcp connect",
+        "operation timed out",
+        "Connection refused",
+        "failed to lookup address",
+    ];
+    if NET_SIGNS.iter().any(|s| full.contains(s)) {
+        // 콜론 앞 첫 토막에 한국어 맥락("날씨 요청 실패" 등)이 있으면 살린다.
+        let head = full.split(':').next().unwrap_or("").trim();
+        let prefix = if !head.is_ascii() {
+            head // 한국어 맥락이 있으면 보존
+        } else {
+            "네트워크 요청 실패"
+        };
+        return format!("{prefix} — 인터넷 연결을 확인해 주세요.");
+    }
+    full.to_string()
+}
+
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        ui::error(&format!("{e:#}"));
+        ui::error(&friendlyize_error(&format!("{e:#}")));
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod friendly_error_tests {
+    use super::friendlyize_error;
+
+    #[test]
+    fn network_errors_become_clean_korean() {
+        let net = "날씨 요청 실패: error sending request for url (https://api.open-meteo.com/v1/forecast?lat=37)";
+        assert_eq!(
+            friendlyize_error(net),
+            "날씨 요청 실패 — 인터넷 연결을 확인해 주세요."
+        );
+        // 한국어 맥락이 없으면 일반 메시지(여전히 URL·영문 감춤).
+        assert_eq!(
+            friendlyize_error("error sending request for url (http://x)"),
+            "네트워크 요청 실패 — 인터넷 연결을 확인해 주세요."
+        );
+        // 네트워크가 아닌 에러는 그대로 둔다(친절한 한국어 메시지 보존).
+        let other = "'XYZ' 환율을 찾을 수 없습니다";
+        assert_eq!(friendlyize_error(other), other);
     }
 }
 
