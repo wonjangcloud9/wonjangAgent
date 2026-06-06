@@ -559,10 +559,11 @@ enum Commands {
         #[command(subcommand)]
         action: Option<HabitAction>,
     },
-    /// 집중(뽀모도로) 타이머. 예: wonjang 집중 25 코딩 (생략 시 오늘 요약)
+    /// 집중(뽀모도로) 타이머. 예: wonjang 집중 25 코딩 (25분·1시간도 OK, 생략 시 오늘 요약)
     #[command(aliases = ["집중", "타이머"])]
     Focus {
-        /// 집중 시간(분). 생략하면 오늘 집중 요약.
+        /// 집중 시간(분). 25·25분·1시간·1시간 30분. 생략하면 오늘 집중 요약.
+        #[arg(value_parser = util::parse_minutes)]
         minutes: Option<i64>,
         /// 무엇에 집중하는지(선택)
         #[arg(trailing_var_arg = true)]
@@ -1247,10 +1248,11 @@ enum TodoAction {
 enum RemindAction {
     /// 예정된 알림 목록(기본).
     List,
-    /// 알림 추가. 예: wonjang 약속 추가 30 "물 마시기" --every @daily
+    /// 알림 추가. 예: wonjang 약속 추가 30 "물 마시기" --every @daily (30분·1시간도 OK)
     #[command(alias = "추가")]
     Add {
-        /// 지금부터 N분 뒤(첫 알림)
+        /// 지금부터 얼마 뒤(첫 알림). 30·30분·1시간·1시간 30분
+        #[arg(value_parser = util::parse_minutes)]
         minutes: i64,
         /// 알림 제목(여러 단어면 따옴표로 감싸기)
         title: String,
@@ -7258,7 +7260,7 @@ fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
             let total = store.today_total(&today);
             let count = store.today_count(&today);
             if count == 0 {
-                ui::info("오늘 집중 기록이 없어요. 시작: wonjang 집중 25 코딩");
+                ui::info("오늘 집중 기록이 없어요. 시작: wonjang 집중 25 코딩  (25분·1시간도 OK)");
             } else {
                 println!();
                 println!(

@@ -93,9 +93,63 @@ pub fn truncate_bytes(s: &str, max_bytes: usize) -> (&str, bool) {
     (&s[..end], true)
 }
 
+/// 한국식 시간/기간 표기를 분(minutes) 정수로 파싱한다(clap value_parser용).
+/// `30`=30분 · `30분`=30 · `1시간`=60 · `1시간 30분`=90 · `1.5시간`=90.
+/// 순수 숫자는 그대로 분으로(기존 동작 유지). 못 알아들으면 한국어로 예시 안내.
+pub fn parse_minutes(s: &str) -> std::result::Result<i64, String> {
+    let t: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    if t.is_empty() {
+        return Err("시간을 입력하세요 (예: 30, 30분, 1시간, 1시간 30분)".into());
+    }
+    if let Ok(n) = t.parse::<i64>() {
+        return Ok(n); // 순수 숫자 = 분
+    }
+    let err = || format!("시간을 이해하지 못했어요: '{s}' (예: 30, 30분, 1시간, 1시간 30분)");
+    let mut total = 0i64;
+    let mut rest = t.as_str();
+    let mut matched = false;
+    if let Some((h, b)) = rest.split_once("시간") {
+        let hv: f64 = h.parse().map_err(|_| err())?;
+        total += (hv * 60.0).round() as i64;
+        rest = b;
+        matched = true;
+    }
+    if let Some((m, b)) = rest.split_once('분') {
+        if !b.is_empty() {
+            return Err(err()); // '분' 뒤에 찌꺼기
+        }
+        if !m.is_empty() {
+            total += m.parse::<i64>().map_err(|_| err())?;
+        }
+        rest = "";
+        matched = true;
+    }
+    if !matched || !rest.is_empty() {
+        return Err(err());
+    }
+    Ok(total)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::truncate_bytes;
+    use super::{parse_minutes, truncate_bytes};
+
+    #[test]
+    fn parse_minutes_accepts_korean_time() {
+        assert_eq!(parse_minutes("30"), Ok(30));
+        assert_eq!(parse_minutes("30분"), Ok(30));
+        assert_eq!(parse_minutes("1시간"), Ok(60));
+        assert_eq!(parse_minutes("2시간"), Ok(120));
+        assert_eq!(parse_minutes("1시간 30분"), Ok(90));
+        assert_eq!(parse_minutes("1시간30분"), Ok(90));
+        assert_eq!(parse_minutes("1.5시간"), Ok(90));
+        assert_eq!(parse_minutes(" 45 분 "), Ok(45));
+        // 못 알아듣는 입력은 한국어 안내(영문 clap 에러 대신).
+        assert!(parse_minutes("한시간").is_err());
+        assert!(parse_minutes("abc").is_err());
+        assert!(parse_minutes("1시간 abc").is_err());
+        assert!(parse_minutes("").is_err());
+    }
 
     #[test]
     fn truncate_never_panics_on_multibyte_boundary() {
