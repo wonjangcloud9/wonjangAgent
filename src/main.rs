@@ -105,6 +105,7 @@ mod wage;
 mod watch;
 mod weather;
 mod web;
+mod withholding;
 mod worldtime;
 
 use anyhow::Result;
@@ -696,6 +697,18 @@ enum Commands {
     IncomeTax {
         /// 과세표준(소득공제 뺀 금액). 한국식 OK: 5000만 · 1.2억
         base: String,
+    },
+    /// 원천징수 계산(프리랜서 3.3%/기타 8.8%, 역산). 예: wonjang 원천징수 100만
+    #[command(name = "원천징수", aliases = ["3.3", "원천세", "프리랜서"])]
+    Withholding {
+        /// 금액(지급액, --역산이면 실수령액). 한국식 OK: 100만 · 300만
+        amount: String,
+        /// 실수령액 → 세전 지급액 역산
+        #[arg(long = "역산")]
+        reverse: bool,
+        /// 기타소득 8.8%(강연료·원고료 등). 기본은 사업소득 3.3%
+        #[arg(long = "기타")]
+        etc: bool,
     },
     /// 증여세 추정(공제+누진세율). 예: wonjang 증여세 5억 자녀
     #[command(name = "증여세", aliases = ["증여세계산", "증여"])]
@@ -1724,6 +1737,11 @@ async fn run() -> Result<()> {
         }) => return cmd_military(enlist, branch, *card, *width, *no_color, *copy),
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::IncomeTax { base }) => return cmd_income_tax(base),
+        Some(Commands::Withholding {
+            amount,
+            reverse,
+            etc,
+        }) => return cmd_withholding(amount, *reverse, *etc),
         Some(Commands::GiftTax { amount, relation }) => return cmd_gift_tax(amount, relation),
         Some(Commands::PriceSearch { query, open }) => return cmd_price_search(query, *open),
         Some(Commands::Loan {
@@ -3088,6 +3106,10 @@ fn cmd_guide() -> Result<()> {
                 (
                     "wonjang 증여세 <증여액> [관계]",
                     "증여세 추정(공제+누진+신고공제)",
+                ),
+                (
+                    "wonjang 원천징수 <금액>",
+                    "프리랜서 3.3%/기타 8.8% 공제·역산",
                 ),
                 ("wonjang 시급 <시급> <주시간>", "주급·월급+주휴수당"),
                 ("wonjang 대출 <원금> <%> <개월>", "대출 상환(원리금/원금)"),
@@ -6611,6 +6633,49 @@ fn cmd_income_tax(base_in: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_withholding(amount_in: &str, reverse: bool, etc: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let amount = expenses::parse_won(amount_in).map_err(|e| anyhow::anyhow!(e))?;
+    if amount <= 0 {
+        anyhow::bail!("금액은 1원 이상이어야 해요. 예: wonjang 원천징수 100만");
+    }
+    let w = if reverse {
+        withholding::from_net(amount, etc)
+    } else {
+        withholding::from_gross(amount, etc)
+    };
+    let kind = if etc {
+        "기타소득 8.8%"
+    } else {
+        "사업소득 3.3%"
+    };
+    let m = expenses::won;
+    println!();
+    println!("  💸 원천징수 ({kind})");
+    println!("     세전 지급액      {}", m(w.gross));
+    println!("     ─ 소득세         -{}", m(w.income_tax));
+    println!("     ─ 지방소득세     -{}", m(w.local_tax));
+    println!("     ───────────────");
+    if reverse {
+        println!("     실수령(입력)     {}", m(amount));
+        println!(
+            "     세전 지급액      ≈ {}",
+            m(w.gross).bright_cyan().bold()
+        );
+    } else {
+        println!("     원천징수 합계    {}", m(w.total));
+        println!("     실수령액         {}", m(w.net).bright_cyan().bold());
+    }
+    println!();
+    if reverse {
+        println!("  ※ 실수령 → 세전 역산(정수 절사로 ±1원 추정). '실수령×1.033'은 오답이에요.");
+    } else {
+        println!("  ※ 프리랜서·사업소득 원천징수 기준. 기타소득(강연·원고)은 --기타(8.8%).");
+    }
+    println!();
+    Ok(())
+}
+
 fn cmd_gift_tax(amount_in: &str, relation_in: &str) -> Result<()> {
     use owo_colors::OwoColorize;
     let amount = expenses::parse_won(amount_in).map_err(|e| anyhow::anyhow!(e))?;
@@ -9546,6 +9611,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "최저가", "에어팟"]),
             Commands::PriceSearch { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "원천징수", "100만"]),
+            Commands::Withholding { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
