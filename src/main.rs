@@ -716,7 +716,8 @@ enum Commands {
     /// 연봉 실수령액 계산(4대 보험+소득세). 예: wonjang 연봉 3600 / wonjang 실수령 300 --월급
     #[command(aliases = ["실수령", "연봉"])]
     Salary {
-        /// 금액(만 원 단위). 기본은 연봉(예: 3600), --월급이면 월급(예: 300)
+        /// 금액(만 원 단위, 한국식 OK). 기본은 연봉(예: 3600·1억), --월급이면 월급(예: 300)
+        #[arg(value_parser = expenses::parse_manwon)]
         manwon: f64,
         /// 입력을 월급으로 본다(월급×12=연봉으로 환산). 예: wonjang 실수령 300 --월급
         #[arg(long = "월급")]
@@ -796,7 +797,8 @@ enum Commands {
     /// 대출 상환 계산(원리금/원금 균등). 예: wonjang 대출 30000 4.5 360
     #[command(alias = "대출")]
     Loan {
-        /// 원금(만 원 단위). 예: 30000 = 3억
+        /// 원금(만 원 단위, 한국식 OK). 예: 30000 · 3억
+        #[arg(value_parser = expenses::parse_manwon)]
         manwon: f64,
         /// 연이율(%). 예: 4.5
         rate: f64,
@@ -806,7 +808,8 @@ enum Commands {
     /// 정기예금 만기 계산(세후). 예: wonjang 예금 1000 3.5 12
     #[command(alias = "예금")]
     Deposit {
-        /// 예치 원금(만 원 단위). 예: 1000 = 1,000만 원
+        /// 예치 원금(만 원 단위, 한국식 OK). 예: 1000 · 1000만 · 1억
+        #[arg(value_parser = expenses::parse_manwon)]
         manwon: f64,
         /// 연이율(%). 예: 3.5
         rate: f64,
@@ -816,7 +819,8 @@ enum Commands {
     /// 정기적금 만기 계산(세후). 예: wonjang 적금 50 4.0 24
     #[command(alias = "적금")]
     Savings {
-        /// 월 납입액(만 원 단위). 예: 50 = 50만 원
+        /// 월 납입액(만 원 단위, 한국식 OK). 예: 50 · 50만
+        #[arg(value_parser = expenses::parse_manwon)]
         manwon: f64,
         /// 연이율(%). 예: 4.0
         rate: f64,
@@ -826,12 +830,13 @@ enum Commands {
     /// 전월세 전환 계산(전세→반월세 월세). 예: wonjang 전월세 30000 5.5 10000
     #[command(aliases = ["전월세", "반전세"])]
     Jeonse {
-        /// 전세보증금(만 원 단위). 예: 30000 = 3억
+        /// 전세보증금(만 원 단위, 한국식 OK). 예: 30000 · 3억
+        #[arg(value_parser = expenses::parse_manwon)]
         jeonse: f64,
         /// 전월세전환율(%, 법정 상한=기준금리+2%). 예: 5.5
         rate: f64,
-        /// 월세 보증금(만 원, 생략 시 0=순수 월세)
-        #[arg(default_value_t = 0.0)]
+        /// 월세 보증금(만 원, 한국식 OK, 생략 시 0=순수 월세)
+        #[arg(default_value_t = 0.0, value_parser = expenses::parse_manwon)]
         deposit: f64,
     },
     /// 법정 퇴직금 추정(근로기준법). 예: wonjang 퇴직금 300 3 6

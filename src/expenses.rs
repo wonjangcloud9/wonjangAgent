@@ -191,6 +191,26 @@ pub fn parse_won_f64(s: &str) -> Result<f64, String> {
     parse_won(s).map(|w| w as f64)
 }
 
+/// '만 원 단위' 필드(예적금·전월세·대출·실수령)용 파서. 평범한 숫자는 만 원으로
+/// (`1000`→1,000만 원, 기존 동작 유지), 한국식 단위(만·억)가 붙으면 실제 금액(원)으로
+/// 해석해 만 원으로 환산(`1000만`→1,000만 원, `1억`→10,000만 원, `3억`→30,000만 원).
+/// 다른 돈 명령은 한국식을 받는데 이 필드들만 못 받던 불일치를 없앤다.
+pub fn parse_manwon(s: &str) -> Result<f64, String> {
+    let t = s.trim();
+    if t.contains('억') || t.contains('만') {
+        // 실제 금액(원)으로 파싱한 뒤 만 원으로 환산.
+        Ok(parse_won(t)? as f64 / 10_000.0)
+    } else {
+        let cleaned: String = t
+            .chars()
+            .filter(|c| !matches!(c, ',' | ' ' | '_'))
+            .collect();
+        cleaned
+            .parse::<f64>()
+            .map_err(|_| format!("금액을 이해하지 못했어요: '{s}' (예: 1000, 1000만, 1억)"))
+    }
+}
+
 /// 이번 달 `(일평균, 월말 예상)`. 현 페이스가 유지된다는 가정의 추정.
 /// total=이번 달 누적, day=경과 일수, days_in_month=이번 달 총 일수.
 pub fn pace(total: i64, day: i64, days_in_month: i64) -> (i64, i64) {
@@ -219,6 +239,22 @@ mod tests {
         assert!(parse_won("오만원").is_err()); // 한글 숫자는 미지원(혼동 방지)
         assert!(parse_won("abc").is_err());
         assert!(parse_won("").is_err());
+    }
+
+    #[test]
+    fn parse_manwon_keeps_plain_and_accepts_korean() {
+        // 평범한 숫자 = 만 원(기존 동작 유지).
+        assert_eq!(parse_manwon("1000"), Ok(1000.0));
+        assert_eq!(parse_manwon("50"), Ok(50.0));
+        assert_eq!(parse_manwon("3,600"), Ok(3600.0));
+        // 한국식 단위 = 실제 금액 → 만 원 환산. `1000만`은 `1000`과 같아야.
+        assert_eq!(parse_manwon("1000만"), Ok(1000.0));
+        assert_eq!(parse_manwon("1억"), Ok(10_000.0));
+        assert_eq!(parse_manwon("3억"), Ok(30_000.0)); // 전세 3억 = 30000만
+        assert_eq!(parse_manwon("1.5억"), Ok(15_000.0));
+        // 이해 못 하는 입력은 한국어 에러.
+        assert!(parse_manwon("abc").is_err());
+        assert!(parse_manwon("").is_err());
     }
 
     #[test]
