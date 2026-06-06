@@ -1,7 +1,7 @@
 {
   "name": "wonjang-agent",
   "version": "0.1.0",
-  "description": "원장 — 로컬 환경을 다루는 한국어 우선 자율 AI 에이전트 (Rust)",
+  "description": "원장 — 한국인을 위한 개인 비서. 가계부·디데이·실수령·습관·날씨까지 키 없이 바로 쓰는 한국어 CLI (Rust)",
   "bin": {
     "wonjang": "bin/wonjang.js"
   },
@@ -22,14 +22,21 @@
     "url": "https://github.com/wonjangcloud9/wonjangAgent/issues"
   },
   "keywords": [
-    "ai",
-    "agent",
-    "cli",
     "korean",
     "한국어",
-    "rust",
-    "llm",
-    "automation"
+    "비서",
+    "개인비서",
+    "가계부",
+    "디데이",
+    "계산기",
+    "실수령",
+    "습관",
+    "personal-assistant",
+    "productivity",
+    "cli",
+    "ai",
+    "agent",
+    "rust"
   ],
   "license": "MIT",
   "engines": {
