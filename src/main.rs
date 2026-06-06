@@ -73,6 +73,7 @@ mod password;
 mod payday;
 mod pick;
 mod preset;
+mod pricesearch;
 mod push;
 mod pyeong;
 mod qr;
@@ -704,6 +705,16 @@ enum Commands {
         /// 관계(배우자·자녀·미성년·부모·기타·타인, 기본 성년 자녀)
         #[arg(default_value = "자녀")]
         relation: String,
+    },
+    /// 상품 최저가 비교 사이트 한 번에(네이버쇼핑·다나와·쿠팡·구글). 예: wonjang 최저가 에어팟
+    #[command(name = "최저가", aliases = ["가격비교", "쇼핑검색"])]
+    PriceSearch {
+        /// 검색할 상품(여러 단어 OK)
+        #[arg(required = true, num_args = 1..)]
+        query: Vec<String>,
+        /// 브라우저에서 비교 사이트를 모두 열기
+        #[arg(long = "열기")]
+        open: bool,
     },
     /// 대출 상환 계산(원리금/원금 균등). 예: wonjang 대출 30000 4.5 360
     #[command(alias = "대출")]
@@ -1714,6 +1725,7 @@ async fn run() -> Result<()> {
         Some(Commands::Salary { manwon }) => return cmd_salary(*manwon),
         Some(Commands::IncomeTax { base }) => return cmd_income_tax(base),
         Some(Commands::GiftTax { amount, relation }) => return cmd_gift_tax(amount, relation),
+        Some(Commands::PriceSearch { query, open }) => return cmd_price_search(query, *open),
         Some(Commands::Loan {
             manwon,
             rate,
@@ -3134,6 +3146,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 타임스탬프 [값]", "유닉스 시각 ↔ 날짜"),
                 ("wonjang 로마 2024", "로마 숫자 ↔ 숫자"),
                 ("wonjang 로마자 <한글이름>", "여권 영문이름 표기"),
+                ("wonjang 최저가 <상품>", "가격비교(네이버·다나와·쿠팡·구글)"),
                 ("wonjang 인코딩 base64 <텍스트>", "base64/URL 인코딩·디코딩"),
                 ("wonjang 비번 [길이] --기호", "안전한 비밀번호 생성"),
                 ("wonjang uuid [-n N]", "UUID v4 생성"),
@@ -6630,6 +6643,33 @@ fn cmd_gift_tax(amount_in: &str, relation_in: &str) -> Result<()> {
     Ok(())
 }
 
+fn cmd_price_search(query: &[String], open: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+    let q = query.join(" ");
+    if q.trim().is_empty() {
+        anyhow::bail!("검색할 상품을 입력하세요. 예: wonjang 최저가 에어팟");
+    }
+    let links = pricesearch::urls(pricesearch::SHOPPING, &q);
+    println!();
+    println!("  🛒 '{}' 가격비교", q.trim().bright_cyan().bold());
+    for (name, url) in &links {
+        println!("     · {name}");
+        println!("       {}", url.dimmed());
+    }
+    println!();
+    if open {
+        for (_, url) in &links {
+            bookmarks::open_target(url).ok();
+        }
+        ui::info("  브라우저에서 비교 사이트를 모두 열었어요.");
+    } else {
+        ui::info("  링크를 클릭하거나, --열기 를 붙이면 브라우저에서 한 번에 열려요.");
+    }
+    println!("  ※ 실시간 가격은 각 사이트에서 — 키 없이 검색 링크만 제공해요.");
+    println!();
+    Ok(())
+}
+
 fn cmd_salary(manwon: f64) -> Result<()> {
     if !manwon.is_finite() || manwon <= 0.0 {
         anyhow::bail!("연봉은 1만원 이상이어야 해요. 예: wonjang 실수령 3600");
@@ -9502,6 +9542,10 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "증여세", "5억", "자녀"]),
             Commands::GiftTax { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "최저가", "에어팟"]),
+            Commands::PriceSearch { .. }
         ));
         // 기존 로컬 기능의 '가장 자연스러운 단어'가 AI 위임 대신 곧장 로컬로(전수 점검 결과).
         assert!(matches!(
