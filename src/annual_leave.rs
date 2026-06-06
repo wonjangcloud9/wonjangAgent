@@ -13,6 +13,19 @@ pub fn annual_leave_days(years: u32, months: u32) -> u32 {
     }
 }
 
+/// 월 통상임금 산정 기준시간(주40h 기준): 주 (40+8)시간 × (365/7/12) ≈ 209시간.
+const MONTHLY_HOURS: f64 = 209.0;
+/// 1일 소정근로시간(연차 1일분).
+const DAILY_HOURS: f64 = 8.0;
+
+/// 미사용 연차 수당 `(1일 통상임금, 총 수당)`. 월 통상임금과 미사용 일수로.
+/// 연차수당 = 미사용일수 × 1일 통상임금, 1일 통상임금 = 월급 ÷ 209 × 8(근로기준법 통상임금 기준).
+pub fn unused_leave_pay(monthly_won: f64, unused_days: f64) -> (f64, f64) {
+    let hourly = monthly_won / MONTHLY_HOURS;
+    let daily = hourly * DAILY_HOURS;
+    (daily, daily * unused_days)
+}
+
 /// 다음으로 연차가 늘어나는 `(근속년수, 그때 일수)`. 이미 상한(25일)이면 None.
 pub fn next_increase(years: u32) -> Option<(u32, u32)> {
     if annual_leave_days(years.max(1), 0) >= 25 {
@@ -44,6 +57,16 @@ mod tests {
         assert_eq!(annual_leave_days(10, 0), 19);
         assert_eq!(annual_leave_days(21, 0), 25); // 상한 도달
         assert_eq!(annual_leave_days(30, 0), 25); // 상한 유지
+    }
+
+    #[test]
+    fn unused_leave_pay_from_monthly() {
+        // 월급 300만, 미사용 5일 → 1일 통상임금 = 3,000,000/209×8 ≈ 114,832, ×5 ≈ 574,162.
+        let (daily, total) = unused_leave_pay(3_000_000.0, 5.0);
+        assert_eq!(daily.round() as i64, 114_833); // 14,354.07×8
+        assert_eq!(total.round() as i64, 574_163);
+        // 0일이면 0.
+        assert_eq!(unused_leave_pay(3_000_000.0, 0.0).1, 0.0);
     }
 
     #[test]

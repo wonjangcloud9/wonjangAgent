@@ -726,6 +726,14 @@ enum Commands {
         #[arg(default_value_t = 0)]
         months: u32,
     },
+    /// 미사용 연차 수당. 예: wonjang 연차수당 300 5 (월급 300만, 미사용 5일)
+    #[command(name = "연차수당", aliases = ["미사용연차", "연차정산"])]
+    LeavePay {
+        /// 월급(만 원 단위, 통상임금 가정). 예: 300 = 300만 원
+        manwon: f64,
+        /// 미사용 연차 일수(반차는 0.5). 예: 5
+        days: f64,
+    },
     /// 자동차세 계산(비영업 승용). 예: wonjang 자동차세 1998 3
     #[command(alias = "자동차세")]
     CarTax {
@@ -1575,6 +1583,7 @@ async fn run() -> Result<()> {
             months,
         }) => return cmd_severance(*monthly, *years, *months),
         Some(Commands::AnnualLeave { years, months }) => return cmd_annual_leave(*years, *months),
+        Some(Commands::LeavePay { manwon, days }) => return cmd_leave_pay(*manwon, *days),
         Some(Commands::CarTax { cc, age }) => return cmd_car_tax(*cc, *age),
         Some(Commands::Overtime {
             hourly,
@@ -2889,6 +2898,10 @@ fn cmd_guide() -> Result<()> {
                 ),
                 ("wonjang 퇴직금 <월급> <근속년> [개월]", "법정 퇴직금 추정"),
                 ("wonjang 연차 <근속년> [개월]", "연차 휴가 일수(근로기준법)"),
+                (
+                    "wonjang 연차수당 <월급만원> <일수>",
+                    "미사용 연차 수당(통상임금 기준)",
+                ),
                 ("wonjang 자동차세 <cc> [차령]", "자동차세(비영업 승용)"),
                 ("wonjang 야근수당 <시급> --연장 N", "연장·야간·휴일 수당"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
@@ -6295,7 +6308,32 @@ fn cmd_annual_leave(years: u32, months: u32) -> Result<()> {
             None => ui::info("     법정 상한(25일)에 도달했어요."),
         }
     }
+    ui::info("     💰 안 쓴 연차 수당? → wonjang 연차수당 <월급만원> <미사용일수>");
     println!();
+    Ok(())
+}
+
+fn cmd_leave_pay(manwon: f64, days: f64) -> Result<()> {
+    if manwon <= 0.0 || days < 0.0 {
+        anyhow::bail!("월급(만원)과 미사용 일수를 올바르게 넣어주세요. 예: 연차수당 300 5");
+    }
+    let monthly_won = manwon * 10_000.0;
+    let (daily, total) = annual_leave::unused_leave_pay(monthly_won, days);
+    let w = |v: f64| expenses::won(v.round() as i64);
+    let days_str = if days.fract() == 0.0 {
+        format!("{}", days as i64)
+    } else {
+        format!("{days}")
+    };
+    println!();
+    println!(
+        "  💰 연차수당 추정 (월급 {} · 미사용 {days_str}일)",
+        jeonse::fmt_eok(manwon)
+    );
+    println!("     1일 통상임금   {}  (월급÷209×8)", w(daily));
+    println!("     연차수당       {}", w(total));
+    println!();
+    ui::info("     ※ 통상임금=월급 가정 추정. 상여·고정수당 포함 시 실제는 더 클 수 있어요.");
     Ok(())
 }
 
