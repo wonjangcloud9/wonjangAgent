@@ -164,9 +164,24 @@ async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<St
     let parsed: ClaudeResult =
         serde_json::from_str(stdout.trim()).context("claude JSON 응답 파싱 실패")?;
     if parsed.is_error {
-        bail!("Claude Code 오류: {}", parsed.result);
+        bail!("{}", friendly_backend_error(&parsed.result));
     }
     Ok(parsed.result)
+}
+
+/// Claude Code 에러를 wonjang 사용자용 메시지로. 로그인 안 됨이면 `/login`(Claude Code
+/// 개념)을 그대로 노출하는 대신, AI 기능엔 로그인이 필요하고 오프라인 기능은 바로
+/// 쓸 수 있음을 안내한다(신규 사용자가 처음 AI를 시도하는 첫인상 순간이라 중요).
+fn friendly_backend_error(raw: &str) -> String {
+    let r = raw.trim();
+    if r.contains("Not logged in") || r.contains("/login") {
+        "AI 대화 기능은 Claude Code 로그인이 필요해요.\n     \
+         • 설치·로그인: claude (claude.com/claude-code) 설치 후 로그인\n     \
+         • 로그인 없이 바로 쓰는 기능: wonjang 도움 (날씨·계산기·디데이 등 대부분 OK)"
+            .to_string()
+    } else {
+        format!("Claude Code 오류: {r}")
+    }
 }
 
 /// Codex(codex exec)에 위임한다(실험적 — stdout 텍스트를 그대로 반환).
@@ -217,6 +232,19 @@ mod tests {
     fn render_first_turn_is_user_only() {
         let m = vec![msg("system", "페르소나"), msg("user", "안녕")];
         assert_eq!(render_prompt(&m), "안녕");
+    }
+
+    #[test]
+    fn login_error_is_friendly_and_points_offline() {
+        // 로그인 안 됨 → '/login'(Claude Code 개념) 노출 대신 친절 안내 + 오프라인 유도.
+        let f = friendly_backend_error("Not logged in · Please run /login");
+        assert!(f.contains("로그인이 필요"));
+        assert!(f.contains("wonjang 도움")); // 오프라인 기능으로 유도
+        assert!(!f.contains("Claude Code 오류")); // 날것 에러 접두사 안 씀
+                                                  // 다른 에러는 종전대로 노출(진단 가능).
+        let other = friendly_backend_error("rate limit exceeded");
+        assert!(other.contains("Claude Code 오류"));
+        assert!(other.contains("rate limit"));
     }
 
     #[test]
