@@ -62,6 +62,7 @@ mod limitation;
 mod llm;
 mod loan;
 mod lotto;
+mod margin;
 mod maxinterest;
 mod mcp;
 mod memory;
@@ -964,6 +965,19 @@ enum Commands {
         /// 금액(원). 5만·1억·50,000 같은 한국식 표기도 OK
         #[arg(value_parser = expenses::parse_won_f64)]
         amount: f64,
+    },
+    /// 마진율 계산(이익·마진율·마크업, 목표 마진 판매가 역산). 예: wonjang 마진 7000 10000
+    #[command(name = "마진", aliases = ["마진율", "마크업", "margin"])]
+    Margin {
+        /// 원가(원). 7000·1만 같은 한국식 표기도 OK
+        #[arg(value_parser = expenses::parse_won_f64)]
+        cost: f64,
+        /// 판매가(원). 생략하고 --목표를 주면 권장 판매가를 역산
+        #[arg(value_parser = expenses::parse_won_f64)]
+        price: Option<f64>,
+        /// 목표 마진율(%) → 권장 판매가 역산. 예: --목표 30
+        #[arg(long = "목표")]
+        target: Option<f64>,
     },
     /// 글자수 세기(공백 포함/제외, 자소서 제한 체크). 예: wonjang 글자수 "자소서" --제한 1000
     #[command(aliases = ["글자수", "자소서"])]
@@ -1884,6 +1898,11 @@ async fn run() -> Result<()> {
         }) => return cmd_calorie(sex, *age, *height, *weight),
         Some(Commands::Discount { price, rates }) => return cmd_discount(*price, rates),
         Some(Commands::Vat { amount }) => return cmd_vat(*amount),
+        Some(Commands::Margin {
+            cost,
+            price,
+            target,
+        }) => return cmd_margin(*cost, *price, *target),
         Some(Commands::Chars { text, limit }) => return cmd_chars(text, *limit),
         Some(Commands::Choseong { text }) => return cmd_choseong(text),
         Some(Commands::Keystroke { text }) => return cmd_keystroke(text),
@@ -3259,6 +3278,10 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 야근수당 <시급> --연장 N", "연장·야간·휴일 수당"),
                 ("wonjang 할인 <원가> <%>...", "할인가(중복 할인)"),
                 ("wonjang 부가세 <금액>", "공급가/세액 분리"),
+                (
+                    "wonjang 마진 <원가> <판매가> [--목표 %]",
+                    "마진율·마크업(목표 마진 판매가 역산)",
+                ),
                 (
                     "wonjang 사업자번호 <번호>",
                     "사업자등록번호 검증(오타·체크섬)",
@@ -8182,6 +8205,71 @@ fn cmd_vat(amount: f64) -> Result<()> {
     println!("  ▸ 이 금액이 VAT 포함 합계이면");
     println!("     공급가액       {}", w(s2));
     println!("     세액           {}", w(v2));
+    println!();
+    Ok(())
+}
+
+fn cmd_margin(cost: f64, price: Option<f64>, target: Option<f64>) -> Result<()> {
+    use owo_colors::OwoColorize;
+    if !cost.is_finite() || cost <= 0.0 {
+        anyhow::bail!("원가는 0보다 커야 해요. 예: wonjang 마진 7000 10000");
+    }
+    let w = |v: f64| expenses::won(v.round() as i64);
+    println!();
+    match (price, target) {
+        // 원가 + 판매가 → 이익·마진율·마크업.
+        (Some(p), _) => {
+            if !p.is_finite() || p < 0.0 {
+                anyhow::bail!("판매가는 0 이상이어야 해요. 예: wonjang 마진 7000 10000");
+            }
+            let (profit, margin, markup) = margin::analyze(cost, p);
+            println!("  📊 마진 계산 (원가 {} · 판매가 {})", w(cost), w(p));
+            if profit < 0.0 {
+                println!("     이익        {} {}", w(profit), "(손해!)".red());
+            } else {
+                println!("     이익        {}", w(profit));
+            }
+            println!("     마진율      {margin:.1}%   (이익 ÷ 판매가)");
+            println!("     마크업      {markup:.1}%   (이익 ÷ 원가)");
+            println!();
+            println!(
+                "  💡 \"{:.0}% 남긴다\"는 보통 마진율 — 원가×{:.2}(마크업)와 달라요.",
+                margin,
+                1.0 + margin / 100.0
+            );
+        }
+        // 원가 + 목표 마진율 → 권장 판매가 역산("원가×1.3" 오답 교정).
+        (None, Some(t)) => match margin::price_for_margin(cost, t) {
+            Some(p) => {
+                let (profit, _, _) = margin::analyze(cost, p);
+                let wrong = cost * (1.0 + t / 100.0); // 흔한 오답(마크업)
+                let (_, wrong_margin, _) = margin::analyze(cost, wrong);
+                println!("  📊 목표 마진율 {t:.0}%로 팔려면 (원가 {})", w(cost));
+                println!("     권장 판매가  {}", w(p).bright_cyan().bold());
+                println!("     이익        {} (마진율 {t:.1}%)", w(profit));
+                println!();
+                println!(
+                    "  💡 원가×{:.2}={}는 마크업 {t:.0}%일 뿐(마진율 {:.1}%). 마진 {t:.0}%는 ÷{:.2}.",
+                    1.0 + t / 100.0,
+                    w(wrong),
+                    wrong_margin,
+                    1.0 - t / 100.0
+                );
+            }
+            None => {
+                anyhow::bail!(
+                    "목표 마진율은 0 이상 100 미만이어야 해요. 예: wonjang 마진 7000 --목표 30"
+                );
+            }
+        },
+        // 판매가도 목표도 없으면 안내.
+        (None, None) => {
+            println!("  📊 마진 계산");
+            println!("     판매가나 목표 마진율이 필요해요:");
+            println!("     • wonjang 마진 7000 10000      (이익·마진율·마크업)");
+            println!("     • wonjang 마진 7000 --목표 30  (30% 마진 판매가 역산)");
+        }
+    }
     println!();
     Ok(())
 }
