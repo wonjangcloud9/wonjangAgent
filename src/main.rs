@@ -1571,9 +1571,66 @@ fn clap_error_headline(e: &clap::Error) -> String {
     }
 }
 
-/// clap usage 줄의 영문 정규 명령명을 한국어 별칭으로 치환한다.
-/// 예: "wonjang age <BIRTH>" → "wonjang 나이 <BIRTH>". 사용자가 친 한국어 명령과
-/// 사용법이 일치하게 만든다(placeholder `<BIRTH>`는 필드명이라 그대로 둔다).
+/// clap usage 플레이스홀더(`<MANWON>`·`[RELATION]`·`<RATES>...`)의 영문 필드명을
+/// 한국어로 바꾼다. 모르는 이름은 영문 그대로 둔다(graceful). 한국어 우선 원칙상
+/// 에러 사용법에 영문 잔재가 남지 않게 — 흔히 쓰는 인자명을 공통으로 매핑한다.
+fn koreanize_placeholder(tok: &str) -> String {
+    // 꼬리 '...'(variadic)·래퍼(<...>/[...]) 분리.
+    let (core, tail) = match tok.strip_suffix("...") {
+        Some(c) => (c, "..."),
+        None => (tok, ""),
+    };
+    let (open, name, close) =
+        if let Some(i) = core.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
+            ('<', i, '>')
+        } else if let Some(i) = core.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            ('[', i, ']')
+        } else {
+            return tok.to_string(); // 플레이스홀더 아님(명령명·값)
+        };
+    let ko = match name {
+        "MANWON" => "금액(만원)",
+        "AMOUNT" => "금액",
+        "BASE" => "과세표준",
+        "PRINCIPAL" => "원금",
+        "INTEREST" => "이자",
+        "COST" => "원가",
+        "PRICE" => "가격",
+        "RATE" | "RATES" => "비율%",
+        "MONTHS" => "개월",
+        "YEARS" => "년",
+        "RELATION" => "관계",
+        "VALUE" => "값",
+        "UNIT" => "단위",
+        "LABEL" | "NAME" => "이름",
+        "DATE" => "날짜",
+        "BIRTH" => "생년월일",
+        "ENLIST" => "입대일",
+        "BRANCH" => "군별",
+        "ID" => "번호",
+        "TEXT" => "내용",
+        "MESSAGE" => "메시지",
+        "STATION" => "역",
+        "LOCATION" => "지역",
+        "CURRENCY" => "통화",
+        "QUERY" => "검색어",
+        "AGE" => "나이",
+        "HEIGHT" => "키",
+        "WEIGHT" => "몸무게",
+        "SEX" => "성별",
+        "HOURLY" => "시급",
+        "HOURS" => "시간",
+        "CC" => "배기량cc",
+        "COMMAND" => "명령",
+        "OPTIONS" => "옵션",
+        _ => return tok.to_string(), // 모르는 이름은 영문 그대로(graceful)
+    };
+    format!("{open}{ko}{close}{tail}")
+}
+
+/// clap usage 줄의 영문 정규 명령명을 한국어 별칭으로, 플레이스홀더는 한국어로 치환한다.
+/// 예: "wonjang loan <MANWON> <RATE>" → "wonjang 대출 <금액_만원> <비율%>". 사용자가 친
+/// 한국어 명령과 사용법이 일치하고, 영문 잔재가 남지 않게 한다.
 fn koreanize_command_names(usage: &str) -> String {
     use clap::CommandFactory;
     // usage 경로를 따라 명령 트리를 내려가며, 그 경로의 실제 서브커맨드가
@@ -1603,7 +1660,8 @@ fn koreanize_command_names(usage: &str) -> String {
                     cur = Some(sub);
                     replaced
                 }
-                None => tok.to_string(),
+                // 서브커맨드가 아니면 플레이스홀더(<X>)·값 — 플레이스홀더는 한국어로.
+                None => koreanize_placeholder(tok),
             }
         })
         .collect::<Vec<_>>()
@@ -9976,7 +10034,9 @@ mod calc_guard_tests {
 
 #[cfg(test)]
 mod alias_tests {
-    use super::{clap_error_headline, koreanize_command_names, Cli, Commands};
+    use super::{
+        clap_error_headline, koreanize_command_names, koreanize_placeholder, Cli, Commands,
+    };
     use clap::Parser;
 
     fn cmd_of(args: &[&str]) -> Commands {
@@ -10047,13 +10107,26 @@ mod alias_tests {
             .expect("스레드 생성")
             .join()
             .expect("치환 스레드");
-        assert_eq!(age, "wonjang 나이 <BIRTH>");
-        assert_eq!(dday, "wonjang 디데이 추가 <LABEL> <DATE>");
-        // 이미 한국어 명령명이면 그대로 둔다.
-        assert_eq!(mil, "wonjang 전역 <ENLIST> [BRANCH]");
+        // 명령명은 한국어로, 플레이스홀더도 흔한 건 한국어로(한국어 우선).
+        assert_eq!(age, "wonjang 나이 <생년월일>");
+        assert_eq!(dday, "wonjang 디데이 추가 <이름> <날짜>");
+        // 이미 한국어 명령명 + 플레이스홀더(입대일·군별)도 한국어로.
+        assert_eq!(mil, "wonjang 전역 <입대일> [군별]");
         // 별칭 없는 액션(cron/watch의 add)은 영문 그대로 — 안내한 명령이 실제로 동작해야.
+        // 매핑에 없는 플레이스홀더(SCHEDULE/PROMPT/SYMBOL/TARGET)는 영문 그대로(graceful).
         assert_eq!(cron, "wonjang cron add <SCHEDULE> <PROMPT>");
         assert_eq!(watch, "wonjang 감시 add <SYMBOL> <TARGET>");
+    }
+
+    #[test]
+    fn placeholders_koreanized_common_kept_unknown() {
+        // 흔한 인자명은 한국어로, 모르는 건 영문 그대로(graceful).
+        assert_eq!(koreanize_placeholder("<MANWON>"), "<금액(만원)>");
+        assert_eq!(koreanize_placeholder("<RATE>"), "<비율%>");
+        assert_eq!(koreanize_placeholder("[RELATION]"), "[관계]");
+        assert_eq!(koreanize_placeholder("<RATES>..."), "<비율%>..."); // variadic 꼬리 보존
+        assert_eq!(koreanize_placeholder("<TAX_BASE>"), "<TAX_BASE>"); // 미매핑은 그대로
+        assert_eq!(koreanize_placeholder("wonjang"), "wonjang"); // 래퍼 없으면 그대로
     }
 
     // 한국인이 가장 자연스럽게 떠올리는 단어가 곧장 해당 기능으로 가야 한다.
