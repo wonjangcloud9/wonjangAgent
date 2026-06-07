@@ -8666,6 +8666,9 @@ fn cmd_weather(location: &[String]) -> Result<()> {
         "     습도 {}% · 강수 {}mm · 오늘 {:.0}~{:.0}°C",
         w.humidity, w.precip, w.today_min, w.today_max
     );
+    if let Some(ymax) = w.yesterday_max {
+        println!("     {}", weather::vs_yesterday(w.today_max, ymax));
+    }
     // 미세먼지(있을 때만, 0/0은 결측으로 보고 생략해 false "좋음" 방지).
     if let Some(a) = air.filter(|a| a.pm10 > 0.0 || a.pm25 > 0.0) {
         let (g10, e10) = airquality::grade_pm10(a.pm10);

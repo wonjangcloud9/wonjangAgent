@@ -18,6 +18,8 @@ pub struct Weather {
     pub precip: f64,
     /// 오늘 강수확률(%) — 우산 안내용.
     pub precip_prob: i64,
+    /// 어제 낮 최고기온(°C) — "어제보다 N도" 비교용. 과거 데이터 없으면 None.
+    pub yesterday_max: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -121,11 +123,13 @@ pub async fn weather(location: &str) -> Result<Weather> {
     let loc = location.trim();
     let (lat, lon, place) = resolve(loc).await?;
 
+    // past_days=1로 어제도 함께 받아 "어제보다 N도"를 만든다. 오늘은 항상 마지막
+    // 항목, 어제는 그 직전 항목(배열 길이에 의존하지 않게 뒤에서 집는다).
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
          &current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,precipitation,is_day\
          &daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max\
-         &timezone=Asia%2FSeoul&forecast_days=1"
+         &timezone=Asia%2FSeoul&past_days=1&forecast_days=1"
     );
     let http = client()?;
     let f: Forecast = http
@@ -137,6 +141,11 @@ pub async fn weather(location: &str) -> Result<Weather> {
         .await
         .context("날씨 응답 파싱 실패")?;
 
+    let tmax = &f.daily.temperature_2m_max;
+    let tmin = &f.daily.temperature_2m_min;
+    // 어제 = 마지막 직전 항목(오늘=마지막). 과거 데이터가 없으면 None.
+    let yesterday_max = (tmax.len() >= 2).then(|| tmax[tmax.len() - 2]);
+
     Ok(Weather {
         place,
         temp: f.current.temperature_2m,
@@ -144,15 +153,16 @@ pub async fn weather(location: &str) -> Result<Weather> {
         humidity: f.current.relative_humidity_2m,
         desc: wmo_desc(f.current.weather_code).to_string(),
         icon: wmo_emoji(f.current.weather_code, f.current.is_day == 1).to_string(),
-        today_min: f.daily.temperature_2m_min.first().copied().unwrap_or(0.0),
-        today_max: f.daily.temperature_2m_max.first().copied().unwrap_or(0.0),
+        today_min: tmin.last().copied().unwrap_or(0.0),
+        today_max: tmax.last().copied().unwrap_or(0.0),
         precip: f.current.precipitation,
         precip_prob: f
             .daily
             .precipitation_probability_max
-            .first()
+            .last()
             .copied()
             .unwrap_or(0),
+        yesterday_max,
     })
 }
 
@@ -302,6 +312,17 @@ pub fn umbrella(prob: i64) -> Option<String> {
     }
 }
 
+/// 어제 낮 최고기온 대비 오늘 — 한국 날씨앱의 시그니처 "어제보다 N도". 차이 1도
+/// 미만이면 "비슷". 옷차림 판단에 바로 쓰는 정보라 카드 맨 위 가까이 둔다.
+pub fn vs_yesterday(today_max: f64, yesterday_max: f64) -> String {
+    let diff = (today_max - yesterday_max).round() as i64;
+    match diff {
+        d if d >= 1 => format!("📈 어제보다 낮 기온 {d}도 높아요"),
+        d if d <= -1 => format!("📉 어제보다 낮 기온 {}도 낮아요", -d),
+        _ => "➖ 어제와 낮 기온 비슷해요".to_string(),
+    }
+}
+
 fn encode(s: &str) -> String {
     let mut out = String::new();
     for &b in s.as_bytes() {
@@ -354,6 +375,15 @@ mod tests {
         assert!(outfit(18.0).contains("니트") || outfit(18.0).contains("맨투맨"));
         assert!(outfit(2.0).contains("패딩"));
         assert!(outfit(7.0).contains("코트"));
+    }
+
+    #[test]
+    fn vs_yesterday_direction() {
+        assert!(vs_yesterday(25.0, 22.0).contains("3도 높아요"));
+        assert!(vs_yesterday(20.0, 24.0).contains("4도 낮아요"));
+        assert!(vs_yesterday(20.4, 20.0).contains("비슷")); // +0.4도 → 반올림 0 → 비슷
+        assert!(vs_yesterday(20.0, 20.4).contains("비슷")); // -0.4도 → 반올림 0 → 비슷
+        assert!(vs_yesterday(20.0, 20.6).contains("낮아요")); // -0.6도 → 반올림 1도 낮음
     }
 
     #[test]
