@@ -1410,8 +1410,8 @@ enum TodoAction {
         /// 할 일 내용(여러 단어면 따옴표)
         text: String,
     },
-    /// id로 할 일 완료 처리.
-    #[command(alias = "완료")]
+    /// id로 할 일 완료 처리(체크·했어·끝도 됨).
+    #[command(aliases = ["완료", "체크", "했어", "끝"])]
     Done {
         /// 완료할 할 일 id
         id: u64,
@@ -9373,7 +9373,7 @@ fn cmd_todo(action: &Option<TodoAction>) -> Result<()> {
                 println!("  ☐ #{}  {}", t.id, t.text);
             }
             println!();
-            ui::info("완료: wonjang 할일 완료 <id>   |   정리: wonjang 할일 정리");
+            ui::info("완료: wonjang 할일 체크 <id>   |   정리: wonjang 할일 정리");
         }
     }
     Ok(())
@@ -10142,6 +10142,13 @@ mod alias_tests {
         ));
         assert!(matches!(
             cmd_of(&["wonjang", "할일", "완료", "1"]),
+            Commands::Todo {
+                action: Some(TodoAction::Done { .. })
+            }
+        ));
+        // 자연어 별칭: '체크'도 완료로(가장 먼저 떠올리는 말이 막히지 않게).
+        assert!(matches!(
+            cmd_of(&["wonjang", "할일", "체크", "1"]),
             Commands::Todo {
                 action: Some(TodoAction::Done { .. })
             }
