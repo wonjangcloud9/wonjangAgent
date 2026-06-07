@@ -1680,7 +1680,21 @@ fn print_korean_clap_error(e: &clap::Error) {
     eprintln!("  전체 기능은 → wonjang 도움");
 }
 
+/// 최상위 도움 요청(`wonjang --help`·`-h`·`help`)인가. 서브커맨드 `--help`
+/// (예: `wonjang 대출 --help`)는 제외 — 그건 clap이 그 명령의 한국어 설명을 보여준다.
+fn is_top_level_help(args: &[String]) -> bool {
+    matches!(
+        args.first().map(String::as_str),
+        Some("--help") | Some("-h")
+    ) || (args.len() == 1 && args[0] == "help")
+}
+
 async fn run() -> Result<()> {
+    // 최상위 --help/-h/help는 영문 clap 화면 대신 한국어 '도움'으로(첫인상·한국어 우선).
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if is_top_level_help(&raw_args) {
+        return cmd_guide();
+    }
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {
@@ -10035,8 +10049,24 @@ mod calc_guard_tests {
 #[cfg(test)]
 mod alias_tests {
     use super::{
-        clap_error_headline, koreanize_command_names, koreanize_placeholder, Cli, Commands,
+        clap_error_headline, is_top_level_help, koreanize_command_names, koreanize_placeholder,
+        Cli, Commands,
     };
+
+    #[test]
+    fn top_level_help_detected_but_not_subcommand_help() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // 최상위 도움 → 한국어 도움으로 돌린다.
+        assert!(is_top_level_help(&a(&["--help"])));
+        assert!(is_top_level_help(&a(&["-h"])));
+        assert!(is_top_level_help(&a(&["help"])));
+        // 서브커맨드 --help는 clap이 처리(그 명령의 한국어 설명) — 가로채지 않는다.
+        assert!(!is_top_level_help(&a(&["대출", "--help"])));
+        assert!(!is_top_level_help(&a(&["help", "대출"])));
+        // 일반 명령·빈 입력(REPL)도 가로채지 않는다.
+        assert!(!is_top_level_help(&a(&["날씨", "서울"])));
+        assert!(!is_top_level_help(&a(&[])));
+    }
     use clap::Parser;
 
     fn cmd_of(args: &[&str]) -> Commands {
