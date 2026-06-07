@@ -930,10 +930,10 @@ enum Commands {
         /// 몸무게(kg)
         weight: f64,
     },
-    /// 수면 시간 계산(90분 주기). 예: 수면 07:00(기상 기준) · 수면 취침 23:00 · 수면(지금 자면)
+    /// 수면 시간 계산(90분 주기). 예: 수면 23:00(밤=취침) · 수면 07:00(아침=기상) · 수면(지금)
     #[command(aliases = ["수면", "잠"])]
     Sleep {
-        /// 기상 시각(HH:MM). '취침 23:00'처럼 쓰면 그 시각에 자는 기준. 생략 시 지금 자는 기준
+        /// 시각(HH:MM). 밤이면 취침·아침이면 기상으로 자동. '취침 7'·'기상 23'으로 강제. 생략 시 지금
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -2174,12 +2174,12 @@ mod sleep_mode_tests {
     #[test]
     fn parses_three_modes() {
         assert_eq!(parse_sleep_args(&args(&[])), SleepMode::WakeNow);
-        // 기존 동작: 시각 하나 = 기상 시각 → 취침 추천(회귀 방지).
+        // 아침 시각 하나 = 기상 → 취침 추천(회귀 방지).
         assert_eq!(
             parse_sleep_args(&args(&["07:00"])),
             SleepMode::WakeAt("07:00".into())
         );
-        // 새 모드: 취침 시각 지정(키워드 앞·뒤 모두).
+        // 취침 시각 지정(키워드 앞·뒤 모두).
         assert_eq!(
             parse_sleep_args(&args(&["취침", "23:00"])),
             SleepMode::BedAt("23:00".into())
@@ -2191,6 +2191,33 @@ mod sleep_mode_tests {
         assert_eq!(
             parse_sleep_args(&args(&["잘때", "01:30"])),
             SleepMode::BedAt("01:30".into())
+        );
+    }
+
+    #[test]
+    fn bare_time_infers_bed_vs_wake_by_hour() {
+        // 밤(21~03시) 시각만 주면 취침으로 — 23:00을 기상으로 보던 옛 동작이 정반대였다.
+        assert_eq!(
+            parse_sleep_args(&args(&["23:00"])),
+            SleepMode::BedAt("23:00".into())
+        );
+        assert_eq!(
+            parse_sleep_args(&args(&["01:30"])),
+            SleepMode::BedAt("01:30".into())
+        );
+        // 아침·낮(04~20시)은 기상으로(기존 default 유지).
+        assert_eq!(
+            parse_sleep_args(&args(&["09:00"])),
+            SleepMode::WakeAt("09:00".into())
+        );
+        // 기상 키워드로 밤 시각도 강제 기상(야간근무 등).
+        assert_eq!(
+            parse_sleep_args(&args(&["기상", "23:00"])),
+            SleepMode::WakeAt("23:00".into())
+        );
+        assert_eq!(
+            parse_sleep_args(&args(&["23:00", "기상"])),
+            SleepMode::WakeAt("23:00".into())
         );
     }
 }
@@ -3254,7 +3281,10 @@ fn cmd_guide() -> Result<()> {
                     "wonjang 칼로리 <성별> <나이> <키> <몸무게>",
                     "기초대사량·권장칼로리",
                 ),
-                ("wonjang 수면 [기상시각]", "수면 시간(90분 주기)"),
+                (
+                    "wonjang 수면 [시각]",
+                    "수면 시간(90분 주기, 밤=취침·아침=기상 자동)",
+                ),
                 ("wonjang 더치 <총액> <인원>", "더치페이(n빵)"),
                 ("wonjang 뽑기 <후보들>", "제비뽑기/추첨"),
                 ("wonjang 메뉴 [카테고리]", "오늘 뭐 먹지?"),
@@ -8190,13 +8220,28 @@ enum SleepMode {
 }
 
 fn parse_sleep_args(args: &[String]) -> SleepMode {
-    const BED_KW: [&str; 5] = ["취침", "자기", "잘때", "잘", "bed"];
+    const BED_KW: &[&str] = &["취침", "자기", "잘때", "잘", "bed"];
+    const WAKE_KW: &[&str] = &["기상", "일어나", "일어날", "wake"];
     match args {
         [] => SleepMode::WakeNow,
-        // '취침 23:00'(키워드+시각) 또는 '23:00 취침'(시각+키워드) 모두 받는다.
+        // 키워드+시각(앞·뒤 모두): 취침/기상을 명시하면 그대로.
         [a, b] if BED_KW.contains(&a.as_str()) => SleepMode::BedAt(b.clone()),
         [a, b] if BED_KW.contains(&b.as_str()) => SleepMode::BedAt(a.clone()),
-        [t, ..] => SleepMode::WakeAt(t.clone()),
+        [a, b] if WAKE_KW.contains(&a.as_str()) => SleepMode::WakeAt(b.clone()),
+        [a, b] if WAKE_KW.contains(&b.as_str()) => SleepMode::WakeAt(a.clone()),
+        // 시각만 주면 시간대로 추정: 밤(21~03시)은 취침, 아침·낮은 기상.
+        // (23:00을 '기상'으로 보던 옛 default가 가장 흔한 의도와 정반대였다. 강제는 키워드로.)
+        [t, ..] => {
+            let night = sleepcalc::parse_time(t)
+                .ok()
+                .map(|x| chrono::Timelike::hour(&x))
+                .is_some_and(|h| !(4..21).contains(&h));
+            if night {
+                SleepMode::BedAt(t.clone())
+            } else {
+                SleepMode::WakeAt(t.clone())
+            }
+        }
     }
 }
 
@@ -8250,7 +8295,7 @@ fn cmd_sleep(args: &[String]) -> Result<()> {
     println!(
         "  {} 90분 주기 끝에 깨면 개운해요. {}",
         "ⓘ".dimmed(),
-        "수면 07:00(기상)·수면 취침 23:00·수면(지금)".dimmed()
+        "시각만 주면 자동(밤=취침·아침=기상) · 강제: 수면 취침 23:00 / 수면 기상 07:00".dimmed()
     );
     println!();
     Ok(())
