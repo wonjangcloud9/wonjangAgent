@@ -8176,7 +8176,11 @@ fn cmd_wage(hourly: f64, weekly_hours: f64) -> Result<()> {
         println!("     주휴수당       없음  (주 15시간 미만)");
     }
     println!("     주급 합계      {}", w(r.weekly_total));
-    println!("     월 환산        {}  (주급×4.345)", w(r.monthly));
+    println!(
+        "     월 환산        {}  (월 {:.0}시간)",
+        w(r.monthly),
+        r.monthly_hours
+    );
     if r.below_min {
         println!(
             "     ⚠️ 2025년 최저시급({}) 미만입니다",

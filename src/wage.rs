@@ -14,32 +14,38 @@ const WEEKS_PER_MONTH: f64 = 365.0 / 7.0 / 12.0;
 
 /// 임금 계산 결과.
 pub struct Wage {
-    pub hourly: f64,       // 시급
-    pub weekly_hours: f64, // 주당 근로시간
-    pub base_weekly: f64,  // 주 기본급(시급×시간)
-    pub holiday_pay: f64,  // 주휴수당(주당)
-    pub weekly_total: f64, // 주급 합계
-    pub monthly: f64,      // 월 환산(주급×4.345)
-    pub below_min: bool,   // 최저시급 미만 여부
+    pub hourly: f64,        // 시급
+    pub weekly_hours: f64,  // 주당 근로시간
+    pub base_weekly: f64,   // 주 기본급(시급×시간)
+    pub holiday_pay: f64,   // 주휴수당(주당)
+    pub weekly_total: f64,  // 주급 합계
+    pub monthly_hours: f64, // 월 소정근로시간(주휴 포함, 정수 환산)
+    pub monthly: f64,       // 월 환산(시급 × 월 소정근로시간)
+    pub below_min: bool,    // 최저시급 미만 여부
 }
 
 /// 시급과 주당 근로시간으로 임금을 계산한다.
 pub fn calc(hourly: f64, weekly_hours: f64) -> Wage {
-    let base_weekly = hourly * weekly_hours;
-    let holiday_pay = if weekly_hours >= HOLIDAY_THRESHOLD {
-        // 주 40시간 비례, 상한 8시간분.
-        (weekly_hours.min(40.0) / 40.0) * 8.0 * hourly
+    // 주휴시간: 주 40시간 비례, 상한 8시간분(주 15시간 미만은 없음).
+    let holiday_hours = if weekly_hours >= HOLIDAY_THRESHOLD {
+        (weekly_hours.min(40.0) / 40.0) * 8.0
     } else {
         0.0
     };
+    let base_weekly = hourly * weekly_hours;
+    let holiday_pay = holiday_hours * hourly;
     let weekly_total = base_weekly + holiday_pay;
+    // 월 소정근로시간 = (주 근로 + 주휴) × 월평균 주수, 정수 환산.
+    // 주 40시간이면 (40+8)×4.345 = 208.57 → 209시간(고용노동부 표준) → 월 최저 2,096,270원과 일치.
+    let monthly_hours = ((weekly_hours + holiday_hours) * WEEKS_PER_MONTH).round();
     Wage {
         hourly,
         weekly_hours,
         base_weekly,
         holiday_pay,
         weekly_total,
-        monthly: weekly_total * WEEKS_PER_MONTH,
+        monthly_hours,
+        monthly: hourly * monthly_hours,
         below_min: hourly < MIN_WAGE_2025,
     }
 }
@@ -50,10 +56,11 @@ mod tests {
 
     #[test]
     fn full_time_minimum_wage() {
-        // 최저시급 주 40시간 → 주휴 8시간분, 월 약 209만.
+        // 최저시급 주 40시간 → 주휴 8시간분, 월 209시간 = 공식 2025 월 최저임금 2,096,270원.
         let w = calc(MIN_WAGE_2025, 40.0);
         assert!((w.holiday_pay - 80_240.0).abs() < 1.0);
-        assert!((w.monthly - 2_090_000.0).abs() < 5_000.0);
+        assert_eq!(w.monthly_hours, 209.0);
+        assert!((w.monthly - 2_096_270.0).abs() < 1.0);
         assert!(!w.below_min);
     }
 
