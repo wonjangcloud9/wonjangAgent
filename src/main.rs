@@ -1277,8 +1277,8 @@ enum HabitAction {
         /// 습관 이름
         name: String,
     },
-    /// 습관 완료. 예: wonjang 습관 완료 운동 (깜빡한 날: 습관 완료 운동 어제)
-    #[command(alias = "완료")]
+    /// 습관 완료. 예: wonjang 습관 완료 운동 (체크·했어도 됨, 깜빡한 날: 습관 완료 운동 어제)
+    #[command(aliases = ["완료", "체크", "했어", "함"])]
     Done {
         /// 습관 이름 또는 id
         habit: String,
@@ -8991,7 +8991,7 @@ fn cmd_habit(action: &Option<HabitAction>) -> Result<()> {
                 );
             }
             println!();
-            ui::info("완료: wonjang 습관 완료 <이름>   |   추가: wonjang 습관 추가 \"<이름>\"");
+            ui::info("완료: wonjang 습관 체크 <이름>   |   추가: wonjang 습관 추가 \"<이름>\"");
         }
     }
     Ok(())
