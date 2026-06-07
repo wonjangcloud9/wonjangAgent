@@ -1218,9 +1218,10 @@ enum Commands {
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
     Telegram,
     /// 자주 쓰는 작업 프리셋을 보거나 실행합니다.
+    #[command(alias = "프리셋")]
     Preset {
         #[command(subcommand)]
-        action: PresetAction,
+        action: Option<PresetAction>, // 생략 시 목록
     },
     /// 예약 작업(크론)을 관리하고 실행합니다.
     Cron {
@@ -1232,8 +1233,10 @@ enum Commands {
 #[derive(Subcommand)]
 enum PresetAction {
     /// 사용 가능한 프리셋 목록을 보여줍니다.
+    #[command(alias = "목록")]
     List,
     /// 프리셋을 실행합니다. 예: wonjang preset run 다운로드정리
+    #[command(alias = "실행")]
     Run {
         /// 프리셋 이름 또는 별칭
         name: String,
@@ -2037,12 +2040,12 @@ async fn run() -> Result<()> {
         Some(Commands::Mcp) => return cmd_mcp(&cfg),
         Some(Commands::Telegram) => {} // LLM 필요 — 아래에서 처리.
         Some(Commands::Preset { action }) => match action {
-            PresetAction::List => return cmd_preset_list(),
-            PresetAction::Run { name, .. } => {
+            None | Some(PresetAction::List) => return cmd_preset_list(),
+            Some(PresetAction::Run { name, .. }) => {
                 // 존재 검증을 API 키 검사보다 먼저(오타 시 명확한 안내).
                 if preset::find(name).is_none() {
                     ui::error(&format!(
-                        "'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang preset list"
+                        "'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang 프리셋"
                     ));
                     std::process::exit(1);
                 }
@@ -2113,7 +2116,7 @@ async fn run() -> Result<()> {
 
     // 프리셋 실행(단발 모드로 처리).
     let preset_prompt = if let Some(Commands::Preset {
-        action: PresetAction::Run { name, extra },
+        action: Some(PresetAction::Run { name, extra }),
     }) = &cli.command
     {
         match preset::find(name) {
@@ -2128,7 +2131,7 @@ async fn run() -> Result<()> {
             }
             None => {
                 ui::error(&format!(
-                    "'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang preset list"
+                    "'{name}' 프리셋을 찾을 수 없습니다. 목록: wonjang 프리셋"
                 ));
                 std::process::exit(1);
             }
@@ -3235,7 +3238,7 @@ fn cmd_guide() -> Result<()> {
             &[
                 ("wonjang", "대화형 모드(자연어로 무엇이든)"),
                 ("wonjang \"...\"", "한 줄 요청을 바로 실행"),
-                ("wonjang preset list", "자주 쓰는 작업 프리셋 보기"),
+                ("wonjang 프리셋", "자주 쓰는 작업 프리셋 보기(=preset list)"),
             ],
         ),
         (
@@ -10050,7 +10053,7 @@ mod calc_guard_tests {
 mod alias_tests {
     use super::{
         clap_error_headline, is_top_level_help, koreanize_command_names, koreanize_placeholder,
-        Cli, Commands,
+        Cli, Commands, PresetAction,
     };
 
     #[test]
@@ -10163,6 +10166,17 @@ mod alias_tests {
     // 별칭이 없으면 그 단어는 AI로 위임돼(느리고 예측 불가, 미연결 시 실패) 기능을 놓친다.
     #[test]
     fn loanword_aliases_resolve_to_local_commands() {
+        // '프리셋'(한국어)이 AI 위임 대신 곧장 preset 명령으로(단독은 목록).
+        assert!(matches!(
+            cmd_of(&["wonjang", "프리셋"]),
+            Commands::Preset { action: None }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "프리셋", "목록"]),
+            Commands::Preset {
+                action: Some(PresetAction::List)
+            }
+        ));
         assert!(matches!(
             cmd_of(&["wonjang", "북마크"]),
             Commands::Bookmark { .. }
