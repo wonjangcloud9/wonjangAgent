@@ -156,12 +156,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// 현재 설정을 보여주고, 없으면 기본 설정 파일을 생성합니다.
+    #[command(alias = "설정")]
     Config,
     /// 에이전트가 기억하고 있는 사실(영속 메모리)을 보여줍니다.
+    #[command(alias = "메모리")]
     Memory,
     /// 저장된 대화 세션 목록을 보여줍니다.
+    #[command(alias = "세션")]
     Sessions,
     /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
+    #[command(alias = "스킬")]
     Skills,
     /// 약속·알림을 보거나 등록/삭제합니다.
     #[command(aliases = ["약속", "알림", "리마인더"])]
@@ -1123,6 +1127,7 @@ enum Commands {
         url: String,
     },
     /// QR 코드를 터미널에 생성합니다. 예: wonjang qr https://example.com
+    #[command(alias = "큐알")]
     Qr {
         /// QR로 만들 텍스트/URL
         text: Vec<String>,
@@ -1209,6 +1214,7 @@ enum Commands {
         action: Option<WatchAction>,
     },
     /// 노션 워크스페이스를 검색하거나 페이지에 기록합니다.
+    #[command(alias = "노션")]
     Notion {
         #[command(subcommand)]
         action: NotionAction,
@@ -1216,6 +1222,7 @@ enum Commands {
     /// 설정된 MCP 서버에 연결해 제공 도구 목록을 보여줍니다.
     Mcp,
     /// 텔레그램 봇 게이트웨이를 실행합니다(메시지로 원장에게 작업 지시).
+    #[command(alias = "텔레그램")]
     Telegram,
     /// 자주 쓰는 작업 프리셋을 보거나 실행합니다.
     #[command(alias = "프리셋")]
@@ -1224,9 +1231,10 @@ enum Commands {
         action: Option<PresetAction>, // 생략 시 목록
     },
     /// 예약 작업(크론)을 관리하고 실행합니다.
+    #[command(alias = "크론")]
     Cron {
         #[command(subcommand)]
-        action: CronAction,
+        action: Option<CronAction>, // 생략 시 목록
     },
 }
 
@@ -1249,8 +1257,10 @@ enum PresetAction {
 #[derive(Subcommand)]
 enum WatchAction {
     /// 등록된 시세 알림 목록(기본).
+    #[command(alias = "목록")]
     List,
-    /// 알림 추가. 예: wonjang 감시 add BTC 110000000 (목표가 도달 시 알림)
+    /// 알림 추가. 예: wonjang 감시 추가 BTC 110000000 (목표가 도달 시 알림)
+    #[command(alias = "추가")]
     Add {
         /// 코인 심볼(예: BTC)
         symbol: String,
@@ -1258,6 +1268,7 @@ enum WatchAction {
         target: f64,
     },
     /// id로 알림 삭제.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 알림 id
         id: u64,
@@ -1471,6 +1482,7 @@ enum RemindAction {
 #[derive(Subcommand)]
 enum CronAction {
     /// 예약 작업을 추가합니다. 예: wonjang cron add "@daily" "어제 받은 메일 요약해줘"
+    #[command(alias = "추가")]
     Add {
         /// 스케줄(@hourly, @daily, @every 30m, 2h 등)
         schedule: String,
@@ -1478,13 +1490,16 @@ enum CronAction {
         prompt: String,
     },
     /// 등록된 예약 작업 목록을 보여줍니다.
+    #[command(alias = "목록")]
     List,
     /// id로 예약 작업을 삭제합니다.
+    #[command(alias = "삭제")]
     Remove {
         /// 삭제할 작업 id
         id: u64,
     },
     /// 스케줄러를 실행합니다(포그라운드 데몬). 종료는 Ctrl-C.
+    #[command(alias = "실행")]
     Run,
 }
 
@@ -2052,10 +2067,10 @@ async fn run() -> Result<()> {
             } // 유효하면 LLM 경로에서 실행.
         },
         Some(Commands::Cron { action }) => match action {
-            CronAction::Add { schedule, prompt } => return cmd_cron_add(schedule, prompt),
-            CronAction::List => return cmd_cron_list(),
-            CronAction::Remove { id } => return cmd_cron_remove(*id),
-            CronAction::Run => {} // 아래에서 클라이언트 구성 후 데몬 실행.
+            None | Some(CronAction::List) => return cmd_cron_list(),
+            Some(CronAction::Add { schedule, prompt }) => return cmd_cron_add(schedule, prompt),
+            Some(CronAction::Remove { id }) => return cmd_cron_remove(*id),
+            Some(CronAction::Run) => {} // 아래에서 클라이언트 구성 후 데몬 실행.
         },
         None => {}
     }
@@ -2082,7 +2097,7 @@ async fn run() -> Result<()> {
 
     // 크론 데몬.
     if let Some(Commands::Cron {
-        action: CronAction::Run,
+        action: Some(CronAction::Run),
     }) = &cli.command
     {
         return cmd_cron_run(&eng, &cfg).await;
@@ -10145,9 +10160,10 @@ mod alias_tests {
         assert_eq!(dday, "wonjang 디데이 추가 <이름> <날짜>");
         // 이미 한국어 명령명 + 플레이스홀더(입대일·군별)도 한국어로.
         assert_eq!(mil, "wonjang 전역 <입대일> [군별]");
-        // 별칭 없는 액션(cron/watch의 add)은 영문 그대로 — 안내한 명령이 실제로 동작해야.
-        // 매핑에 없는 플레이스홀더(SCHEDULE/PROMPT/SYMBOL/TARGET)는 영문 그대로(graceful).
-        assert_eq!(cron, "wonjang cron add <SCHEDULE> <PROMPT>");
+        // 영문 정규명 입력(cron)은 크론 별칭 + add→추가까지 한국어로 내려간다.
+        assert_eq!(cron, "wonjang 크론 추가 <SCHEDULE> <PROMPT>");
+        // 이미 한국어(감시)인 입력은 정규명 매칭이 안 돼 더 못 내려감 → add는 그대로(설계상 한계).
+        // 매핑에 없는 플레이스홀더(SYMBOL/TARGET)도 영문 그대로(graceful).
         assert_eq!(watch, "wonjang 감시 add <SYMBOL> <TARGET>");
     }
 
@@ -10170,6 +10186,29 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "프리셋"]),
             Commands::Preset { action: None }
+        ));
+        // 관리 명령의 한국어 별칭(AI 위임 대신 곧장 로컬로).
+        assert!(matches!(cmd_of(&["wonjang", "설정"]), Commands::Config));
+        assert!(matches!(cmd_of(&["wonjang", "메모리"]), Commands::Memory));
+        assert!(matches!(cmd_of(&["wonjang", "세션"]), Commands::Sessions));
+        assert!(matches!(cmd_of(&["wonjang", "스킬"]), Commands::Skills));
+        assert!(matches!(
+            cmd_of(&["wonjang", "텔레그램"]),
+            Commands::Telegram
+        ));
+        // 노션은 서브커맨드 필요(search/append) — 별칭은 서브와 함께 동작.
+        assert!(matches!(
+            cmd_of(&["wonjang", "노션", "search", "x"]),
+            Commands::Notion { .. }
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "큐알", "x"]),
+            Commands::Qr { .. }
+        ));
+        // '크론' 단독은 목록 기본(예전엔 AI로 샜다).
+        assert!(matches!(
+            cmd_of(&["wonjang", "크론"]),
+            Commands::Cron { action: None }
         ));
         assert!(matches!(
             cmd_of(&["wonjang", "프리셋", "목록"]),
