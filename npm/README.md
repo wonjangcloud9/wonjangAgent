@@ -63,7 +63,7 @@ wonjang 연봉 3600              # 실수령액
   💰 연봉 실수령액 (3,600만원) …
 ```
 
-**나만의 원장**도 만들 수 있어요 — `wonjang 성격 만들기`로 한 줄 묘사 + 말투를 고르면 끝(또는 `~/.local/share/wonjang/SOUL.md`를 직접 편집, 헤르메스의 SOUL.md처럼):
+**나만의 원장**도 만들 수 있어요 — `wonjang 성격 만들기`로 한 줄 묘사 + 말투를 고르면 끝(또는 `~/.local/share/wonjang/SOUL.md`를 직접 편집):
 
 ```
 wonjang 성격 만들기

@@ -1,7 +1,7 @@
 //! LLM 클라이언트 — OpenAI 호환 채팅 완성 API.
 //!
 //! OpenRouter, OpenAI, DeepSeek, 로컬 vLLM 등 OpenAI 호환 엔드포인트를 모두
-//! 지원해 헤르메스 에이전트처럼 "제공자 무관"을 달성한다.
+//! 지원해 "제공자 무관"을 달성한다.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};

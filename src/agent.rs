@@ -1,8 +1,7 @@
 //! 에이전트 루프.
 //!
 //! 사용자 요청 → LLM 호출 → (도구 호출이 있으면) 도구 실행 → 결과를 다시
-//! LLM에 전달 → 도구 호출이 없을 때까지 반복. 헤르메스 에이전트의 핵심
-//! 에이전트 루프를 러스트로 구현한 것.
+//! LLM에 전달 → 도구 호출이 없을 때까지 반복.
 
 use crate::config::Config;
 use crate::llm::{LlmClient, Message};
@@ -25,7 +24,7 @@ pub fn system_prompt(memory_block: Option<String>, skills_block: Option<String>)
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| "wonjang".to_string());
-    // 페르소나(성격)를 맨 앞에 — 사용자가 SOUL.md로 소유한다(헤르메스 방식).
+    // 페르소나(성격)를 맨 앞에 — 사용자가 SOUL.md로 소유한다.
     let persona = crate::soul::active_persona();
     let mut prompt = format!(
         "{persona}\n\n\

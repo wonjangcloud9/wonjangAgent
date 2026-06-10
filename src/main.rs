@@ -1,7 +1,6 @@
 //! 원장 에이전트 — 로컬 환경을 다루는 한국어 우선 자율 AI 에이전트 (Rust).
 //!
-//! 헤르메스 에이전트(NousResearch/hermes-agent)의 핵심 아이디어를 러스트로
-//! 재구성한다: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
+//! 핵심 구성: 제공자 무관 LLM, 로컬 도구, 에이전트 루프, 한국어 우선 UX.
 
 mod age;
 mod agent;
@@ -3046,7 +3045,7 @@ async fn maybe_send_briefing(
     }
 }
 
-/// 공휴일 전날이면 "내일 빨간날" 알림을 먼저 보낸다(헤르메스식 선제성).
+/// 공휴일 전날이면 "내일 빨간날" 알림을 먼저 보낸다(비서가 먼저 챙기는 선톡).
 /// 푸시 채널이 설정돼 있을 때만, 하루 한 번, 아침(9시) 이후에 점검한다.
 async fn maybe_alert_holiday_eve(cfg: &Config, last_alert: &mut Option<String>) {
     use chrono::{Datelike, Timelike};
@@ -3090,7 +3089,7 @@ fn habit_evening_nudge(at_risk: &[(i64, String)]) -> Option<String> {
     }
 }
 
-/// 저녁에 "끊길 위기 습관"(streak≥2·오늘 미완)을 먼저 챙겨 푸시한다(헤르메스식 선톡).
+/// 저녁에 "끊길 위기 습관"(streak≥2·오늘 미완)을 먼저 챙겨 푸시한다(선톡).
 /// 하루 한 번, 저녁 8시 이후, 푸시 채널이 설정돼 있을 때만.
 async fn maybe_alert_habit_evening(cfg: &Config, last_alert: &mut Option<String>) {
     use chrono::Timelike;
@@ -6303,7 +6302,7 @@ fn print_card(lines: &[String], persona: &str, no_color: bool, copy: bool) {
 }
 
 /// 원장이 배운 것(기억·스킬·대화)을 성장 카드 한 장으로. 데이터 읽기 전용.
-/// 헤르메스식 "쓸수록 성장"이 눈에 보이는 표면 — 기억 기제 자체는 memory.rs/skill.rs.
+/// "쓸수록 성장"이 눈에 보이는 표면 — 기억 기제 자체는 memory.rs/skill.rs.
 fn cmd_growth(width: usize, no_color: bool, copy: bool) -> Result<()> {
     use owo_colors::OwoColorize;
 

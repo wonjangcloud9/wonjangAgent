@@ -64,7 +64,7 @@ wonjang 성격 만들기
 
 (첫 실행 선택 화면에서도 `6) ✏️ 나만의 원장 직접 만들기`로 들어갈 수 있어요.)
 
-성격은 **사용자가 소유하는 파일**(`SOUL.md`)로 저장돼요. 직접 편집하면 세상에 하나뿐인 내 원장을 만들 수 있어요(헤르메스 에이전트의 SOUL.md처럼).
+성격은 **사용자가 소유하는 파일**(`SOUL.md`)로 저장돼요. 직접 편집하면 세상에 하나뿐인 내 원장을 만들 수 있어요.
 
 - **macOS:** `~/Library/Application Support/wonjang/SOUL.md`
 - **Linux:** `~/.local/share/wonjang/SOUL.md`

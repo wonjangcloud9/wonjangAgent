@@ -1,7 +1,7 @@
 //! 설정 로딩.
 //!
 //! 우선순위: 환경 변수 > 설정 파일(`~/.config/wonjang/config.toml`) > 기본값.
-//! 헤르메스 에이전트처럼 제공자(provider) 무관 설계를 위해 OpenAI 호환
+//! 제공자(provider) 무관 설계를 위해 OpenAI 호환
 //! 엔드포인트를 기본으로 한다(OpenRouter, OpenAI, DeepSeek, 로컬 vLLM 등).
 
 use anyhow::{Context, Result};
