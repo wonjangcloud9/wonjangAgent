@@ -149,6 +149,18 @@ async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<St
     } else {
         base.to_string()
     };
+    // 위임받은 모델이 자기(클라이언트) 메모리 기능으로 새면 원장 메모리가 안 쌓여
+    // 성장 루프가 끊긴다(라이브 검증으로 실측된 함정) → 정확한 MCP 도구명을 못박는다.
+    let system = if mcp_config.is_some() {
+        format!(
+            "{system}\n\n도구 규칙(중요): 기억은 반드시 mcp__wonjang__remember 도구로 저장하고 \
+             mcp__wonjang__recall로 조회하세요. 자체 메모리 기능·파일 기록 등 다른 방식으로 \
+             기억을 남기지 마세요. 알림·할일·디데이·가계부·습관·스킬·날씨·환율 등도 \
+             mcp__wonjang__ 도구가 있으면 그것을 우선 사용하세요."
+        )
+    } else {
+        system.to_string()
+    };
 
     let mut cmd = Command::new("claude");
     cmd.args([
@@ -156,7 +168,7 @@ async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<St
         "--output-format",
         "json",
         "--append-system-prompt",
-        system,
+        &system,
         "--allowedTools",
         &allowed,
     ]);
