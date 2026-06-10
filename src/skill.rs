@@ -83,6 +83,18 @@ impl SkillStore {
         Ok(skills)
     }
 
+    /// 스킬을 삭제한다. 있었으면 true — 스킬 목록은 시스템 프롬프트에 늘 주입되므로
+    /// 잘못 저장된 스킬을 지울 통로가 있어야 한다(기억의 '잊어'와 대칭).
+    pub fn remove(&self, name: &str) -> Result<bool> {
+        let path = self.path_for(name);
+        if !path.is_file() {
+            return Ok(false);
+        }
+        std::fs::remove_file(&path)
+            .with_context(|| format!("스킬을 삭제할 수 없습니다: {}", path.display()))?;
+        Ok(true)
+    }
+
     /// 시스템 프롬프트에 주입할 스킬 목록 블록(없으면 None).
     pub fn prompt_block(&self) -> Option<String> {
         let skills = self.list().ok()?;
@@ -157,6 +169,22 @@ mod tests {
     fn sanitize_keeps_korean_and_alnum() {
         assert_eq!(sanitize("git 푸시 자동화!"), "git-푸시-자동화");
         assert_eq!(sanitize("  ///  "), "skill");
+    }
+
+    #[test]
+    fn remove_deletes_only_named_skill() {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("wonjang_skill_rm_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = SkillStore { dir };
+        store.save("지울 스킬", "d", "본문").unwrap();
+        store.save("남길 스킬", "d", "본문").unwrap();
+        assert!(store.remove("지울 스킬").unwrap());
+        let names: Vec<String> = store.list().unwrap().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, ["남길 스킬"]);
+        // 없는 스킬 → false(에러 아님).
+        assert!(!store.remove("없는 스킬").unwrap());
     }
 
     #[test]

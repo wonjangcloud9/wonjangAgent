@@ -176,9 +176,12 @@ enum Commands {
     /// 저장된 대화 세션 목록을 보여줍니다.
     #[command(alias = "세션")]
     Sessions,
-    /// 에이전트가 익힌 스킬(절차 지식) 목록을 보여줍니다.
+    /// 에이전트가 익힌 스킬(절차 지식)을 보거나 지웁니다. 예: wonjang 스킬 삭제 <이름>
     #[command(alias = "스킬")]
-    Skills,
+    Skills {
+        #[command(subcommand)]
+        action: Option<SkillsAction>,
+    },
     /// 약속·알림을 보거나 등록/삭제합니다.
     #[command(aliases = ["약속", "알림", "리마인더"])]
     Remind {
@@ -1376,6 +1379,16 @@ enum HabitAction {
 }
 
 #[derive(Subcommand)]
+enum SkillsAction {
+    /// 스킬을 삭제합니다(시스템 프롬프트 목록에서 제거).
+    #[command(name = "remove", aliases = ["삭제", "지우기"])]
+    Remove {
+        /// 지울 스킬 이름(목록: wonjang 스킬)
+        name: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum ExpenseAction {
     /// 오늘 지출 추가. 예: wonjang 지출 추가 8000 식비 점심 (5만·1억·50,000도 OK)
     #[command(alias = "추가")]
@@ -1785,7 +1798,10 @@ async fn run() -> Result<()> {
         Some(Commands::Memory { fact }) => return cmd_memory(fact),
         Some(Commands::Forget { keyword }) => return cmd_forget(keyword),
         Some(Commands::Sessions) => return cmd_sessions(),
-        Some(Commands::Skills) => return cmd_skills(),
+        Some(Commands::Skills { action: None }) => return cmd_skills(),
+        Some(Commands::Skills {
+            action: Some(SkillsAction::Remove { name }),
+        }) => return cmd_skill_remove(name),
         Some(Commands::Remind { action }) => return cmd_remind(action),
         Some(Commands::Todo { action }) => return cmd_todo(action),
         Some(Commands::Notify { message }) => return cmd_notify(&cfg, message),
@@ -9980,6 +9996,26 @@ fn cmd_skills() -> Result<()> {
     for s in &skills {
         println!("  • {}  — {}", s.name, s.description);
     }
+    ui::info("  잘못 저장된 스킬 지우기: wonjang 스킬 삭제 <이름>");
+    Ok(())
+}
+
+/// 스킬을 삭제한다(기억의 '잊어'와 대칭인 위생 통로).
+fn cmd_skill_remove(name: &[String]) -> Result<()> {
+    let name = name.join(" ");
+    if name.trim().is_empty() {
+        ui::info("지울 스킬 이름을 알려주세요. 예: wonjang 스킬 삭제 \"git 푸시 자동화\" (목록: wonjang 스킬)");
+        return Ok(());
+    }
+    let store = skill::SkillStore::load()?;
+    if store.remove(&name)? {
+        println!("  🗑 '{name}' 스킬을 지웠어요.");
+        ui::info("  남은 스킬 보기: wonjang 스킬");
+    } else {
+        ui::error(&format!("'{name}' 스킬을 못 찾았어요."));
+        ui::info("  목록: wonjang 스킬 (이름을 정확히 입력해 주세요)");
+        std::process::exit(1);
+    }
     Ok(())
 }
 
@@ -10502,7 +10538,7 @@ mod calc_guard_tests {
 mod alias_tests {
     use super::{
         clap_error_headline, is_top_level_help, koreanize_command_names, koreanize_placeholder,
-        Cli, Commands, PresetAction,
+        Cli, Commands, PresetAction, SkillsAction,
     };
 
     #[test]
@@ -10632,6 +10668,11 @@ mod alias_tests {
             cmd_of(&["wonjang", "기억", "나는", "아침형"]),
             Commands::Memory { fact } if fact == ["나는", "아침형"]
         ));
+        // '스킬 삭제 <이름>'은 스킬 위생(잊어와 대칭).
+        assert!(matches!(
+            cmd_of(&["wonjang", "스킬", "삭제", "git", "푸시"]),
+            Commands::Skills { action: Some(SkillsAction::Remove { name }) } if name == ["git", "푸시"]
+        ));
         // '잊어 <키워드>'는 기억 삭제(기억 위생).
         assert!(matches!(
             cmd_of(&["wonjang", "잊어", "아침형"]),
@@ -10647,7 +10688,10 @@ mod alias_tests {
             Commands::Guide { query } if query.is_empty()
         ));
         assert!(matches!(cmd_of(&["wonjang", "세션"]), Commands::Sessions));
-        assert!(matches!(cmd_of(&["wonjang", "스킬"]), Commands::Skills));
+        assert!(matches!(
+            cmd_of(&["wonjang", "스킬"]),
+            Commands::Skills { action: None }
+        ));
         assert!(matches!(
             cmd_of(&["wonjang", "텔레그램"]),
             Commands::Telegram
