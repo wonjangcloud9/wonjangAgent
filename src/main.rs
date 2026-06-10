@@ -7943,16 +7943,18 @@ fn cmd_journal(text: &[String]) -> Result<()> {
 /// 다음 연휴 D-day를 공유 카드 한 장으로(카톡 캡처용). 데이터 읽기 전용.
 /// 한국 공휴일+대체공휴일+황금연휴 계산은 원장의 고유 강점인데 공유 포맷이
 /// 없었다 — "다음 연휴 D-N"은 사무실 단톡방에서 도는 정보라 전염 표면이 된다.
+/// `search_from`은 연휴 탐색 시작일(데이터 연도와 같은 해), `today`는 D-day 기준.
+/// 연휴를 찾아 카드를 출력했으면 true(못 찾으면 호출부가 내년으로 이월).
 fn holiday_break_card(
     holidays: &[holidays::Holiday],
+    search_from: chrono::NaiveDate,
     today: chrono::NaiveDate,
     width: usize,
     no_color: bool,
     copy: bool,
-) -> Result<()> {
-    let Some((start, end, len)) = holidays::next_long_break(holidays, today, 3) else {
-        ui::info("올해 남은 3일 이상 연휴가 없어요 — 전체 공휴일: wonjang 공휴일");
-        return Ok(());
+) -> Result<bool> {
+    let Some((start, end, len)) = holidays::next_long_break(holidays, search_from, 3) else {
+        return Ok(false);
     };
     // 연휴 구간 안의 실제 쉬는 공휴일 이름을 대표로(주말만으론 연휴가 안 되므로 보통 존재).
     let name = holidays
@@ -7975,14 +7977,14 @@ fn holiday_break_card(
         datecalc::weekday_kr(end)
     );
     // 코멘트: 이 연휴를 연차 하나로 더 늘릴 수 있으면 그 꿀팁, 아니면 가벼운 한마디.
-    let comment = holidays::golden_leaves(holidays, today, len + 1, 5)
+    let comment = holidays::golden_leaves(holidays, search_from, len + 1, 5)
         .iter()
         .find(|g| g.start <= end && g.end >= start)
         .map(|g| format!("💡 연차 1개({})면 {}일!", g.leave.format("%m-%d"), g.len))
         .unwrap_or_else(|| "달력에 동그라미 쳐두세요 ✨".to_string());
     let lines = card::render_event_card("원장 연휴", &headline, &big, &date_line, &comment, width);
     print_card(&lines, soul::tone_key(), no_color, copy);
-    Ok(())
+    Ok(true)
 }
 
 fn cmd_holiday(
@@ -7997,7 +7999,30 @@ fn cmd_holiday(
     let year = year.unwrap_or_else(|| chrono::Datelike::year(&today));
     let holidays = util::run_async(async move { holidays::fetch(year).await })?;
     if card {
-        return holiday_break_card(&holidays, today, width, no_color, copy);
+        let cur = chrono::Datelike::year(&today);
+        // 명시한 미래 연도면 그 해 1월 1일부터 찾는다(예: 공휴일 2027 --카드).
+        // 종전엔 검색 시작이 올해라 데이터 연도와 어긋나 '연휴 없음' 오답이 났다.
+        let explicit_future = year > cur;
+        let search_from = if explicit_future {
+            chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(today)
+        } else {
+            today
+        };
+        if holiday_break_card(&holidays, search_from, today, width, no_color, copy)? {
+            return Ok(());
+        }
+        // 올해 남은 연휴가 없으면(연말) 내년 첫 연휴로 이월 — 카드가 가장
+        // 필요한 연말 시즌에 빈손이 되지 않게. 명시 연도 요청엔 이월하지 않는다.
+        if !explicit_future {
+            let ny = cur + 1;
+            let next = util::run_async(async move { holidays::fetch(ny).await })?;
+            let jan1 = chrono::NaiveDate::from_ymd_opt(ny, 1, 1).unwrap_or(today);
+            if holiday_break_card(&next, jan1, today, width, no_color, copy)? {
+                return Ok(());
+            }
+        }
+        ui::info("다가오는 3일 이상 연휴를 찾지 못했어요 — 전체 공휴일: wonjang 공휴일");
+        return Ok(());
     }
     println!();
     println!("  🗓️  {year}년 한국 공휴일 ({}일)", holidays.len());
