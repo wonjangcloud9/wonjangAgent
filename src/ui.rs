@@ -116,6 +116,8 @@ const TIPS: &[&str] = &[
     "💡 오늘의 팁: 내 살아온 날 카드 자랑 → wonjang 나이 1990-05-15 --카드",
     "💡 오늘의 팁: 이불 7자 몇 cm? → wonjang 변환 7 자",
     "💡 오늘의 팁: 이번 달 자랑 카드 → wonjang 자랑 (카톡엔 --폭 34)",
+    "💡 오늘의 팁: 원장은 쓸수록 성장해요 — 배운 것 카드 → wonjang 성장",
+    "💡 오늘의 팁: 한 마디면 기억해요 → wonjang 기억 \"나는 아침형\"",
 ];
 
 /// 연중 일수로 오늘의 팁을 고른다(결정론적 — 테스트 가능, 매일 바뀜).
@@ -259,6 +261,11 @@ pub fn onboarding_if_first(backend_ready: bool) {
         );
         println!(
             "     {} {}",
+            "🧠 절 알아가게 해보세요:".dimmed(),
+            "\"나는 아침형이야\" — 말만 해도 기억해요 (wonjang 성장)".bright_cyan()
+        );
+        println!(
+            "     {} {}",
             "🌱 오늘부터 한 가지만 쌓아봐요:".dimmed(),
             "wonjang 습관 추가 운동".bright_cyan()
         );
@@ -278,7 +285,7 @@ pub fn onboarding_if_first(backend_ready: bool) {
         );
         println!(
             "     {}",
-            "자랑  ·  지출 추가 5만 식비  ·  디데이 추가 수능 2026-11-19  ·  연봉 3600"
+            "자랑  ·  기억 \"나는 아침형\"  ·  디데이 추가 수능 2026-11-19  ·  연봉 3600"
                 .bright_cyan()
         );
         println!(
