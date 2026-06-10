@@ -4,7 +4,7 @@ layout: home
 hero:
   name: 원장
   text: 한국인을 위한 터미널 개인 비서
-  tagline: 가계부·실수령·디데이·자랑 카드까지 — 키도 로그인도 없이 설치하면 바로. 단일 바이너리(Rust)라 빠릅니다.
+  tagline: 가계부·실수령·디데이·자랑 카드까지 — 키도 로그인도 없이 바로, 쓸수록 당신을 기억하며 성장합니다. 단일 바이너리(Rust)라 빠릅니다.
   actions:
     - theme: brand
       text: 1분 설치
@@ -32,6 +32,11 @@ features:
     details: 한 달의 나를 카톡에서도 안 깨지는 카드 한 장으로. --복사로 클립보드에 바로.
     link: /brag
     linkText: 자랑 카드 보기
+  - icon: 🧠
+    title: 쓸수록 성장
+    details: 말만 해도 기억하고("나는 아침형이야"), 틀리면 잊어줍니다. 함께한 날·기억·스킬은 성장 카드 한 장으로.
+    link: /brag
+    linkText: 성장 보기
   - icon: 🎭
     title: 내 원장, 내 성격으로
     details: 첫 실행에 성격을 고르면, 명령마다 원장이 자기 얼굴·말투로 응답해요.
@@ -58,6 +63,8 @@ npm install -g wonjang-agent
 ```bash
 wonjang                       # 대화형 — 먼저 성격을 골라요
 wonjang 자랑                   # 한 달의 나를 카톡 카드로
+wonjang 기억 "나는 아침형"      # 🌱 원장이 기억해요(성장 카드: wonjang 성장)
+wonjang 공휴일 --카드           # 다음 연휴 D-day 카드(연차 꿀팁)
 wonjang 연봉 3600              # 월 실수령액
 wonjang 지출 추가 5만 식비       # 가계부
 ```
