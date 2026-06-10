@@ -9744,7 +9744,7 @@ fn cmd_memory(fact: &[String]) -> Result<()> {
     let mem = memory::Memory::load()?;
 
     // 사실이 주어지면 기억(키 없이도 성장 루프가 시작되는 직접 통로).
-    let fact = fact.join(" ");
+    let fact = memory::normalize(&fact.join(" "));
     if !fact.trim().is_empty() {
         let before = mem.count();
         mem.append(&fact)?;

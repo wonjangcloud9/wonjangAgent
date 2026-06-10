@@ -41,8 +41,11 @@ impl Memory {
     }
 
     /// 사실 한 줄을 추가한다(중복은 무시).
+    /// 개행·연속 공백은 한 칸으로 접는다 — 여러 줄이 들어오면 둘째 줄부터 "- " 없는
+    /// 고아 줄이 되어 파일 포맷이 깨지고 프롬프트 주입에서 유실된다(한 줄 계약 강제).
     pub fn append(&self, fact: &str) -> Result<()> {
-        let fact = fact.trim();
+        let fact = normalize(fact);
+        let fact = fact.as_str();
         if fact.is_empty() {
             return Ok(());
         }
@@ -93,6 +96,12 @@ impl Memory {
     }
 }
 
+/// 사실 문자열 정규화(개행·연속 공백 → 한 칸). 저장(append)과 표시 메시지가
+/// 같은 규칙을 쓰게 해, "기억했어요" 에코와 실제 저장 내용이 늘 일치한다.
+pub fn normalize(fact: &str) -> String {
+    fact.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +118,20 @@ mod tests {
         let mem = temp_mem("append");
         mem.append("사용자는 Rust를 선호한다").unwrap();
         assert!(mem.read().contains("사용자는 Rust를 선호한다"));
+    }
+
+    #[test]
+    fn multiline_fact_is_flattened_to_one_line() {
+        // 개행 든 사실이 그대로 저장되면 둘째 줄이 고아가 되어 포맷·프롬프트가 깨진다.
+        let mem = temp_mem("multiline");
+        mem.append("줄하나\n줄둘\t  줄셋").unwrap();
+        assert_eq!(mem.count(), 1);
+        assert!(mem.read().contains("- 줄하나 줄둘 줄셋"));
+        // 평탄화 후에도 중복 인식이 일관돼야 한다.
+        mem.append("줄하나 줄둘 줄셋").unwrap();
+        assert_eq!(mem.count(), 1);
+        let block = mem.prompt_block().unwrap();
+        assert!(block.contains("줄셋"), "프롬프트 주입에서 내용 유실");
     }
 
     #[test]

@@ -37,6 +37,7 @@ impl Tool for RememberTool {
             .get("fact")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("'fact' 인자가 필요합니다"))?;
+        let fact = &crate::memory::normalize(fact);
         let mem = Memory::load()?;
         let before = mem.count();
         mem.append(fact)?;
