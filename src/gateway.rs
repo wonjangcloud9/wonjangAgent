@@ -93,7 +93,20 @@ pub async fn run_telegram(eng: &Engine, cfg: &Config) -> Result<()> {
         allow_dangerous: false,
     };
     let mut histories: HashMap<i64, Vec<Message>> = HashMap::new();
-    let mut offset: i64 = 0;
+
+    // 꺼져 있는 동안 쌓인 메시지는 건너뛴다 — 몇 시간 전 명령(삭제·전송 등)을
+    // 뒤늦게 일괄 실행하는 사고 방지. offset=-1은 '가장 최근 1건'만 반환하므로
+    // (텔레그램 API) 그 update_id 다음부터 새 메시지만 받는다.
+    let mut offset: i64 = match get_updates_with(&http, &base, -1, 0).await {
+        Ok(ups) => match next_offset_after(&ups) {
+            Some(next) => {
+                ui::note("부재 중 쌓여 있던 이전 메시지는 건너뜁니다(오래된 명령 오실행 방지).");
+                next
+            }
+            None => 0,
+        },
+        Err(_) => 0, // 프로브 실패는 치명적이지 않다 — 종전처럼 0부터.
+    };
 
     loop {
         let updates = match get_updates(&http, &base, offset).await {
@@ -181,11 +194,21 @@ async fn get_me(http: &reqwest::Client, base: &str) -> Result<String> {
 
 /// 롱폴링으로 업데이트를 받는다.
 async fn get_updates(http: &reqwest::Client, base: &str, offset: i64) -> Result<Vec<Update>> {
+    get_updates_with(http, base, offset, 30).await
+}
+
+/// timeout을 지정해 업데이트를 받는다(0=즉시 반환 — 시작 시 백로그 프로브용).
+async fn get_updates_with(
+    http: &reqwest::Client,
+    base: &str,
+    offset: i64,
+    timeout: u32,
+) -> Result<Vec<Update>> {
     let resp: UpdatesResp = http
         .get(format!("{base}/getUpdates"))
         .query(&[
             ("offset", offset.to_string()),
-            ("timeout", "30".to_string()),
+            ("timeout", timeout.to_string()),
         ])
         .send()
         .await?
@@ -204,8 +227,24 @@ async fn get_updates(http: &reqwest::Client, base: &str, offset: i64) -> Result<
 }
 
 /// 메시지를 보낸다(텔레그램 4096자 제한 고려해 분할).
+/// 자랑·성장 카드처럼 박스 문자가 든 청크는 모노스페이스(<pre>)로 보내 정렬을
+/// 보존한다(비례폭 글꼴에선 박스가 깨짐). HTML 전송이 거부되면 플레인으로
+/// 폴백해 메시지 유실을 막는다.
 async fn send_message(http: &reqwest::Client, base: &str, chat_id: i64, text: &str) -> Result<()> {
     for chunk in split_chunks(text, 4000) {
+        if looks_like_card(&chunk) {
+            let html = format!("<pre>{}</pre>", html_escape(&chunk));
+            let resp = http
+                .post(format!("{base}/sendMessage"))
+                .json(&serde_json::json!({
+                    "chat_id": chat_id, "text": html, "parse_mode": "HTML"
+                }))
+                .send()
+                .await?;
+            if resp.status().is_success() {
+                continue;
+            }
+        }
         http.post(format!("{base}/sendMessage"))
             .json(&serde_json::json!({ "chat_id": chat_id, "text": chunk }))
             .send()
@@ -213,6 +252,23 @@ async fn send_message(http: &reqwest::Client, base: &str, chat_id: i64, text: &s
             .error_for_status()?;
     }
     Ok(())
+}
+
+/// 박스 카드(테두리·잔디)가 든 텍스트인가 — 모노스페이스 전송 판별.
+fn looks_like_card(s: &str) -> bool {
+    s.contains('╭') || s.contains('├') || s.contains('▓')
+}
+
+/// 텔레그램 HTML parse_mode용 이스케이프(& 먼저 — 이중 이스케이프 방지).
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// 시작 프로브(offset=-1) 결과로 건너뛸 다음 offset을 정한다. 비었으면 None.
+fn next_offset_after(updates: &[Update]) -> Option<i64> {
+    updates.iter().map(|u| u.update_id).max().map(|m| m + 1)
 }
 
 /// 채팅별 대화 기록 상한(시스템 메시지 + 최근 메시지들). 무한 증가→컨텍스트 초과 방지.
@@ -300,6 +356,34 @@ mod tests {
         let mut small = vec![Message::system("s"), Message::user("a")];
         trim_history(&mut small, 30);
         assert_eq!(small.len(), 2);
+    }
+
+    #[test]
+    fn card_detection_and_html_escape() {
+        // 카드(박스·잔디)는 모노스페이스 전송 대상, 일반 텍스트는 아님.
+        assert!(looks_like_card("╭── 원장 카드 ──╮"));
+        assert!(looks_like_card("▓▓░░▓▓░"));
+        assert!(!looks_like_card("오늘 날씨는 맑음"));
+        // & 먼저 이스케이프(이중 이스케이프 방지), 태그 문자 처리.
+        assert_eq!(html_escape("a&b<c>d"), "a&amp;b&lt;c&gt;d");
+        assert_eq!(html_escape("&lt;"), "&amp;lt;");
+    }
+
+    #[test]
+    fn startup_probe_skips_backlog() {
+        // 부재 중 쌓인 업데이트가 있으면 가장 큰 update_id 다음부터 시작.
+        let ups = vec![
+            Update {
+                update_id: 7,
+                message: None,
+            },
+            Update {
+                update_id: 12,
+                message: None,
+            },
+        ];
+        assert_eq!(next_offset_after(&ups), Some(13));
+        assert_eq!(next_offset_after(&[]), None);
     }
 
     #[test]
