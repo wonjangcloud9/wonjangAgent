@@ -3114,15 +3114,31 @@ async fn maybe_alert_holiday_eve(cfg: &Config, last_alert: &mut Option<String>) 
     if let Ok(list) = holidays::fetch(tomorrow.year()).await {
         // 조회에 성공했을 때만 오늘 점검 완료로 표시(네트워크 실패 시 같은 날 재시도).
         *last_alert = Some(today.clone());
-        if let Some(h) = list.iter().find(|h| h.date == tomorrow) {
-            let msg = format!(
-                "🔴 내일({})은 '{}'이에요! 빨간날 잘 보내세요 🎉",
-                tomorrow.format("%-m월 %-d일"),
-                h.name
-            );
+        if let Some(msg) = holiday_eve_text(&list, tomorrow) {
             let sent = push::push(cfg, &msg).await;
             ui::note(&format!("공휴일 전날 알림 전송({sent}개 채널)."));
         }
+    }
+}
+
+/// 공휴일 전날 선톡 문구(없으면 None). 순수 — 데몬 밖에서 테스트 가능.
+/// ① 쉬는 날이 아닌 국경일(제헌절)엔 선톡하지 않는다 — "빨간날" 가짜 설렘 방지.
+/// ② 내일부터 3일 이상 연휴면 길이를 함께 + 연휴 카드 안내(공유 깔때기).
+fn holiday_eve_text(list: &[holidays::Holiday], tomorrow: chrono::NaiveDate) -> Option<String> {
+    let h = list.iter().find(|h| h.date == tomorrow)?;
+    if !holidays::is_day_off(h) {
+        return None;
+    }
+    let base = format!(
+        "🔴 내일({})은 '{}'이에요!",
+        tomorrow.format("%-m월 %-d일"),
+        h.name
+    );
+    match holidays::next_long_break(list, tomorrow, 3) {
+        Some((start, _end, len)) if start == tomorrow => Some(format!(
+            "{base} 내일부터 {len}일 연휴 🏖️ (공유 카드: wonjang 공휴일 --카드)"
+        )),
+        _ => Some(format!("{base} 빨간날 잘 보내세요 🎉")),
     }
 }
 
@@ -10021,6 +10037,49 @@ mod habit_nudge_tests {
             .unwrap();
         // 가장 센 streak를 대표로, 나머지는 개수로.
         assert!(msg.contains("독서") && msg.contains("외 2개"));
+    }
+}
+
+#[cfg(test)]
+mod holiday_eve_tests {
+    use super::holiday_eve_text;
+    use crate::holidays::Holiday;
+    use chrono::NaiveDate;
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+    fn h(date: &str, name: &str) -> Holiday {
+        Holiday {
+            date: d(date),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn friday_holiday_announces_break_length_and_card() {
+        // 2026-06-19는 금요일 → 금+토+일 3일 연휴가 내일부터 시작.
+        let list = vec![h("2026-06-19", "테스트절")];
+        let msg = holiday_eve_text(&list, d("2026-06-19")).unwrap();
+        assert!(msg.contains("3일 연휴"), "연휴 길이 누락: {msg}");
+        assert!(msg.contains("공휴일 --카드"), "카드 깔때기 누락: {msg}");
+    }
+
+    #[test]
+    fn midweek_holiday_is_plain_red_day() {
+        // 2026-06-17은 수요일 → 단일 빨간날(연휴 언급 없어야).
+        let list = vec![h("2026-06-17", "테스트절")];
+        let msg = holiday_eve_text(&list, d("2026-06-17")).unwrap();
+        assert!(msg.contains("빨간날") && !msg.contains("연휴"));
+    }
+
+    #[test]
+    fn non_day_off_and_non_holiday_are_silent() {
+        // 제헌절은 국경일이지만 쉬는 날이 아님 — "빨간날" 선톡은 가짜 설렘.
+        let list = vec![h("2026-07-17", "제헌절")];
+        assert!(holiday_eve_text(&list, d("2026-07-17")).is_none());
+        // 공휴일 아닌 날도 침묵.
+        assert!(holiday_eve_text(&list, d("2026-07-16")).is_none());
     }
 }
 
