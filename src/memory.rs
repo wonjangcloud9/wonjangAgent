@@ -67,6 +67,14 @@ impl Memory {
         Ok(())
     }
 
+    /// 기억한 사실 개수.
+    pub fn count(&self) -> usize {
+        self.read()
+            .lines()
+            .filter(|l| l.trim_start().starts_with("- "))
+            .count()
+    }
+
     /// 시스템 프롬프트에 주입할 메모리 블록(없으면 None).
     pub fn prompt_block(&self) -> Option<String> {
         let content = self.read();
@@ -101,6 +109,16 @@ mod tests {
         let mem = temp_mem("append");
         mem.append("사용자는 Rust를 선호한다").unwrap();
         assert!(mem.read().contains("사용자는 Rust를 선호한다"));
+    }
+
+    #[test]
+    fn count_tracks_facts() {
+        let mem = temp_mem("count");
+        assert_eq!(mem.count(), 0);
+        mem.append("사실 A").unwrap();
+        mem.append("사실 B").unwrap();
+        mem.append("사실 A").unwrap(); // 중복은 늘지 않음
+        assert_eq!(mem.count(), 2);
     }
 
     #[test]

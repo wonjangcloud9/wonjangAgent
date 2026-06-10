@@ -42,8 +42,18 @@ impl Tool for SaveSkillTool {
         let description = arg_str(args, "description")?;
         let content = arg_str(args, "content")?;
         let store = SkillStore::load()?;
+        let existed = store.read(name).is_ok();
         let path = store.save(name, description, content)?;
-        Ok(format!("'{name}' 스킬을 저장했습니다: {}", path.display()))
+        // 성장 틱: 새 스킬이면 "N개째"(사용자 화면에 성장이 보이게), 갱신이면 정직하게.
+        if existed {
+            Ok(format!("📚 '{name}' 스킬을 갱신했어요: {}", path.display()))
+        } else {
+            let n = store.list().map(|s| s.len()).unwrap_or(0);
+            Ok(format!(
+                "📚 '{name}' 스킬을 익혔어요({n}개째): {}",
+                path.display()
+            ))
+        }
     }
 }
 

@@ -38,8 +38,16 @@ impl Tool for RememberTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("'fact' 인자가 필요합니다"))?;
         let mem = Memory::load()?;
+        let before = mem.count();
         mem.append(fact)?;
-        Ok(format!("기억했습니다: {fact}"))
+        let after = mem.count();
+        // 성장 틱: 새로 배웠을 때만 "N개째" — 사용자 화면(ui::tool_result 첫 줄)에
+        // '쓸수록 성장'이 보이게 한다. 중복이면 정직하게(모델 피드백도 정확해짐).
+        if after > before {
+            Ok(format!("🌱 기억했어요({after}개째): {fact}"))
+        } else {
+            Ok(format!("이미 기억하고 있어요: {fact}"))
+        }
     }
 }
 

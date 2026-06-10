@@ -157,9 +157,12 @@ enum Commands {
     /// 현재 설정을 보여주고, 없으면 기본 설정 파일을 생성합니다.
     #[command(alias = "설정")]
     Config,
-    /// 에이전트가 기억하고 있는 사실(영속 메모리)을 보여줍니다.
-    #[command(alias = "메모리")]
-    Memory,
+    /// 기억하는 사실(영속 메모리)을 보여주거나, 사실을 주면 기억합니다. 예: wonjang 기억 "나는 아침형"
+    #[command(aliases = ["메모리", "기억", "기억해"])]
+    Memory {
+        /// 기억할 사실(생략하면 기억 목록을 보여줌)
+        fact: Vec<String>,
+    },
     /// 저장된 대화 세션 목록을 보여줍니다.
     #[command(alias = "세션")]
     Sessions,
@@ -1753,7 +1756,7 @@ async fn run() -> Result<()> {
     // LLM이 필요 없는 서브커맨드 처리.
     match &cli.command {
         Some(Commands::Config) => return cmd_config(&cfg),
-        Some(Commands::Memory) => return cmd_memory(),
+        Some(Commands::Memory { fact }) => return cmd_memory(fact),
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
         Some(Commands::Remind { action }) => return cmd_remind(action),
@@ -3544,6 +3547,7 @@ fn cmd_guide() -> Result<()> {
                 ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
                 ("wonjang 자랑 --복사", "회고 카드 → 클립보드(주간 --주)"),
                 ("wonjang 성장", "원장이 배운 것 카드(기억·스킬·대화)"),
+                ("wonjang 기억 \"<사실>\"", "원장에게 직접 기억시키기"),
                 ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
                 ("wonjang config", "설정·연동 상태"),
             ],
@@ -9731,12 +9735,29 @@ fn cmd_skills() -> Result<()> {
     Ok(())
 }
 
-fn cmd_memory() -> Result<()> {
+fn cmd_memory(fact: &[String]) -> Result<()> {
     let mem = memory::Memory::load()?;
+
+    // 사실이 주어지면 기억(키 없이도 성장 루프가 시작되는 직접 통로).
+    let fact = fact.join(" ");
+    if !fact.trim().is_empty() {
+        let before = mem.count();
+        mem.append(&fact)?;
+        if mem.count() > before {
+            println!("  🌱 기억했어요({}개째): {}", mem.count(), fact.trim());
+            ui::info("  쌓인 성장 보기: wonjang 성장 · 전체 기억: wonjang 메모리");
+        } else {
+            ui::info(&format!("이미 기억하고 있어요: {}", fact.trim()));
+        }
+        return Ok(());
+    }
+
     println!("  메모리 파일: {}", mem.path().display());
     let content = mem.read();
     if content.trim().is_empty() {
-        ui::info("아직 기억하고 있는 사실이 없습니다. 대화하면서 점점 쌓입니다.");
+        ui::info(
+            "아직 기억하고 있는 사실이 없습니다. 대화하거나 `wonjang 기억 \"<사실>\"`로 쌓입니다.",
+        );
     } else {
         println!("\n{}", content.trim());
     }
@@ -10282,7 +10303,15 @@ mod alias_tests {
         ));
         // 관리 명령의 한국어 별칭(AI 위임 대신 곧장 로컬로).
         assert!(matches!(cmd_of(&["wonjang", "설정"]), Commands::Config));
-        assert!(matches!(cmd_of(&["wonjang", "메모리"]), Commands::Memory));
+        assert!(matches!(
+            cmd_of(&["wonjang", "메모리"]),
+            Commands::Memory { .. }
+        ));
+        // '기억 <사실>'은 곧장 영속 메모리에 저장(키 없이도 성장 루프 시작).
+        assert!(matches!(
+            cmd_of(&["wonjang", "기억", "나는", "아침형"]),
+            Commands::Memory { fact } if fact == ["나는", "아침형"]
+        ));
         assert!(matches!(cmd_of(&["wonjang", "세션"]), Commands::Sessions));
         assert!(matches!(cmd_of(&["wonjang", "스킬"]), Commands::Skills));
         assert!(matches!(

@@ -164,6 +164,10 @@ pub fn banner(label: &str, ready: bool) {
     );
     // '수집→자랑' 루프를 첫 화면에 각인: 오늘까지의 미니 잔디 한 줄.
     println!("  {}", habit_strip());
+    // 성장(기억·스킬)이 쌓였으면 한 줄 — '쓸수록 맞춰지는' 느낌을 매 시작마다.
+    if let Some(line) = growth_strip() {
+        println!("  {line}");
+    }
     // 날마다 도는 기능 발견 팁 — 풍부한 기능을 자연스럽게 알린다.
     println!("  {}", daily_tip().dimmed());
     println!(
@@ -171,6 +175,25 @@ pub fn banner(label: &str, ready: bool) {
         "무엇이든 한국어로 시켜보세요.  /help · /성격 · /자랑 · /exit".dimmed()
     );
     println!();
+}
+
+/// 배너용 성장 한 줄. 기억/스킬이 하나라도 있을 때만(없으면 None — 클러터 방지).
+fn growth_strip() -> Option<String> {
+    let facts = crate::memory::Memory::load().ok()?.count();
+    let skills = crate::skill::SkillStore::load()
+        .ok()
+        .and_then(|s| s.list().ok())
+        .map(|v| v.len())
+        .unwrap_or(0);
+    if facts == 0 && skills == 0 {
+        return None;
+    }
+    Some(format!(
+        "🧠 기억 {} · 스킬 {} — 점점 당신에게 맞춰지는 중 {}",
+        facts.to_string().bright_white(),
+        skills.to_string().bright_white(),
+        "(wonjang 성장)".dimmed()
+    ))
 }
 
 /// 배너용 미니 잔디 한 줄. 습관이 있으면 가장 긴 연속 + 최근 7일 ▓░,
