@@ -9239,16 +9239,44 @@ fn cmd_subway(cfg: &Config, station: &str) -> Result<()> {
     Ok(())
 }
 
+/// '열기' 폴백 대상이 실제로 열 수 있는 것인지(URL 또는 실재 경로).
+/// 오타 난 즐겨찾기 이름에 "열었어요" 거짓 성공을 보고하지 않기 위한 게이트.
+fn openable_fallback(target: &str, path_exists: bool) -> bool {
+    target.contains("://") || target.starts_with("www.") || path_exists
+}
+
 fn cmd_open(target: &str) -> Result<()> {
     let store = bookmarks::BookmarkStore::load()?;
     // 즐겨찾기 이름이면 그 대상을, 아니면 입력 자체(URL/경로)를 연다.
     let (label, to_open) = match store.find(target) {
         Some(b) => (b.name.clone(), b.target.clone()),
-        None => (target.to_string(), target.to_string()),
+        None => {
+            if !openable_fallback(target, expand_path(target).exists()) {
+                ui::error(&format!(
+                    "'{target}' 즐겨찾기가 없어요(URL이나 실재 경로도 아니에요)."
+                ));
+                ui::info("  목록: wonjang 즐겨찾기 · 추가: wonjang 즐겨찾기 add <이름> <URL/경로>");
+                std::process::exit(1);
+            }
+            (target.to_string(), target.to_string())
+        }
     };
     bookmarks::open_target(&to_open)?;
     ui::note(&format!("'{label}' 열었어요 → {to_open}"));
     Ok(())
+}
+
+#[cfg(test)]
+mod open_fallback_tests {
+    use super::openable_fallback;
+
+    #[test]
+    fn url_and_existing_path_open_but_typo_does_not() {
+        assert!(openable_fallback("https://github.com", false));
+        assert!(openable_fallback("www.naver.com", false));
+        assert!(openable_fallback("문서폴더", true)); // 실재 경로면 OK
+        assert!(!openable_fallback("없는이름", false)); // 오타 → 거짓 성공 금지
+    }
 }
 
 fn cmd_focus(minutes: Option<i64>, label: &[String]) -> Result<()> {
