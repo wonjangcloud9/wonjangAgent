@@ -101,6 +101,23 @@ fn read_file(path: &Path) -> Result<(u128, Vec<Message>)> {
     Ok((file.created_ms, file.messages))
 }
 
+/// 세션 통계: (세션 수, 가장 이른 세션 타임스탬프 ms). 파일명만 읽어 가볍다.
+pub fn stats() -> Result<(usize, Option<u128>)> {
+    let dir = sessions_dir()?;
+    let mut count = 0usize;
+    let mut earliest: Option<u128> = None;
+    for entry in std::fs::read_dir(&dir)? {
+        let path = entry?.path();
+        if let Some(ms) = parse_ms(&path) {
+            count += 1;
+            if earliest.map(|e| ms < e).unwrap_or(true) {
+                earliest = Some(ms);
+            }
+        }
+    }
+    Ok((count, earliest))
+}
+
 /// 저장된 세션 목록(최신순)을 (경로, 미리보기, 메시지 수)로 반환.
 pub fn list() -> Result<Vec<(PathBuf, String, usize)>> {
     let dir = sessions_dir()?;

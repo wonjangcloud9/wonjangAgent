@@ -473,6 +473,82 @@ pub fn card_comment(persona_key: &str, streak: i64, habit: &str) -> String {
     }
 }
 
+/// 성장 카드 데이터 — 원장이 사용자에게서 배운 것(기억·스킬·대화).
+pub struct GrowthCardData {
+    /// 함께한 일수(첫 대화 세션 기준, 1=첫날). 세션이 없으면 None.
+    pub days: Option<i64>,
+    pub facts: usize,
+    pub skills: usize,
+    pub sessions: usize,
+    /// 최근 배운 사실(최대 2개 권장 — 카드가 길어지지 않게).
+    pub recent: Vec<String>,
+    pub comment: String,
+    pub footer: String,
+}
+
+/// 성장 카드를 줄 단위로 렌더(자랑 카드와 같은 박스 시스템·전각폭 불변식).
+pub fn render_growth_card(d: &GrowthCardData, width: usize) -> Vec<String> {
+    let w = width.clamp(30, 80);
+    let inner = w - 2;
+    let col = 16;
+    let mut lines = Vec::new();
+    let title = match d.days {
+        Some(n) if n >= 1 => format!("원장 성장 · 함께 {n}일째"),
+        _ => "원장 성장".to_string(),
+    };
+    lines.push(rule('╭', '╮', &title, inner));
+    lines.push(row("🧠 기억한 사실", &format!("{}개", d.facts), inner, col));
+    lines.push(row("🛠️ 익힌 스킬", &format!("{}개", d.skills), inner, col));
+    if d.sessions > 0 {
+        lines.push(row(
+            "💬 나눈 대화",
+            &format!("{}번", d.sessions),
+            inner,
+            col,
+        ));
+    }
+    if !d.recent.is_empty() {
+        lines.push(rule('├', '┤', "", inner));
+        lines.push(content("📖 최근 배운 것", inner));
+        for fact in &d.recent {
+            lines.push(content(&format!("· {fact}"), inner));
+        }
+    }
+    lines.push(rule('├', '┤', "", inner));
+    lines.push(content(&format!("💬 {}", d.comment), inner));
+    lines.push(rule('╰', '╯', &d.footer, inner));
+    lines
+}
+
+/// 성장 카드 코멘트 — 배운 양(기억+스킬)에 따라 페르소나 말투.
+pub fn growth_comment(persona_key: &str, facts: usize, skills: usize) -> String {
+    let total = facts + skills;
+    if total >= 10 {
+        match persona_key {
+            "친구" => "이제 나 너 좀 안다? 🙌",
+            "집사" => "주인님을 깊이 알아가고 있습니다.",
+            "선배" => "이만큼 배웠다. 더 시켜봐.",
+            "발랄" => "쑥쑥 크는 중! 더 가르쳐줘✨",
+            _ => "쓸수록 당신에게 맞춰지고 있어요.",
+        }
+    } else if total >= 1 {
+        match persona_key {
+            "친구" => "조금씩 너를 알아가는 중 💪",
+            "집사" => "주인님에 대해 배워가고 있습니다.",
+            "선배" => "배우는 중이다. 계속 시켜.",
+            "발랄" => "너에 대해 알아가는 중!✨",
+            _ => "조금씩 당신을 알아가는 중이에요.",
+        }
+    } else {
+        match persona_key {
+            "친구" => "뭐든 시켜봐 — 쓸수록 똑똑해져 💪",
+            "발랄" => "대화할수록 똑똑해져요! 시켜줘✨",
+            _ => "대화할수록 똑똑해져요 — 뭐든 시켜보세요.",
+        }
+    }
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,6 +619,68 @@ mod tests {
             last.contains("wonjang-agent"),
             "카톡 폭에서 풋터 설치명이 잘림: {last:?}"
         );
+    }
+
+    #[test]
+    fn growth_card_every_line_has_exact_display_width() {
+        // 성장 카드도 전각/이모지 혼합·긴 기억 문장에서 모든 줄이 정확히 같은 폭이어야 한다.
+        let d = GrowthCardData {
+            days: Some(47),
+            facts: 12,
+            skills: 3,
+            sessions: 28,
+            recent: vec![
+                "사용자는 아침형이라 오전 보고를 선호한다 (매우 긴 문장으로 잘림 검증)".into(),
+                "보고서는 마크다운 표로 정리".into(),
+            ],
+            comment: "쓸수록 당신에게 맞춰지고 있어요.".into(),
+            footer: SHARE_FOOTER.into(),
+        };
+        for width in [30usize, 34, 40, 46, 52] {
+            let lines = render_growth_card(&d, width);
+            for (i, line) in lines.iter().enumerate() {
+                assert_eq!(
+                    disp_width(line),
+                    width,
+                    "width={width} 줄{i} 폭 불일치: {line:?} (={}칸)",
+                    disp_width(line)
+                );
+            }
+        }
+        // 카톡 폭(34)에서 풋터 설치명 보존(전염 고리).
+        let kakao = render_growth_card(&d, 34);
+        assert!(kakao.last().unwrap().contains("wonjang-agent"));
+    }
+
+    #[test]
+    fn growth_card_omits_empty_sections() {
+        // 세션 0·최근 기억 없음이면 그 줄들이 빠진다(빈 항목으로 카드 맥 빠지지 않게).
+        let d = GrowthCardData {
+            days: None,
+            facts: 0,
+            skills: 0,
+            sessions: 0,
+            recent: vec![],
+            comment: "대화할수록 똑똑해져요 — 뭐든 시켜보세요.".into(),
+            footer: SHARE_FOOTER.into(),
+        };
+        let lines = render_growth_card(&d, 46);
+        let joined = lines.join("\n");
+        assert!(!joined.contains("나눈 대화"), "세션 0인데 대화 줄이 있음");
+        assert!(!joined.contains("최근 배운 것"));
+        assert!(joined.contains("원장 성장")); // 함께 N일째 없이 기본 제목.
+        for line in &lines {
+            assert_eq!(disp_width(line), 46);
+        }
+    }
+
+    #[test]
+    fn growth_comment_scales_with_learning() {
+        assert!(growth_comment("기본", 0, 0).contains("똑똑해져요"));
+        assert!(growth_comment("기본", 3, 1).contains("알아가는 중"));
+        assert!(growth_comment("기본", 12, 3).contains("맞춰지고"));
+        // 페르소나 분기.
+        assert!(growth_comment("친구", 12, 3).contains("🙌"));
     }
 
     #[test]

@@ -555,6 +555,19 @@ enum Commands {
         #[arg(long = "복사")]
         copy: bool,
     },
+    /// 원장이 배운 것을 성장 카드 한 장으로(기억·스킬·함께한 대화). 예: wonjang 성장
+    #[command(alias = "성장")]
+    Growth {
+        /// 박스 폭(기본 46, 카톡엔 34 권장)
+        #[arg(long = "폭", default_value_t = 46)]
+        width: usize,
+        /// 색 없이 출력(파이프·복붙용)
+        #[arg(long = "no-color")]
+        no_color: bool,
+        /// 카드를 클립보드에 복사(카톡·메모에 바로 붙여넣기)
+        #[arg(long = "복사")]
+        copy: bool,
+    },
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
@@ -1802,6 +1815,11 @@ async fn run() -> Result<()> {
             no_color,
             copy,
         }) => return cmd_brag(month.as_deref(), *week, *width, *no_color, *copy),
+        Some(Commands::Growth {
+            width,
+            no_color,
+            copy,
+        }) => return cmd_growth(*width, *no_color, *copy),
         Some(Commands::Mail { count, unseen }) => return cmd_mail(*count, *unseen),
         Some(Commands::MailRead { num, unseen }) => return cmd_mail_read(*num, *unseen),
         Some(Commands::MailAttach { num, dir, unseen }) => {
@@ -2350,6 +2368,7 @@ mod repl_local_tests {
     fn local_commands_recognized_natural_language_not() {
         // 로컬 명령 → Some(인자).
         assert!(parse_as_local_command("자랑").is_some());
+        assert!(parse_as_local_command("성장").is_some());
         assert!(parse_as_local_command("디데이 추가 수능 2026-11-19").is_some());
         assert!(parse_as_local_command("지출 추가 5만 식비").is_some());
         // 온보딩 예시 그대로(선행 wonjang) 복붙해도 동작 — wonjang은 떼고 인자 반환.
@@ -3525,6 +3544,7 @@ fn cmd_guide() -> Result<()> {
             &[
                 ("wonjang 현황", "약속·할일·디데이·습관·집중·지출"),
                 ("wonjang 자랑 --복사", "회고 카드 → 클립보드(주간 --주)"),
+                ("wonjang 성장", "원장이 배운 것 카드(기억·스킬·대화)"),
                 ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
                 ("wonjang config", "설정·연동 상태"),
             ],
@@ -6280,6 +6300,80 @@ fn print_card(lines: &[String], persona: &str, no_color: bool, copy: bool) {
         ui::info("  카톡엔 --폭 34, 복사는 --복사 가 편해요");
     }
     println!();
+}
+
+/// 원장이 배운 것(기억·스킬·대화)을 성장 카드 한 장으로. 데이터 읽기 전용.
+/// 헤르메스식 "쓸수록 성장"이 눈에 보이는 표면 — 기억 기제 자체는 memory.rs/skill.rs.
+fn cmd_growth(width: usize, no_color: bool, copy: bool) -> Result<()> {
+    use owo_colors::OwoColorize;
+
+    let mem = memory::Memory::load()?;
+    let facts: Vec<String> = mem
+        .read()
+        .lines()
+        .filter(|l| l.trim_start().starts_with("- "))
+        .map(|l| l.trim_start().trim_start_matches("- ").trim().to_string())
+        .collect();
+    let skills = skill::SkillStore::load()?.list()?.len();
+    let (sessions, first_ms) = session::stats().unwrap_or((0, None));
+    let days = first_ms.map(|ms| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(ms);
+        (now.saturating_sub(ms) / 86_400_000) as i64 + 1
+    });
+
+    // 아직 아무것도 안 배웠으면 예시 카드 + 시작 안내(자랑 카드의 빈상태 패턴).
+    if facts.is_empty() && skills == 0 && sessions == 0 {
+        println!();
+        ui::info("원장은 쓸수록 성장해요 — 대화가 쌓이면 이런 카드가 생겨요:");
+        let sample = card::GrowthCardData {
+            days: Some(47),
+            facts: 12,
+            skills: 3,
+            sessions: 28,
+            recent: vec![
+                "사용자는 아침형이라 오전 보고 선호".into(),
+                "보고서는 마크다운 표로 정리".into(),
+            ],
+            comment: "쓸수록 당신에게 맞춰지고 있어요.".into(),
+            footer: card::SHARE_FOOTER.into(),
+        };
+        print_card(
+            &card::render_growth_card(&sample, width),
+            soul::active_preset_key(),
+            no_color,
+            false,
+        );
+        println!(
+            "  {}",
+            "wonjang \"나는 아침형이야, 기억해줘\"".bright_cyan()
+        );
+        ui::info("  대화 한 번이면 기억이 시작돼요 🌱 (배운 것 보기: wonjang 메모리)");
+        println!();
+        return Ok(());
+    }
+
+    // 최근 배운 사실 2개(파일 뒤쪽=최신, 카드가 길어지지 않게).
+    let recent: Vec<String> = facts.iter().rev().take(2).rev().cloned().collect();
+    let persona = soul::tone_key();
+    let data = card::GrowthCardData {
+        days,
+        facts: facts.len(),
+        skills,
+        sessions,
+        recent,
+        comment: card::growth_comment(persona, facts.len(), skills),
+        footer: card::SHARE_FOOTER.to_string(),
+    };
+    print_card(
+        &card::render_growth_card(&data, width),
+        persona,
+        no_color,
+        copy,
+    );
+    Ok(())
 }
 
 /// 주간 자랑 카드(이번 주 + 지난주 대비 ▲▼). 데이터 읽기 전용.
