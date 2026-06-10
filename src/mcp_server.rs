@@ -19,6 +19,7 @@ pub fn served_tools() -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(memory::RememberTool),
         Box::new(memory::RecallTool),
+        Box::new(memory::ForgetTool),
         Box::new(skill::SaveSkillTool),
         Box::new(skill::ListSkillsTool),
         Box::new(skill::ReadSkillTool),

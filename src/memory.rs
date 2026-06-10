@@ -96,6 +96,37 @@ impl Memory {
     }
 }
 
+impl Memory {
+    /// 키워드가 든 사실을 모두 지우고, 지운 사실 목록을 돌려준다(투명성 — 호출부가 에코).
+    /// 잘못 기억된 사실이 시스템 프롬프트를 영원히 오염시키지 않게 하는 위생 통로.
+    pub fn forget(&self, keyword: &str) -> Result<Vec<String>> {
+        let keyword = normalize(keyword).to_lowercase();
+        if keyword.is_empty() {
+            anyhow::bail!("지울 기억의 키워드를 알려주세요");
+        }
+        let content = self.read();
+        let mut removed = Vec::new();
+        let mut kept = Vec::new();
+        for line in content.lines() {
+            let fact = line.trim_start().strip_prefix("- ");
+            match fact {
+                Some(f) if f.to_lowercase().contains(&keyword) => removed.push(f.to_string()),
+                _ => kept.push(line),
+            }
+        }
+        if removed.is_empty() {
+            return Ok(removed);
+        }
+        let mut out = kept.join("\n");
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        crate::util::atomic_write(&self.path, out.as_bytes())
+            .with_context(|| format!("메모리를 저장할 수 없습니다: {}", self.path.display()))?;
+        Ok(removed)
+    }
+}
+
 /// 사실 문자열 정규화(개행·연속 공백 → 한 칸). 저장(append)과 표시 메시지가
 /// 같은 규칙을 쓰게 해, "기억했어요" 에코와 실제 저장 내용이 늘 일치한다.
 pub fn normalize(fact: &str) -> String {
@@ -118,6 +149,25 @@ mod tests {
         let mem = temp_mem("append");
         mem.append("사용자는 Rust를 선호한다").unwrap();
         assert!(mem.read().contains("사용자는 Rust를 선호한다"));
+    }
+
+    #[test]
+    fn forget_removes_matching_and_keeps_rest() {
+        let mem = temp_mem("forget");
+        mem.append("사용자는 아침형 인간이다").unwrap();
+        mem.append("프로젝트 폴더는 ~/work이다").unwrap();
+        mem.append("아침 회의를 선호한다").unwrap();
+        // '아침' 포함 2건 제거, 나머지 보존 + 헤더 유지.
+        let removed = mem.forget("아침").unwrap();
+        assert_eq!(removed.len(), 2);
+        assert_eq!(mem.count(), 1);
+        assert!(mem.read().contains("~/work"));
+        assert!(mem.read().starts_with("# 원장 메모리"));
+        // 없는 키워드 → 빈 목록, 파일 무변경.
+        assert!(mem.forget("없는키워드").unwrap().is_empty());
+        assert_eq!(mem.count(), 1);
+        // 빈 키워드 → 에러(전체 삭제 사고 방지).
+        assert!(mem.forget("  ").is_err());
     }
 
     #[test]

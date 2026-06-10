@@ -167,6 +167,12 @@ enum Commands {
         /// 기억할 사실(생략하면 기억 목록을 보여줌)
         fact: Vec<String>,
     },
+    /// 기억에서 키워드가 든 사실을 지웁니다. 예: wonjang 잊어 아침형
+    #[command(name = "forget", aliases = ["잊어", "잊어줘", "기억삭제"])]
+    Forget {
+        /// 지울 기억에 포함된 키워드
+        keyword: Vec<String>,
+    },
     /// 저장된 대화 세션 목록을 보여줍니다.
     #[command(alias = "세션")]
     Sessions,
@@ -1777,6 +1783,7 @@ async fn run() -> Result<()> {
         Some(Commands::Config) => return cmd_config(&cfg),
         Some(Commands::McpServe) => return mcp_server::serve(),
         Some(Commands::Memory { fact }) => return cmd_memory(fact),
+        Some(Commands::Forget { keyword }) => return cmd_forget(keyword),
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
         Some(Commands::Remind { action }) => return cmd_remind(action),
@@ -3612,6 +3619,7 @@ fn cmd_guide(query: &[String]) -> Result<()> {
                 ("wonjang 자랑 --복사", "회고 카드 → 클립보드(주간 --주)"),
                 ("wonjang 성장", "원장이 배운 것 카드(기억·스킬·대화)"),
                 ("wonjang 기억 \"<사실>\"", "원장에게 직접 기억시키기"),
+                ("wonjang 잊어 <키워드>", "잘못 기억된 사실 지우기"),
                 ("wonjang preset run 브리핑", "아침 브리핑(날씨·뉴스·일정)"),
                 ("wonjang config", "설정·연동 상태"),
             ],
@@ -9972,7 +9980,36 @@ fn cmd_memory(fact: &[String]) -> Result<()> {
         );
     } else {
         println!("\n{}", content.trim());
+        ui::info("  잘못된 기억 지우기: wonjang 잊어 <키워드>");
     }
+    Ok(())
+}
+
+/// 기억에서 키워드가 든 사실을 지운다(지운 내용을 그대로 보여줘 투명하게).
+fn cmd_forget(keyword: &[String]) -> Result<()> {
+    let keyword = keyword.join(" ");
+    if keyword.trim().is_empty() {
+        ui::info(
+            "지울 기억의 키워드를 알려주세요. 예: wonjang 잊어 아침형 (전체 보기: wonjang 메모리)",
+        );
+        return Ok(());
+    }
+    let mem = memory::Memory::load()?;
+    let removed = mem.forget(&keyword)?;
+    if removed.is_empty() {
+        ui::info(&format!(
+            "'{keyword}'가 든 기억이 없어요 — 전체 기억: wonjang 메모리"
+        ));
+        return Ok(());
+    }
+    println!("  🗑 잊었어요({}건):", removed.len());
+    for fact in &removed {
+        println!("     - {fact}");
+    }
+    ui::info(&format!(
+        "  남은 기억 {}개 (보기: wonjang 메모리 · 다시 기억: wonjang 기억 \"<사실>\")",
+        mem.count()
+    ));
     Ok(())
 }
 
@@ -10566,6 +10603,11 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "기억", "나는", "아침형"]),
             Commands::Memory { fact } if fact == ["나는", "아침형"]
+        ));
+        // '잊어 <키워드>'는 기억 삭제(기억 위생).
+        assert!(matches!(
+            cmd_of(&["wonjang", "잊어", "아침형"]),
+            Commands::Forget { keyword } if keyword == ["아침형"]
         ));
         // '도움 <검색어>'는 도움 검색(명령 100+개 발견성).
         assert!(matches!(

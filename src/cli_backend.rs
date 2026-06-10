@@ -154,8 +154,9 @@ async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<St
     let system = if mcp_config.is_some() {
         format!(
             "{system}\n\n도구 규칙(중요): 기억은 반드시 mcp__wonjang__remember 도구로 저장하고 \
-             mcp__wonjang__recall로 조회하세요. 자체 메모리 기능·파일 기록 등 다른 방식으로 \
-             기억을 남기지 마세요. 알림·할일·디데이·가계부·습관·스킬·날씨·환율 등도 \
+             mcp__wonjang__recall로 조회, 틀린 기억은 mcp__wonjang__forget으로 지우세요. \
+             자체 메모리 기능·파일 기록 등 다른 방식으로 기억을 남기지 마세요. \
+             알림·할일·디데이·가계부·습관·스킬·날씨·환율 등도 \
              mcp__wonjang__ 도구가 있으면 그것을 우선 사용하세요."
         )
     } else {

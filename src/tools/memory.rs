@@ -52,6 +52,52 @@ impl Tool for RememberTool {
     }
 }
 
+/// 잘못 기억된 사실을 지운다(기억 위생 — 틀린 기억이 프롬프트를 영원히 오염시키지 않게).
+pub struct ForgetTool;
+
+impl Tool for ForgetTool {
+    fn name(&self) -> &'static str {
+        "forget"
+    }
+
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "forget",
+            description: "영속 메모리에서 키워드가 포함된 사실을 지웁니다. 사용자가 \
+                '그거 잊어줘'·'그건 이제 아니야'라고 하거나 기억이 사실과 달라졌을 때 \
+                사용하세요. 키워드가 든 모든 사실이 지워지므로 구체적인 키워드를 쓰세요.",
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "지울 기억에 포함된 키워드(구체적일수록 안전). 예: '아침형'"
+                    }
+                },
+                "required": ["keyword"]
+            }),
+        }
+    }
+
+    fn execute(&self, args: &Value, _ctx: &ToolContext) -> Result<String> {
+        let keyword = args
+            .get("keyword")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("'keyword' 인자가 필요합니다"))?;
+        let mem = Memory::load()?;
+        let removed = mem.forget(keyword)?;
+        if removed.is_empty() {
+            Ok(format!("'{keyword}'가 든 기억이 없어요."))
+        } else {
+            Ok(format!(
+                "🗑 잊었어요({}건): {}",
+                removed.len(),
+                removed.join(" / ")
+            ))
+        }
+    }
+}
+
 /// 저장된 메모리를 회상.
 pub struct RecallTool;
 
