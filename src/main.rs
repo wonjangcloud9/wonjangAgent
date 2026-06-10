@@ -1109,11 +1109,23 @@ enum Commands {
         /// 주당 근로시간
         weekly_hours: f64,
     },
-    /// 한국 공휴일 조회(설날·추석 포함). 예: wonjang 공휴일 [2026]
+    /// 한국 공휴일 조회(설날·추석 포함). 예: wonjang 공휴일 [2026] (--카드: 다음 연휴 공유 카드)
     #[command(alias = "공휴일")]
     Holiday {
         /// 연도(생략 시 올해)
         year: Option<i32>,
+        /// 다음 연휴 D-day를 공유 카드 한 장으로(카톡 캡처용)
+        #[arg(long = "카드")]
+        card: bool,
+        /// 박스 폭(기본 46, 카톡엔 34 권장)
+        #[arg(long = "폭", default_value_t = 46)]
+        width: usize,
+        /// 색 없이 출력(파이프·복붙용)
+        #[arg(long = "no-color")]
+        no_color: bool,
+        /// 카드를 클립보드에 복사
+        #[arg(long = "복사")]
+        copy: bool,
     },
     /// 간단 일기 기록/보기. 예: wonjang 일기 "오늘 있었던 일" (없으면 이번 달 보기)
     #[command(alias = "일기")]
@@ -2043,7 +2055,13 @@ async fn run() -> Result<()> {
             hourly,
             weekly_hours,
         }) => return cmd_wage(*hourly, *weekly_hours),
-        Some(Commands::Holiday { year }) => return cmd_holiday(*year),
+        Some(Commands::Holiday {
+            year,
+            card,
+            width,
+            no_color,
+            copy,
+        }) => return cmd_holiday(*year, *card, *width, *no_color, *copy),
         Some(Commands::Journal { text }) => return cmd_journal(text),
         Some(Commands::Congestion { area }) => return cmd_congestion(&cfg, area),
         Some(Commands::Geeknews { count }) => return cmd_geeknews(*count),
@@ -7922,11 +7940,65 @@ fn cmd_journal(text: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn cmd_holiday(year: Option<i32>) -> Result<()> {
+/// 다음 연휴 D-day를 공유 카드 한 장으로(카톡 캡처용). 데이터 읽기 전용.
+/// 한국 공휴일+대체공휴일+황금연휴 계산은 원장의 고유 강점인데 공유 포맷이
+/// 없었다 — "다음 연휴 D-N"은 사무실 단톡방에서 도는 정보라 전염 표면이 된다.
+fn holiday_break_card(
+    holidays: &[holidays::Holiday],
+    today: chrono::NaiveDate,
+    width: usize,
+    no_color: bool,
+    copy: bool,
+) -> Result<()> {
+    let Some((start, end, len)) = holidays::next_long_break(holidays, today, 3) else {
+        ui::info("올해 남은 3일 이상 연휴가 없어요 — 전체 공휴일: wonjang 공휴일");
+        return Ok(());
+    };
+    // 연휴 구간 안의 실제 쉬는 공휴일 이름을 대표로(주말만으론 연휴가 안 되므로 보통 존재).
+    let name = holidays
+        .iter()
+        .find(|h| h.date >= start && h.date <= end && holidays::is_day_off(h))
+        .map(|h| h.name.as_str())
+        .unwrap_or("연휴");
+    let dday = datecalc::days_between(today, start);
+    let big = if dday <= 0 {
+        "지금 연휴!".to_string()
+    } else {
+        format!("D-{dday}")
+    };
+    let headline = format!("🏖️ {name} 연휴 {len}일");
+    let date_line = format!(
+        "{}({}) ~ {}({})",
+        start.format("%m-%d"),
+        datecalc::weekday_kr(start),
+        end.format("%m-%d"),
+        datecalc::weekday_kr(end)
+    );
+    // 코멘트: 이 연휴를 연차 하나로 더 늘릴 수 있으면 그 꿀팁, 아니면 가벼운 한마디.
+    let comment = holidays::golden_leaves(holidays, today, len + 1, 5)
+        .iter()
+        .find(|g| g.start <= end && g.end >= start)
+        .map(|g| format!("💡 연차 1개({})면 {}일!", g.leave.format("%m-%d"), g.len))
+        .unwrap_or_else(|| "달력에 동그라미 쳐두세요 ✨".to_string());
+    let lines = card::render_event_card("원장 연휴", &headline, &big, &date_line, &comment, width);
+    print_card(&lines, soul::tone_key(), no_color, copy);
+    Ok(())
+}
+
+fn cmd_holiday(
+    year: Option<i32>,
+    card: bool,
+    width: usize,
+    no_color: bool,
+    copy: bool,
+) -> Result<()> {
     use owo_colors::OwoColorize;
     let today = chrono::Local::now().date_naive();
     let year = year.unwrap_or_else(|| chrono::Datelike::year(&today));
     let holidays = util::run_async(async move { holidays::fetch(year).await })?;
+    if card {
+        return holiday_break_card(&holidays, today, width, no_color, copy);
+    }
     println!();
     println!("  🗓️  {year}년 한국 공휴일 ({}일)", holidays.len());
     if holidays.is_empty() {
