@@ -121,13 +121,33 @@ fn render_prompt(messages: &[Message]) -> String {
     out
 }
 
+/// 원장 도구(기억·스킬·알림·날씨 등)를 claude에 물려주는 MCP 설정(인라인 JSON).
+/// 실행 파일 경로를 못 얻으면 None — MCP 없이도 위임 자체는 동작해야 한다.
+fn wonjang_mcp_config() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    Some(
+        serde_json::json!({
+            "mcpServers": { "wonjang": { "command": exe.to_str()?, "args": ["mcp-serve"] } }
+        })
+        .to_string(),
+    )
+}
+
 /// Claude Code(claude -p)에 위임한다.
 async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<String> {
     // 자동 승인이면 쓰기 도구까지, 아니면 읽기 전용으로 제한.
-    let allowed = if auto_approve {
+    // 원장 비서 도구는 MCP(mcp__wonjang)로 두 모드 모두 허용 — 셸·파일은 안 노출되므로
+    // 읽기전용 정책을 우회하지 않는다(mcp_server::served_tools 참고).
+    let base = if auto_approve {
         "Bash Read Write Edit Glob Grep WebSearch WebFetch"
     } else {
         "Read Glob Grep WebSearch WebFetch"
+    };
+    let mcp_config = wonjang_mcp_config();
+    let allowed = if mcp_config.is_some() {
+        format!("{base} mcp__wonjang")
+    } else {
+        base.to_string()
     };
 
     let mut cmd = Command::new("claude");
@@ -138,11 +158,14 @@ async fn run_claude(system: &str, prompt: &str, auto_approve: bool) -> Result<St
         "--append-system-prompt",
         system,
         "--allowedTools",
-        allowed,
-    ])
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null());
+        &allowed,
+    ]);
+    if let Some(cfg) = &mcp_config {
+        cmd.args(["--mcp-config", cfg]);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
 
     ui::tool_result(&format!("Claude Code에 위임 중… (허용 도구: {allowed})"));
 

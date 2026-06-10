@@ -64,6 +64,7 @@ mod lotto;
 mod margin;
 mod maxinterest;
 mod mcp;
+mod mcp_server;
 mod memory;
 mod menu;
 mod military;
@@ -157,6 +158,9 @@ enum Commands {
     /// 현재 설정을 보여주고, 없으면 기본 설정 파일을 생성합니다.
     #[command(alias = "설정")]
     Config,
+    /// (내부용) MCP 서버로 원장 도구를 노출합니다 — CLI 백엔드가 자동으로 사용.
+    #[command(name = "mcp-serve", hide = true)]
+    McpServe,
     /// 기억하는 사실(영속 메모리)을 보여주거나, 사실을 주면 기억합니다. 예: wonjang 기억 "나는 아침형"
     #[command(aliases = ["메모리", "기억", "기억해"])]
     Memory {
@@ -1756,6 +1760,7 @@ async fn run() -> Result<()> {
     // LLM이 필요 없는 서브커맨드 처리.
     match &cli.command {
         Some(Commands::Config) => return cmd_config(&cfg),
+        Some(Commands::McpServe) => return mcp_server::serve(),
         Some(Commands::Memory { fact }) => return cmd_memory(fact),
         Some(Commands::Sessions) => return cmd_sessions(),
         Some(Commands::Skills) => return cmd_skills(),
