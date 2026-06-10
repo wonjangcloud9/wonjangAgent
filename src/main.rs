@@ -2113,6 +2113,12 @@ async fn run() -> Result<()> {
             if cli.command.is_none() && cli.prompt.is_empty() && !cli.continue_session {
                 return repl_local_only(&cfg).await;
             }
+            // 키리스 동등 명령이 있는 프리셋이면 에러 대신 그 명령을 안내한다.
+            if let Some(name) = requested_preset_name(&cli) {
+                if advise_keyless_preset(&name) {
+                    return Ok(());
+                }
+            }
             return Err(e);
         }
     };
@@ -2164,6 +2170,11 @@ async fn run() -> Result<()> {
     {
         match preset::find(name) {
             Some(p) => {
+                // 백엔드가 명시됐지만 실제로 없을 때(예: backend=claude·미설치),
+                // 로컬 동등 명령이 있으면 spawn 에러 대신 그걸 안내.
+                if !eng.backend_ready() && advise_keyless_preset(&p.name) {
+                    return Ok(());
+                }
                 ui::note(&format!("프리셋 실행: {} — {}", p.name, p.description));
                 let mut prompt = p.prompt;
                 if !extra.is_empty() {
@@ -2182,6 +2193,17 @@ async fn run() -> Result<()> {
     } else {
         None
     };
+
+    // 맨 프리셋(단발 첫 단어)도 백엔드 불가 시 키리스 동등 명령을 안내.
+    if preset_prompt.is_none() && !eng.backend_ready() {
+        if let Some(first) = cli.prompt.first() {
+            if let Some(p) = preset::find(first) {
+                if advise_keyless_preset(&p.name) {
+                    return Ok(());
+                }
+            }
+        }
+    }
 
     // 단발 실행 모드(직접 입력 또는 프리셋).
     // `preset run` 외에, 첫 단어가 프리셋 이름이면(예: `wonjang 일지 오늘…`) 그 프리셋으로
@@ -6856,6 +6878,37 @@ fn cmd_age(birth_in: &str, card: bool, width: usize, no_color: bool, copy: bool)
     ui::info(&format!("     공유 카드: wonjang 나이 {birth_in} --카드"));
     println!();
     Ok(())
+}
+
+/// CLI 입력이 가리키는 프리셋의 캐노니컬 이름 — `preset run <이름>` 또는 단발 첫 단어.
+fn requested_preset_name(cli: &Cli) -> Option<String> {
+    if let Some(Commands::Preset {
+        action: Some(PresetAction::Run { name, .. }),
+    }) = &cli.command
+    {
+        return preset::find(name).map(|p| p.name);
+    }
+    if cli.command.is_none() {
+        if let Some(first) = cli.prompt.first() {
+            return preset::find(first).map(|p| p.name);
+        }
+    }
+    None
+}
+
+/// 백엔드 없이 같은 일을 하는 로컬 명령이 있으면 안내하고 true(호출부는 조용히 종료).
+/// "날씨 보려고 AI 설치" 같은 막다른 길을 없앤다.
+fn advise_keyless_preset(name: &str) -> bool {
+    match preset::keyless_equivalent(name) {
+        Some(local) => {
+            ui::note(&format!(
+                "'{name}' 프리셋은 AI 백엔드로 실행돼요 — 지금은 연결된 백엔드가 없어요."
+            ));
+            ui::info(&format!("  키 없이 바로 같은 일: {local}"));
+            true
+        }
+        None => false,
+    }
 }
 
 /// 단발 입력의 첫 단어가 프리셋 이름/별칭이면 그 프리셋으로 해석한다.

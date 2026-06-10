@@ -234,6 +234,22 @@ pub fn builtin() -> Vec<Preset> {
     ]
 }
 
+/// AI 백엔드 없이 같은 일을 하는 로컬 명령(있는 프리셋만, 캐노니컬 이름 기준).
+/// 백엔드가 없을 때 "claude를 설치하세요" 대신 이걸 안내한다 — 날씨 보려고
+/// AI를 설치하게 만들지 않는다.
+pub fn keyless_equivalent(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "날씨" => "wonjang 날씨 [지역]",
+        "환율" => "wonjang 환율 [금액 통화]",
+        "큰파일" => "wonjang 용량 [폴더]",
+        "중복파일" => "wonjang 중복 [폴더]",
+        "압축" => "wonjang 압축 <폴더/파일>",
+        "다운로드정리" => "wonjang 정리 ~/Downloads (미리보기 확인 후 --실행)",
+        "바탕화면정리" => "wonjang 정리 ~/Desktop (미리보기 확인 후 --실행)",
+        _ => return None,
+    })
+}
+
 /// 사용자 프리셋 파일 경로.
 pub fn user_presets_path() -> Result<PathBuf> {
     let dir = dirs::config_dir()
@@ -301,6 +317,20 @@ mod tests {
         assert!(find("정리").is_some()); // 별칭
         assert!(find("downloads").is_some()); // 별칭
         assert!(find("없는프리셋").is_none());
+    }
+
+    #[test]
+    fn keyless_equivalents_point_to_local_commands() {
+        // 로컬 동등 명령이 있는 프리셋은 백엔드 없이 안내가 나가야 한다.
+        for name in ["날씨", "환율", "큰파일", "중복파일", "다운로드정리"] {
+            let eq = keyless_equivalent(name);
+            assert!(eq.is_some(), "'{name}' 키리스 매핑 없음");
+            assert!(eq.unwrap().starts_with("wonjang "));
+        }
+        // AI가 꼭 필요한 프리셋은 매핑이 없어야 한다(거짓 안내 금지).
+        for name in ["브리핑", "번역", "회고", "배터리"] {
+            assert!(keyless_equivalent(name).is_none(), "'{name}'에 잘못된 매핑");
+        }
     }
 
     #[test]
