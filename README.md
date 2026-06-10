@@ -279,7 +279,7 @@ API 키는 보안을 위해 **환경 변수**로만 받습니다(설정 파일�
 ```bash
 # OpenRouter 예시
 export OPENROUTER_API_KEY=sk-or-...
-export WONJANG_MODEL=anthropic/claude-3.5-sonnet
+export WONJANG_MODEL=anthropic/claude-opus-4.8
 
 # 또는 OpenAI 직접
 export WONJANG_BASE_URL=https://api.openai.com/v1
@@ -291,7 +291,7 @@ export WONJANG_MODEL=gpt-4o
 | --- | --- | --- |
 | `WONJANG_BACKEND` | 엔진 선택(auto/api/claude/codex) | `auto` |
 | `WONJANG_BASE_URL` | OpenAI 호환 베이스 URL | `https://openrouter.ai/api/v1` |
-| `WONJANG_MODEL` | 모델 이름 | `anthropic/claude-3.5-sonnet` |
+| `WONJANG_MODEL` | 모델 이름 | `anthropic/claude-opus-4.8` |
 | `WONJANG_API_KEY` | API 키(없으면 `OPENROUTER_API_KEY` → `OPENAI_API_KEY` 폴백) | — |
 | `WONJANG_OBSIDIAN_VAULT` | 옵시디언 볼트 경로(노트/일지/메모 기능) | — |
 
@@ -314,7 +314,7 @@ wonjang
 ```
   원장 에이전트  v0.1.0
   로컬 환경을 다루는 한국어 우선 AI 에이전트
-  모델: anthropic/claude-3.5-sonnet
+  모델: anthropic/claude-opus-4.8
   도움말은 /help, 종료는 /exit 또는 Ctrl-D
 
 당신 ▸ 이 폴더에 뭐가 있는지 알려줘

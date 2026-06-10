@@ -2748,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "wonjang"
-version = "1.64.1"
+version = "1.64.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

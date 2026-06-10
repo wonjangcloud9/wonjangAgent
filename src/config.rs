@@ -93,7 +93,10 @@ fn default_base_url() -> String {
 }
 
 fn default_model() -> String {
-    "anthropic/claude-3.5-sonnet".to_string()
+    // OpenRouter 슬러그(공개 모델 목록으로 실측 검증). 옛 기본값
+    // anthropic/claude-3.5-sonnet은 은퇴되어 목록에서 사라짐 — 새 API 키
+    // 사용자의 첫 요청이 모델 없음으로 실패하던 것을 최신 기본으로.
+    "anthropic/claude-opus-4.8".to_string()
 }
 
 fn default_max_steps() -> u32 {
