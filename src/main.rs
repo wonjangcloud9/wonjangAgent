@@ -1583,6 +1583,20 @@ fn friendlyize_error(full: &str) -> String {
 
 #[tokio::main]
 async fn main() {
+    // 패닉이 나도 영문 백트레이스 대신 한국어 안내 — 마지막 인상까지 한국어 우선.
+    // 위치·메시지 한 줄은 남겨 이슈 제보에 쓰이게 한다.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!();
+        eprintln!("  😵 앗, 원장에 예상치 못한 문제가 생겼어요. 죄송해요!");
+        eprintln!("     아래 [기술 정보] 한 줄과 함께 이슈로 알려주시면 바로 고칠게요:");
+        eprintln!("     https://github.com/wonjangcloud9/wonjangAgent/issues/new");
+        eprintln!();
+        eprintln!("     [기술 정보] {info}");
+    }));
+    // 패닉 훅 동작을 실측할 수 있는 숨은 트리거(테스트 전용).
+    if std::env::var_os("WONJANG_PANIC_TEST").is_some() {
+        panic!("패닉 훅 테스트");
+    }
     if let Err(e) = run().await {
         ui::error(&friendlyize_error(&format!("{e:#}")));
         std::process::exit(1);
