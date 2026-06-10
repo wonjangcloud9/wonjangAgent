@@ -577,9 +577,12 @@ enum Commands {
     /// 비서 현황을 한눈에 봅니다(약속·할일·디데이·예약작업).
     #[command(alias = "현황")]
     Status,
-    /// 원장이 할 수 있는 일을 카테고리별로 안내합니다.
+    /// 원장이 할 수 있는 일을 카테고리별로 안내합니다. 예: wonjang 도움 메일 (검색)
     #[command(alias = "도움")]
-    Guide,
+    Guide {
+        /// 검색어(생략하면 전체 목록)
+        query: Vec<String>,
+    },
     /// 원장의 성격(말투·태도)을 고릅니다. 예: wonjang 성격 친구
     #[command(alias = "성격")]
     Soul {
@@ -1730,7 +1733,7 @@ async fn run() -> Result<()> {
     // 최상위 --help/-h/help는 영문 clap 화면 대신 한국어 '도움'으로(첫인상·한국어 우선).
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     if is_top_level_help(&raw_args) {
-        return cmd_guide();
+        return cmd_guide(&[]);
     }
     let cli = match Cli::try_parse() {
         Ok(c) => c,
@@ -1907,7 +1910,7 @@ async fn run() -> Result<()> {
         }) => return cmd_rename(path, find, replace, *run),
         Some(Commands::Soul { preset }) => return cmd_soul(preset.as_deref()),
         Some(Commands::Status) => return cmd_status(),
-        Some(Commands::Guide) => return cmd_guide(),
+        Some(Commands::Guide { query }) => return cmd_guide(query),
         Some(Commands::Backup { dest }) => return cmd_backup(dest),
         Some(Commands::Restore { source }) => return cmd_restore(source),
         Some(Commands::Expense { action }) => return cmd_expense(action),
@@ -3271,7 +3274,7 @@ fn cmd_restore(source: &str) -> Result<()> {
 }
 
 /// 원장의 기능을 카테고리별로 안내한다.
-fn cmd_guide() -> Result<()> {
+fn cmd_guide(query: &[String]) -> Result<()> {
     use owo_colors::OwoColorize;
     let groups: &[(&str, &[(&str, &str)])] = &[
         (
@@ -3559,6 +3562,43 @@ fn cmd_guide() -> Result<()> {
         ),
     ];
 
+    // 검색어가 있으면 명령·설명에서 부분 일치(대소문자 무시)로 거른다 —
+    // 명령 100+개 시대의 발견성: "도움 메일"이 스크롤을 대신한다.
+    let query = query.join(" ").trim().to_lowercase();
+    if !query.is_empty() {
+        let mut hits = 0usize;
+        println!();
+        println!(
+            "  {}  {}",
+            "원장 도움".bright_cyan().bold(),
+            format!("'{query}' 검색 결과").dimmed()
+        );
+        for (title, items) in groups {
+            let matched: Vec<&(&str, &str)> = items
+                .iter()
+                .filter(|(cmd, desc)| {
+                    cmd.to_lowercase().contains(&query) || desc.to_lowercase().contains(&query)
+                })
+                .collect();
+            if matched.is_empty() {
+                continue;
+            }
+            println!("\n  {}", title.bright_white().bold());
+            for (cmd, desc) in matched {
+                hits += 1;
+                println!("     {:<34} {}", cmd.bright_green(), desc.dimmed());
+            }
+        }
+        println!();
+        if hits == 0 {
+            ui::info(&format!(
+                "'{query}'에 맞는 명령을 못 찾았어요 — 전체 목록: wonjang 도움 · 자연어로 물어봐도 돼요: wonjang \"{query} 어떻게 해?\""
+            ));
+            println!();
+        }
+        return Ok(());
+    }
+
     println!();
     println!(
         "  {}  {}",
@@ -3573,6 +3613,7 @@ fn cmd_guide() -> Result<()> {
     }
     println!();
     ui::info("백엔드: API 키가 있으면 그걸로, 없으면 Claude Code/Codex를 자동 연결합니다.");
+    ui::info("찾는 게 있으면 검색하세요: wonjang 도움 <단어>  (예: 도움 메일 · 도움 카드)");
     println!();
     Ok(())
 }
@@ -10316,6 +10357,15 @@ mod alias_tests {
         assert!(matches!(
             cmd_of(&["wonjang", "기억", "나는", "아침형"]),
             Commands::Memory { fact } if fact == ["나는", "아침형"]
+        ));
+        // '도움 <검색어>'는 도움 검색(명령 100+개 발견성).
+        assert!(matches!(
+            cmd_of(&["wonjang", "도움", "메일"]),
+            Commands::Guide { query } if query == ["메일"]
+        ));
+        assert!(matches!(
+            cmd_of(&["wonjang", "도움"]),
+            Commands::Guide { query } if query.is_empty()
         ));
         assert!(matches!(cmd_of(&["wonjang", "세션"]), Commands::Sessions));
         assert!(matches!(cmd_of(&["wonjang", "스킬"]), Commands::Skills));
